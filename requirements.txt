@@ -1,0 +1,26 @@
+# Core libraries for quantitative trading
+tushare>=1.2.89
+pandas>=1.5.0
+numpy>=1.21.0
+matplotlib>=3.5.0
+plotly>=5.0.0
+yfinance>=0.2.18
+python-dotenv>=0.19.0
+openpyxl>=3.0.0
+PyYAML>=6.0.1
+jieba>=0.42.1
+
+# Investment analysis & LLM integration
+requests>=2.28.0
+schedule>=1.2.0
+openai>=1.0.0
+
+# News analysis and data processing
+# hashlib and pathlib are built-in modules
+glob2>=0.7
+
+# Optional libraries (uncomment if needed)
+# ta-lib>=0.4.24
+# scikit-learn>=1.1.0
+# jupyter>=1.0.0
+# seaborn>=0.11.0 

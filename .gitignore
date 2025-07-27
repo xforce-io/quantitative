@@ -1,0 +1,138 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pytest
+.pytest_cache/
+.coverage
+
+# Logs
+*.log
+log/
+logs/
+
+# Cache
+cache/
+.cache/
+*.cache
+
+# Data files (large datasets)
+data/*.csv
+data/*.json
+data/*.parquet
+data/*.pickle
+!data/.gitkeep
+
+# Reports (generated content)
+reports/*/
+!reports/.gitkeep
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+*_backup.*
+*_old.*
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Archives
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# Quantitative Trading Specific
+# API Keys and credentials
+.env*
+!.env.example
+!env_example*
+config/secrets/
+credentials.json
+api_keys.json
+
+# Large data files
+*.h5
+*.hdf5
+*.xlsx
+data/tushare/
+data/yahoo/
+data/news_*/
+
+# Model files
+models/
+*.pkl
+*.pickle
+*.joblib
+
+# Generated reports (keep structure)
+reports/*.json
+reports/*.csv
+reports/*.png
+reports/*.pdf
+reports/daily/
+reports/2*/
+
+# Cache directories
+cache/tushare/
+cache/yahoo/
+cache/news_analysis/
+
+# Backup files
+*.bak
+*.backup
+
+# Local configuration
+config/local/
+local_config.yaml
+personal_settings.json
