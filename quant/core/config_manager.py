@@ -79,6 +79,37 @@ class ConfigManager:
     def get_news_analysis_config(self) -> Dict[str, Any]:
         """Get news analysis configuration"""
         return self.load_config("news_analysis_config")
+
+    def get_dolphin_config(self) -> Dict[str, Any]:
+        """Get AI Agent (dolphin) configuration"""
+        return self.load_config("dolphin")
+
+    def get_llm_settings(self, model_key: str = None) -> Dict[str, str]:
+        """Get LLM settings from dolphin config
+
+        Args:
+            model_key: Specific model key, or use default if None
+
+        Returns:
+            {"api_base": "...", "api_key": "...", "model": "..."}
+        """
+        config = self.get_dolphin_config()
+        if not config:
+            return {}
+
+        model_key = model_key or config.get("default", "qwen-plus")
+        llms = config.get("llms", {})
+        clouds = config.get("clouds", {})
+
+        model_config = llms.get(model_key, {})
+        cloud_name = model_config.get("cloud", "aliyun")
+        cloud_config = clouds.get(cloud_name, {})
+
+        return {
+            "api_base": cloud_config.get("api", ""),
+            "api_key": cloud_config.get("api_key", ""),
+            "model": model_config.get("model_name", model_key)
+        }
     
     def get_investment_targets(self) -> List[Dict[str, Any]]:
         """Get investment targets configuration"""

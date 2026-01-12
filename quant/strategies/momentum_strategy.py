@@ -22,6 +22,10 @@ except ImportError:
     # 回退到绝对导入
     from quant.strategies.base_strategy import BaseStrategy, MarketState, TradingDecision
 
+from quant.core.logging_config import get_logger
+logger = get_logger(__name__)
+
+
 @dataclass
 class MomentumTrade:
     """动量策略交易记录"""
@@ -86,11 +90,11 @@ class MomentumStrategy(BaseStrategy):
         # 策略状态
         self.reset()
         
-        print(f"Momentum strategy initialized for {self.symbol}")
-        print(f"  Momentum period: {self.momentum_period}, threshold: {self.momentum_threshold:.1%}")
-        print(f"  RSI: {self.rsi_period} period, {self.rsi_oversold}-{self.rsi_overbought}")
-        print(f"  MACD: {self.macd_fast}-{self.macd_slow}-{self.macd_signal}")
-        print(f"  Risk control: {self.stop_loss:.1%} stop loss, {self.take_profit:.1%} take profit")
+        logger.info("Momentum strategy initialized for {self.symbol}")
+        logger.info("  Momentum period: {self.momentum_period}, threshold: {self.momentum_threshold:.1%}")
+        logger.info("  RSI: {self.rsi_period} period, {self.rsi_oversold}-{self.rsi_overbought}")
+        logger.info("  MACD: {self.macd_fast}-{self.macd_slow}-{self.macd_signal}")
+        logger.info("  Risk control: {self.stop_loss:.1%} stop loss, {self.take_profit:.1%} take profit")
     
     def reset(self, initial_capital: float = 100000.0):
         """重置策略状态"""
@@ -116,7 +120,7 @@ class MomentumStrategy(BaseStrategy):
         self.entry_date = None
         self.last_trade_date = None
         
-        print(f"Momentum strategy reset with initial capital: ¥{initial_capital:,.2f}")
+        logger.info("Momentum strategy reset with initial capital: ¥{initial_capital:,.2f}")
     
     def makeDecision(self, market_state: MarketState) -> TradingDecision:
         """统一的决策接口"""
@@ -179,10 +183,17 @@ class MomentumStrategy(BaseStrategy):
         
         # 成交量动量（如果有成交量数据）
         volume_momentum = 0.0
-        if len(self.volume_history) >= self.momentum_period and self.volume_history[-1] > 0:
+        if (len(self.volume_history) >= self.momentum_period and 
+            self.volume_history[-1] is not None and 
+            not np.isnan(self.volume_history[-1]) and 
+            self.volume_history[-1] > 0):
             current_volume = self.volume_history[-1]
-            avg_volume = np.mean(list(self.volume_history)[-self.momentum_period:])
-            volume_momentum = (current_volume - avg_volume) / avg_volume if avg_volume > 0 else 0
+            # 过滤掉NaN值
+            valid_volumes = [v for v in list(self.volume_history)[-self.momentum_period:] 
+                           if v is not None and not np.isnan(v)]
+            if valid_volumes:
+                avg_volume = np.mean(valid_volumes)
+                volume_momentum = (current_volume - avg_volume) / avg_volume if avg_volume > 0 else 0
         
         # 收益率动量：最近收益率的趋势
         returns_momentum = 0.0
@@ -319,9 +330,18 @@ class MomentumStrategy(BaseStrategy):
         # 生成买入信号
         if all(buy_conditions) and buy_strength >= 0.67:  # 至少2/3条件满足
             trade_amount = self.current_cash * self.position_size
-            shares = int(trade_amount / current_price / 100) * 100  # 100股整数倍
-            shares = max(shares, 100)  # 最少100股
             
+            # 根据标的类型调整最小股数
+            if self.symbol in ['IXIC', 'SPX', 'DJI', 'NDX', 'NASDAQ', 'HKTECH', 'HSI', 'HSCEI'] or self.symbol.startswith('^'):
+                # 指数：直接买入不要求整数倍
+                shares = int(trade_amount / current_price)
+                min_shares = 1
+            else:
+                # 股票：100股整数倍
+                shares = int(trade_amount / current_price / 100) * 100
+                min_shares = 100
+            
+            shares = max(shares, min_shares)  # 确保达到最小股数
             actual_amount = shares * current_price * (1 + self.commission + self.slippage)
             
             if actual_amount <= self.current_cash:
@@ -408,11 +428,11 @@ class MomentumStrategy(BaseStrategy):
             self.trades.append(trade)
             
             if self.compact_logging:
-                print(f"📈 买入 {shares}股@¥{actual_price:.2f} 动量{decision.metadata.get('momentum_score', 0):.1%}")
+                logger.info("📈 买入 {shares}股@¥{actual_price:.2f} 动量{decision.metadata.get('momentum_score', 0):.1%}")
             elif self.verbose_logging:
-                print(f"[{market_state.timestamp.strftime('%Y-%m-%d')}] Momentum BUY: {shares} shares at ¥{actual_price:.2f}")
-                print(f"  Reason: {decision.reason}")
-                print(f"  Cash: ¥{self.current_cash:,.0f}, Position: {self.current_position}, Total: ¥{self.total_value:,.0f}")
+                logger.info("[{market_state.timestamp.strftime('%Y-%m-%d')}] Momentum BUY: {shares} shares at ¥{actual_price:.2f}")
+                logger.info("  Reason: {decision.reason}")
+                logger.info("  Cash: ¥{self.current_cash:,.0f}, Position: {self.current_position}, Total: ¥{self.total_value:,.0f}")
     
     def _execute_sell(self, decision: TradingDecision, market_state: MarketState):
         """执行卖出"""
@@ -452,11 +472,11 @@ class MomentumStrategy(BaseStrategy):
         self.trades.append(trade)
         
         if self.compact_logging:
-            print(f"📉 卖出 {shares}股@¥{actual_price:.2f} 盈亏¥{pnl:+.0f} 动量{decision.metadata.get('momentum_score', 0):.1%}")
+            logger.info("📉 卖出 {shares}股@¥{actual_price:.2f} 盈亏¥{pnl:+.0f} 动量{decision.metadata.get('momentum_score', 0):.1%}")
         elif self.verbose_logging:
-            print(f"[{market_state.timestamp.strftime('%Y-%m-%d')}] Momentum SELL: {shares} shares at ¥{actual_price:.2f}")
-            print(f"  Reason: {decision.reason}")
-            print(f"  P&L: ¥{pnl:+.2f}, Cash: ¥{self.current_cash:,.0f}, Total: ¥{self.total_value:,.0f}")
+            logger.info("[{market_state.timestamp.strftime('%Y-%m-%d')}] Momentum SELL: {shares} shares at ¥{actual_price:.2f}")
+            logger.info("  Reason: {decision.reason}")
+            logger.info("  P&L: ¥{pnl:+.2f}, Cash: ¥{self.current_cash:,.0f}, Total: ¥{self.total_value:,.0f}")
     
     def get_performance_metrics(self) -> Dict:
         """获取性能指标"""

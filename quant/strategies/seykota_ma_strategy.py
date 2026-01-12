@@ -25,6 +25,10 @@ try:
 except ImportError:
     from quant.strategies.base_strategy import BaseStrategy, MarketState, TradingDecision
 
+from quant.core.logging_config import get_logger
+logger = get_logger(__name__)
+
+
 @dataclass
 class SeyKotaTrade:
     """塞柯塔风格交易记录"""
@@ -79,8 +83,8 @@ class SeyKotaMAStrategy(BaseStrategy):
         # 状态变量
         self.reset()
         
-        print(f"🚀 SeyKota MA Strategy initialized for {self.symbol}")
-        print(f"   MA: {self.ma_short}/{self.ma_long} | ATR: {self.atr_period} | Risk: {self.position_risk:.1%}")
+        logger.info("🚀 SeyKota MA Strategy initialized for {self.symbol}")
+        logger.info("   MA: {self.ma_short}/{self.ma_long} | ATR: {self.atr_period} | Risk: {self.position_risk:.1%}")
     
     def makeDecision(self, market_state: MarketState) -> TradingDecision:
         """塞柯塔风格的决策制定"""
@@ -241,7 +245,9 @@ class SeyKotaMAStrategy(BaseStrategy):
     
     def _check_volume_confirmation(self, current_volume: float) -> bool:
         """检查成交量确认"""
-        if len(self.volume_ma_history) == 0 or np.isnan(self.volume_ma_history[-1]):
+        # 对于指数数据，volume可能为NaN，这是正常的
+        if (current_volume is None or np.isnan(current_volume) or 
+            len(self.volume_ma_history) == 0 or np.isnan(self.volume_ma_history[-1])):
             return True  # 无成交量数据时默认确认
         
         volume_ma = self.volume_ma_history[-1]
@@ -284,13 +290,19 @@ class SeyKotaMAStrategy(BaseStrategy):
             shares = int(position_value / price)
             
             # 确保不超过可用资金
-            max_shares = int(self.current_cash / (price * 1.01))  # 留1%缓冲
+            max_shares = int(self.current_cash / (price * 1.01))  # 疙1%缓冲
             shares = min(shares, max_shares)
             
-            # 100股整数倍
-            shares = (shares // 100) * 100
+            # 根据标的类型调整最小股数
+            if self.symbol in ['IXIC', 'SPX', 'DJI', 'NDX', 'NASDAQ', 'HKTECH', 'HSI', 'HSCEI'] or self.symbol.startswith('^'):
+                # 指数：直接买入不要求整数倍，最少1股
+                min_shares = 1
+            else:
+                # 股票：100股整数倍
+                shares = (shares // 100) * 100
+                min_shares = 100
             
-            return max(shares, 0)
+            return max(shares, min_shares)
         
         return 0
     

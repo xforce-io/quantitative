@@ -58,12 +58,8 @@ cache/
 .cache/
 *.cache
 
-# Data files (large datasets)
-data/*.csv
-data/*.json
-data/*.parquet
-data/*.pickle
-!data/.gitkeep
+# Data (generated / large datasets)
+data/
 
 # Reports (generated content)
 reports/*/
@@ -105,9 +101,6 @@ api_keys.json
 *.h5
 *.hdf5
 *.xlsx
-data/tushare/
-data/yahoo/
-data/news_*/
 
 # Model files
 models/

@@ -3,7 +3,8 @@ import numpy as np
 from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass
 from collections import deque
-from quant.config.config import Config
+# 移除不必要的config导入
+# from quant.config.config import Config
 import logging
 
 @dataclass
@@ -25,7 +26,14 @@ class Trade:
     slippage: float
     pnl: float = 0.0
 
-class UnifiedGridTradingStrategy:
+# 导入基础策略类
+try:
+    from .base_strategy import BaseStrategy, MarketState, TradingDecision
+except ImportError:
+    # 回退到绝对导入
+    from quant.strategies.base_strategy import BaseStrategy, MarketState, TradingDecision
+
+class UnifiedGridTradingStrategy(BaseStrategy):
     """
     Unified grid trading strategy with:
     1. Position ratio management (base position + grid trading)
@@ -40,8 +48,9 @@ class UnifiedGridTradingStrategy:
             symbol (str): Stock symbol
             config (Dict): Strategy configuration
         """
+        super().__init__(symbol, config)
         self.symbol = symbol
-        self.config = config or Config.GRID_STRATEGY_CONFIG
+        self.config = config or {}
         
         # Core strategy parameters
         self.gridLevels = self.config.get('gridLevels', 10)
@@ -63,7 +72,7 @@ class UnifiedGridTradingStrategy:
             self.minAdjustmentRatio = self.config.get('minAdjustmentRatio', 0.08)  # 8% minimum adjustment
             self.adjustmentCooldown = self.config.get('adjustmentCooldown', 180)  # 半年冷却期
             self.gridSpacing = max(self.gridSpacing, 0.035)  # 至少3.5%网格间距
-            print(f"🔧 Conservative adjustment mode enabled: 半年调整周期, 15%触发阈值, 3.5%+网格间距")
+            logger.info("🔧 Conservative adjustment mode enabled: 半年调整周期, 15%触发阈值, 3.5%+网格间距")
         else:
             # 标准模式：保持原有参数但稍作优化
             self.adjustmentThreshold = self.config.get('adjustmentThreshold', 0.12)  # 12% deviation (was 10%)
@@ -122,14 +131,59 @@ class UnifiedGridTradingStrategy:
         self.recyclingCooldown = self.config.get('recyclingCooldown', 300)  # 5分钟回收冷却期（秒）
         self.lastRecyclingTime = None
         
-        print(f"Unified grid strategy initialized for {self.symbol}")
-        print(f"Total capital: ¥{self.maxPosition:,.0f} Base position ratio: {self.baseRatio:.1%} (¥{self.basePositionValue:,.0f}) Grid trading ratio: {1-self.baseRatio:.1%} (¥{self.gridTradingValue:,.0f}) Grid levels: {self.gridLevels}, Spacing: {self.gridSpacing:.1%}")
-        print(f"Dynamic adjustment: {'Enabled' if self.dynamicEnabled else 'Disabled'}")
+        logger.info("Unified grid strategy initialized for {self.symbol}")
+        logger.info("Total capital: ¥{self.maxPosition:,.0f} Base position ratio: {self.baseRatio:.1%} (¥{self.basePositionValue:,.0f}) Grid trading ratio: {1-self.baseRatio:.1%} (¥{self.gridTradingValue:,.0f}) Grid levels: {self.gridLevels}, Spacing: {self.gridSpacing:.1%}")
+        logger.info("Dynamic adjustment: {'Enabled' if self.dynamicEnabled else 'Disabled'}")
         if self.dynamicEnabled:
-            print(f"  └─ Threshold: {self.adjustmentThreshold:.1%}, Min adjustment: {self.minAdjustmentRatio:.1%}")
-            print(f"  └─ Period: {self.centerPricePeriod} days, Cooldown: {self.adjustmentCooldown} days, Method: {self.centerPriceMethod}")
+            logger.info("  └─ Threshold: {self.adjustmentThreshold:.1%}, Min adjustment: {self.minAdjustmentRatio:.1%}")
+            logger.info("  └─ Period: {self.centerPricePeriod} days, Cooldown: {self.adjustmentCooldown} days, Method: {self.centerPriceMethod}")
         else:
-            print(f"  └─ Static grid (no automatic adjustments)")
+            logger.info("  └─ Static grid (no automatic adjustments)")
+    
+    def makeDecision(self, market_state: MarketState) -> TradingDecision:
+        current_price = market_state.currentPrice
+        
+        # Example simplified logic for decision-making, adjust as needed
+        for buy_grid in self.buyGrids:
+            if not buy_grid.isFilled and current_price <= buy_grid.price:
+                buy_grid.isFilled = True
+                trade_amount = self.gridTradingValue / len(self.buyGrids)
+                return TradingDecision(action='buy', amount=trade_amount, reason=f'Grid buy triggered at {buy_grid.price:.2f}')
+
+        for sell_grid in self.sellGrids:
+            if not sell_grid.isFilled and current_price >= sell_grid.price:
+                sell_grid.isFilled = True
+                trade_amount = self.gridTradingValue / len(self.sellGrids)
+                return TradingDecision(action='sell', amount=trade_amount, reason=f'Grid sell triggered at {sell_grid.price:.2f}')
+
+        return TradingDecision(action='hold', amount=0, reason='No grid triggers')
+        
+    def reset(self, initial_capital: float = 100000.0):
+        """Reset strategy state"""
+        self.currentPosition = 0
+        self.basePosition = 0
+        self.gridPosition = 0
+        self.currentCash = initial_capital
+        self.totalValue = initial_capital
+        self.initialCapital = initial_capital  # Record initial capital for P&L calculation
+        self.trades = []
+        self.buyGrids = []
+        self.sellGrids = []
+        self.basePositionEstablished = False
+        self.currentGridCenter = 0.0
+        self.lastAdjustmentDate = None
+        self.priceHistory.clear()
+        self.volumeHistory.clear()
+        self.gridAdjustments = []
+        # Portfolio value tracking for accurate performance calculation
+        self.dailyPortfolioHistory = []
+        self.lastUpdateDate = None
+        
+        logger.info("Strategy reset with initial capital: ¥{initial_capital:,.2f}")
+    
+    def get_performance_metrics(self) -> Dict:
+        """获取性能指标"""
+        return self.getPerformanceMetrics(getattr(self, 'initialCapital', 100000))
     
     def setupGrids(self, referencePrice: float, maxPrice: float = None, minPrice: float = None):
         """
@@ -155,10 +209,10 @@ class UnifiedGridTradingStrategy:
         
         # Grid setup日志 - 支持紧凑和详细模式
         if self.compactLogging:
-            print(f"📊 网格初始化: 中心¥{self.currentGridCenter:.1f} 基础仓{self.basePosition}股 买入档{len(self.buyGrids)}个 卖出档{len(self.sellGrids)}个")
+            logger.info("📊 网格初始化: 中心¥{self.currentGridCenter:.1f} 基础仓{self.basePosition}股 买入档{len(self.buyGrids)}个 卖出档{len(self.sellGrids)}个")
         elif self.verboseLogging:
-            print(f"📊 Grid setup: center: ¥{self.currentGridCenter:.2f} Base: {self.basePosition} shares (¥{self.basePosition * referencePrice:,.2f}) Grid position: {self.gridPosition} shares Total position: {self.currentPosition} shares Available cash: ¥{self.currentCash:,.2f}")
-            print(f"Buy grids: {len(self.buyGrids)} levels, Sell grids: {len(self.sellGrids)} levels")
+            logger.info("📊 Grid setup: center: ¥{self.currentGridCenter:.2f} Base: {self.basePosition} shares (¥{self.basePosition * referencePrice:,.2f}) Grid position: {self.gridPosition} shares Total position: {self.currentPosition} shares Available cash: ¥{self.currentCash:,.2f}")
+            logger.info("Buy grids: {len(self.buyGrids)} levels, Sell grids: {len(self.sellGrids)} levels")
     
     def _establishBasePosition(self, currentPrice: float):
         """Establish base position for value investing approach"""
@@ -175,7 +229,7 @@ class UnifiedGridTradingStrategy:
             # 使用40%现金建立基础仓位，保留60%用于网格交易
             actual_base_value = available_cash * 0.4
             if self.verboseLogging:
-                print(f"🔧 Adjusting base position: config需要¥{intended_base_value:,.0f}, 实际使用¥{actual_base_value:,.0f}")
+                logger.info("🔧 Adjusting base position: config需要¥{intended_base_value:,.0f}, 实际使用¥{actual_base_value:,.0f}")
         else:
             actual_base_value = intended_base_value
         
@@ -204,16 +258,16 @@ class UnifiedGridTradingStrategy:
                 
                 # 基础仓位建立日志
                 if self.compactLogging:
-                    print(f"📈 建仓: {shares}股@¥{actualCost/shares:.1f} 余额¥{self.currentCash:,.0f} 网格资金¥{self.gridTradingValue:,.0f}")
+                    logger.info("📈 建仓: {shares}股@¥{actualCost/shares:.1f} 余额¥{self.currentCash:,.0f} 网格资金¥{self.gridTradingValue:,.0f}")
                 elif self.verboseLogging:
-                    print(f"📈 Base position established:")
-                    print(f"  Shares: {shares}, Cost: ¥{actualCost:,.2f}")
-                    print(f"  Remaining cash: ¥{self.currentCash:,.2f}, Grid trading value: ¥{self.gridTradingValue:,.2f}")
+                    logger.info("📈 Base position established:")
+                    logger.info("  Shares: {shares}, Cost: ¥{actualCost:,.2f}")
+                    logger.info("  Remaining cash: ¥{self.currentCash:,.2f}, Grid trading value: ¥{self.gridTradingValue:,.2f}")
                 return
         
         # 如果无法建立基础仓位，至少标记为已尝试
         if self.verboseLogging:
-            print(f"⚠️  Cannot establish base position: need ¥{actual_base_value:,.2f}, have ¥{available_cash:,.2f}")
+            logger.info("⚠️  Cannot establish base position: need ¥{actual_base_value:,.2f}, have ¥{available_cash:,.2f}")
         self.basePositionEstablished = True
     
     def _setupGridsAroundCenter(self, centerPrice: float):
@@ -232,20 +286,20 @@ class UnifiedGridTradingStrategy:
        
         # First layer: Check if any position exists
         if self.currentPosition <= 0:
-            print(f"  ❌ No position available (position: {self.currentPosition}), skipping ALL sell grids")
+            logger.info("  ❌ No position available (position: {self.currentPosition}), skipping ALL sell grids")
             return
         
         # Second layer: Check minimum trading unit
         minRequiredShares = 100  # Minimum trading unit
         if self.currentPosition < minRequiredShares:
-            print(f"  ❌ Insufficient position for trading unit (have: {self.currentPosition}, need: {minRequiredShares})")
+            logger.info("  ❌ Insufficient position for trading unit (have: {self.currentPosition}, need: {minRequiredShares})")
             return
             
         # Third layer: Check grid quantity calculation
         testQuantity = self._calculateGridQuantity(centerPrice * 1.01)  # Test with slightly higher price
         if testQuantity > self.currentPosition:
-            print(f"  ❌ Grid quantity ({testQuantity}) exceeds available position ({self.currentPosition})")
-            print(f"  📊 Final grid setup: {len(self.buyGrids)} buy grids, 0 sell grids")
+            logger.info("  ❌ Grid quantity ({testQuantity}) exceeds available position ({self.currentPosition})")
+            logger.info("  📊 Final grid setup: {len(self.buyGrids)} buy grids, 0 sell grids")
             return
         
         # ALL CHECKS PASSED: Setup sell grids
@@ -261,22 +315,22 @@ class UnifiedGridTradingStrategy:
             if quantity > 0 and quantity <= self.currentPosition:
                 self.sellGrids.append(GridLevel(price=gridPrice, quantity=quantity))
             else:
-                print(f"    ⚠️  Skipping sell grid level {i+1}: quantity {quantity} invalid for position {self.currentPosition}")
+                logger.info("    ⚠️  Skipping sell grid level {i+1}: quantity {quantity} invalid for position {self.currentPosition}")
                 
         # Final grid setup日志 - 支持紧凑和详细模式
         if self.compactLogging:
             buy_range = f"买入¥{self.buyGrids[-1].price:.1f}-¥{self.buyGrids[0].price:.1f}" if self.buyGrids else "无买入档"
             sell_range = f"卖出¥{self.sellGrids[0].price:.1f}-¥{self.sellGrids[-1].price:.1f}" if self.sellGrids else "无卖出档"
-            print(f"最终网格=> 买入{len(self.buyGrids)}档 卖出{len(self.sellGrids)}档")
-            print(f"  {buy_range} {sell_range}")
+            logger.info("最终网格=> 买入{len(self.buyGrids)}档 卖出{len(self.sellGrids)}档")
+            logger.info("  {buy_range} {sell_range}")
         elif self.verboseLogging:
-            print(f"Final grid setup=> Buy: {len(self.buyGrids)} Sell: {len(self.sellGrids)}")
+            logger.info("Final grid setup=> Buy: {len(self.buyGrids)} Sell: {len(self.sellGrids)}")
             if self.buyGrids:
-                print(f"  Buy range: ¥{self.buyGrids[-1].price:.2f} - ¥{self.buyGrids[0].price:.2f}", end=" ")
+                logger.info("  Buy range: ¥{self.buyGrids[-1].price:.2f} - ¥{self.buyGrids[0].price:.2f}", end=" ")
             if self.sellGrids:
-                print(f"Sell range: ¥{self.sellGrids[0].price:.2f} - ¥{self.sellGrids[-1].price:.2f}")
+                logger.info("Sell range: ¥{self.sellGrids[0].price:.2f} - ¥{self.sellGrids[-1].price:.2f}")
             else:
-                print(f"  ⚠️  NO SELL GRIDS SET (this is expected if no position)")
+                logger.info("  ⚠️  NO SELL GRIDS SET (this is expected if no position)")
     
     def _calculateGridQuantity(self, price: float) -> int:
         """Calculate quantity for each grid level using grid trading allocation - ensure 100 shares minimum trading unit"""
@@ -362,7 +416,7 @@ class UnifiedGridTradingStrategy:
         should_adjust = adjustmentMagnitude >= effective_min_ratio
         
         if should_adjust and self.verboseLogging:
-            print(f"🔄 Grid adjustment criteria met => Price deviation: {currentDeviation:.2%} > threshold {effective_threshold:.2%}, Adjustment magnitude: {adjustmentMagnitude:.2%} > min ratio {effective_min_ratio:.2%}")
+            logger.info("🔄 Grid adjustment criteria met => Price deviation: {currentDeviation:.2%} > threshold {effective_threshold:.2%}, Adjustment magnitude: {adjustmentMagnitude:.2%} > min ratio {effective_min_ratio:.2%}")
         
         return should_adjust
     
@@ -409,17 +463,17 @@ class UnifiedGridTradingStrategy:
         
         # 紧凑日志模式
         if self.compactLogging:
-            print(f"🔄 调整#{self.adjustmentCounter} [{timestamp.strftime('%m-%d')}] "
+            logger.info(f"🔄 调整#{self.adjustmentCounter} [{timestamp.strftime('%m-%d')}] "
                   f"价格¥{currentPrice:.1f} 偏离{currentDeviation:.1%} → 中心¥{oldCenter:.1f}→¥{newCenter:.1f}")
         # 详细日志模式（默认）
         elif self.verboseLogging and self.showGridAdjustDetails:
-            print(f"🔄 Grid adjustment: Current: ¥{currentPrice:.2f} (deviation: {currentDeviation:.2%}) Old: ¥{oldCenter:.2f} New: ¥{newCenter:.2f} Adjustment: {adjustmentMagnitude:.2%}")
-            print(f"  Current: {self.currentPosition} shares (base: {self.basePosition}, grid: {self.gridPosition}) Cooldown until: {(timestamp + pd.Timedelta(days=self.adjustmentCooldown)).strftime('%Y-%m-%d')}")
+            logger.info(f"🔄 Grid adjustment: Current: ¥{currentPrice:.2f} (deviation: {currentDeviation:.2%}) Old: ¥{oldCenter:.2f} New: ¥{newCenter:.2f} Adjustment: {adjustmentMagnitude:.2%}")
+            logger.info(f"  Current: {self.currentPosition} shares (base: {self.basePosition}, grid: {self.gridPosition}) Cooldown until: {(timestamp + pd.Timedelta(days=self.adjustmentCooldown)).strftime('%Y-%m-%d')}")
         
         # SAFETY CHECK: Validate current position state before adjustment
         if self.currentPosition < 0:
             if self.showSafetyAlerts:
-                print(f"🚨 ERROR: Invalid position state before adjustment: {self.currentPosition}. Correcting.")
+                logger.info("🚨 ERROR: Invalid position state before adjustment: {self.currentPosition}. Correcting.")
             self.currentPosition = max(0, self.basePosition)
             self.gridPosition = self.currentPosition - self.basePosition
 
@@ -515,12 +569,12 @@ class UnifiedGridTradingStrategy:
     def _executeBuyOrder(self, timestamp: pd.Timestamp, grid: GridLevel):
         """Execute buy order when grid level is triggered - ensure 100 shares minimum trading unit"""
         if grid.quantity <= 0 or grid.price <= 0:
-            print(f"Warning: Invalid grid parameters - quantity: {grid.quantity}, price: {grid.price}")
+            logger.warning("Invalid grid parameters - quantity: {grid.quantity}, price: {grid.price}")
             return
         
         # Ensure quantity is multiple of 100 shares
         if grid.quantity % 100 != 0:
-            print(f"Warning: Adjusting buy quantity from {grid.quantity} to {int(grid.quantity / 100) * 100} shares (100x multiple)")
+            logger.warning("Adjusting buy quantity from {grid.quantity} to {int(grid.quantity / 100) * 100} shares (100x multiple)")
             grid.quantity = max(int(grid.quantity / 100) * 100, 100)
         
         # Apply slippage
@@ -560,11 +614,11 @@ class UnifiedGridTradingStrategy:
             
             # 紧凑日志模式
             if self.compactLogging:
-                print(f"📈 买#{self.tradeCounter} [{timestamp.strftime('%m-%d')}] {grid.quantity}股@¥{executionPrice:.1f} "
+                logger.info("📈 买#{self.tradeCounter} [{timestamp.strftime('%m-%d')}] {grid.quantity}股@¥{executionPrice:.1f} "
                       f"总仓{self.currentPosition} 盈亏¥{totalPnL:,.0f}({totalReturn:+.1f}%)")
             # 详细日志模式
             elif self.verboseLogging:
-                print(f"[{timestamp.strftime('%Y-%m-%d')}] Grid buy: {grid.quantity} shares at ¥{executionPrice:.2f} | "
+                logger.info("[{timestamp.strftime('%Y-%m-%d')}] Grid buy: {grid.quantity} shares at ¥{executionPrice:.2f} | "
                       f"Grid: {self.gridPosition} | Total: {self.currentPosition} | "
                       f"Cash: ¥{self.currentCash:,.0f} | Value: ¥{positionValue:,.0f} | "
                       f"Total: ¥{totalValue:,.0f} | P&L: ¥{totalPnL:,.0f} ({totalReturn:+.2f}%)")
@@ -575,32 +629,32 @@ class UnifiedGridTradingStrategy:
             # 现金不足，记录日志以便诊断
             if self.showSafetyAlerts:
                 if self.compactLogging:
-                    print(f"💰 现金不足: 需要¥{totalCost:,.0f}, 可用¥{self.currentCash:,.0f}, 差额¥{totalCost-self.currentCash:,.0f}")
+                    logger.info("💰 现金不足: 需要¥{totalCost:,.0f}, 可用¥{self.currentCash:,.0f}, 差额¥{totalCost-self.currentCash:,.0f}")
                 elif self.verboseLogging:
-                    print(f"💰 [CASH INSUFFICIENT] Cannot buy {grid.quantity} shares at ¥{executionPrice:.2f}")
-                    print(f"   Required: ¥{totalCost:,.2f} (trade: ¥{tradeValue:.2f} + commission: ¥{commissionCost:.2f})")
-                    print(f"   Available: ¥{self.currentCash:,.2f}")
-                    print(f"   Shortfall: ¥{totalCost - self.currentCash:,.2f}")
+                    logger.info("💰 [CASH INSUFFICIENT] Cannot buy {grid.quantity} shares at ¥{executionPrice:.2f}")
+                    logger.info("   Required: ¥{totalCost:,.2f} (trade: ¥{tradeValue:.2f} + commission: ¥{commissionCost:.2f})")
+                    logger.info("   Available: ¥{self.currentCash:,.2f}")
+                    logger.info("   Shortfall: ¥{totalCost - self.currentCash:,.2f}")
             grid.isFilled = True  # Mark as filled to prevent repeated attempts
     
     def _executeSellOrder(self, timestamp: pd.Timestamp, grid: GridLevel):
         """Execute sell order when grid level is triggered - ensure proper position deduction logic"""
         if grid.quantity <= 0 or grid.price <= 0:
-            print(f"Warning: Invalid grid parameters - quantity: {grid.quantity}, price: {grid.price}")
+            logger.warning("Invalid grid parameters - quantity: {grid.quantity}, price: {grid.price}")
             return
         
         # Ensure quantity is multiple of 100 shares
         if grid.quantity % 100 != 0:
-            print(f"Warning: Adjusting sell quantity from {grid.quantity} to {int(grid.quantity / 100) * 100} shares (100x multiple)")
+            logger.warning("Adjusting sell quantity from {grid.quantity} to {int(grid.quantity / 100) * 100} shares (100x multiple)")
             grid.quantity = max(int(grid.quantity / 100) * 100, 100)
         
         # ENHANCED SAFETY CHECK: Multiple layers of position validation
         if self.currentPosition <= 0:
             if self.showSafetyAlerts:
                 if self.compactLogging:
-                    print(f"❌ 无仓位拒绝卖出")
+                    logger.info("❌ 无仓位拒绝卖出")
                 else:
-                    print(f"🚨 CRITICAL SAFETY: No position available for selling. Current position: {self.currentPosition}. Trade REJECTED.")
+                    logger.info("🚨 CRITICAL SAFETY: No position available for selling. Current position: {self.currentPosition}. Trade REJECTED.")
             grid.isFilled = True
             return
             
@@ -608,9 +662,9 @@ class UnifiedGridTradingStrategy:
         if self.currentPosition < grid.quantity:
             if self.showSafetyAlerts:
                 if self.compactLogging:
-                    print(f"❌ 仓位不足: 需要{grid.quantity}, 持有{self.currentPosition}")
+                    logger.info("❌ 仓位不足: 需要{grid.quantity}, 持有{self.currentPosition}")
                 else:
-                    print(f"🚨 CRITICAL SAFETY: Insufficient position for sell. Need {grid.quantity}, have {self.currentPosition}. Trade REJECTED.")
+                    logger.info("🚨 CRITICAL SAFETY: Insufficient position for sell. Need {grid.quantity}, have {self.currentPosition}. Trade REJECTED.")
             grid.isFilled = True
             return
             
@@ -644,21 +698,21 @@ class UnifiedGridTradingStrategy:
         
         # SAFETY VALIDATION: Ensure no negative positions
         if self.gridPosition < 0:
-            print(f"🚨 CRITICAL ERROR: Grid position went negative: {self.gridPosition}. This should never happen!")
+            logger.info("🚨 CRITICAL ERROR: Grid position went negative: {self.gridPosition}. This should never happen!")
             self.gridPosition = 0
             
         if self.basePosition < 0:
-            print(f"🚨 CRITICAL ERROR: Base position went negative: {self.basePosition}. This should never happen!")
+            logger.info("🚨 CRITICAL ERROR: Base position went negative: {self.basePosition}. This should never happen!")
             self.basePosition = 0
             
         if remainingToSell > 0:
-            print(f"🚨 CRITICAL ERROR: Could not sell all shares! Remaining: {remainingToSell}")
+            logger.info("🚨 CRITICAL ERROR: Could not sell all shares! Remaining: {remainingToSell}")
             # This should never happen if our checks above are correct
             
         # Final position consistency check
         calculatedPosition = self.basePosition + self.gridPosition
         if calculatedPosition != self.currentPosition:
-            print(f"🚨 POSITION MISMATCH: calculated={calculatedPosition}, stored={self.currentPosition}. Correcting.")
+            logger.info("🚨 POSITION MISMATCH: calculated={calculatedPosition}, stored={self.currentPosition}. Correcting.")
             self.currentPosition = calculatedPosition
 
         # Execute trade (update cash)
@@ -687,11 +741,11 @@ class UnifiedGridTradingStrategy:
         
         # 紧凑日志模式
         if self.compactLogging:
-            print(f"📉 卖#{self.tradeCounter} [{timestamp.strftime('%m-%d')}] {grid.quantity}股@¥{executionPrice:.1f} "
+            logger.info("📉 卖#{self.tradeCounter} [{timestamp.strftime('%m-%d')}] {grid.quantity}股@¥{executionPrice:.1f} "
                   f"单笔¥{pnl:+.0f} 总仓{self.currentPosition} 盈亏¥{totalPnL:,.0f}({totalReturn:+.1f}%)")
         # 详细日志模式
         elif self.verboseLogging:
-            print(f"[{timestamp.strftime('%Y-%m-%d')}] Grid sell: {grid.quantity} shares at ¥{executionPrice:.2f}, P&L: ¥{pnl:.2f} | "
+            logger.info("[{timestamp.strftime('%Y-%m-%d')}] Grid sell: {grid.quantity} shares at ¥{executionPrice:.2f}, P&L: ¥{pnl:.2f} | "
                   f"Grid: {self.gridPosition} | Total: {self.currentPosition} | "
                   f"Cash: ¥{self.currentCash:,.0f} | Value: ¥{positionValue:,.0f} | "
                   f"Total: ¥{totalValue:,.0f} | P&L: ¥{totalPnL:,.0f} ({totalReturn:+.2f}%)")
@@ -720,12 +774,12 @@ class UnifiedGridTradingStrategy:
         if side == 'sell':
             # CRITICAL FIX: For abnormal sell (without sufficient position), P&L should be 0
             if self.currentPosition <= 0:
-                print(f"🚨 WARNING: Abnormal sell detected (no position). Current position: {self.currentPosition}. P&L set to 0.")
+                logger.info("🚨 WARNING: Abnormal sell detected (no position). Current position: {self.currentPosition}. P&L set to 0.")
                 return 0.0
                 
             # ADDITIONAL CHECK: If selling more than we have, this is an error
             if quantity > self.currentPosition:
-                print(f"🚨 WARNING: Selling more than available position. Selling {quantity}, have {self.currentPosition}. P&L set to 0.")
+                logger.info("🚨 WARNING: Selling more than available position. Selling {quantity}, have {self.currentPosition}. P&L set to 0.")
                 return 0.0
                 
             # Find corresponding buy trades (LIFO - Last In First Out for tax efficiency)
@@ -744,7 +798,7 @@ class UnifiedGridTradingStrategy:
                     matchedTrades += 1
                     
                     if self.verboseLogging and not self.compactLogging:
-                        print(f"🔄 P&L Match: Sell {matchedQuantity} @ ¥{price:.2f} vs Buy @ ¥{trade.price:.2f} = ¥{tradePnL:.2f}")
+                        logger.info("🔄 P&L Match: Sell {matchedQuantity} @ ¥{price:.2f} vs Buy @ ¥{trade.price:.2f} = ¥{tradePnL:.2f}")
                     
                     if remainingQuantity == 0:
                         break
@@ -752,7 +806,7 @@ class UnifiedGridTradingStrategy:
             # 修复：如果没有找到匹配的买入交易，使用平均成本计算
             if matchedTrades == 0 and len(self.trades) > 0:
                 if self.verboseLogging and not self.compactLogging:
-                    print(f"🔄 No exact buy match found. Using average cost method.")
+                    logger.info("🔄 No exact buy match found. Using average cost method.")
                 # 计算所有买入交易的平均成本
                 buyTrades = [t for t in self.trades if t.side in ['buy', 'buy_base']]
                 if buyTrades:
@@ -761,15 +815,15 @@ class UnifiedGridTradingStrategy:
                     avgBuyPrice = totalBuyValue / totalBuyQuantity if totalBuyQuantity > 0 else price
                     totalPnL = (price - avgBuyPrice) * quantity
                     if self.verboseLogging and not self.compactLogging:
-                        print(f"🔄 Average cost P&L: Sell {quantity} @ ¥{price:.2f} vs Avg ¥{avgBuyPrice:.2f} = ¥{totalPnL:.2f}")
+                        logger.info("🔄 Average cost P&L: Sell {quantity} @ ¥{price:.2f} vs Avg ¥{avgBuyPrice:.2f} = ¥{totalPnL:.2f}")
                 else:
                     if self.showSafetyAlerts:
-                        print(f"🚨 WARNING: No buy trades found for P&L calculation. P&L set to 0.")
+                        logger.info("🚨 WARNING: No buy trades found for P&L calculation. P&L set to 0.")
                     return 0.0
             
             # INFORMATIONAL: If partial matching (shouldn't happen in normal operation)
             if remainingQuantity > 0:
-                print(f"⚠️  INFO: Partial trade matching. Unmatched quantity: {remainingQuantity} shares.")
+                logger.info("⚠️  INFO: Partial trade matching. Unmatched quantity: {remainingQuantity} shares.")
                 
             return totalPnL
         
@@ -875,10 +929,10 @@ class UnifiedGridTradingStrategy:
         
         # SAFETY CHECK: Validate total return
         if abs(totalReturn) > 50:  # More than 5000% gain/loss
-            print(f"🚨 WARNING: Extreme total return detected: {totalReturn:.2%}")
-            print(f"   Initial capital: ¥{initialCapital:,.2f}")
-            print(f"   Final value: ¥{self.totalValue:,.2f}")
-            print(f"   This may indicate a calculation error.")
+            logger.info("🚨 WARNING: Extreme total return detected: {totalReturn:.2%}")
+            logger.info("   Initial capital: ¥{initialCapital:,.2f}")
+            logger.info("   Final value: ¥{self.totalValue:,.2f}")
+            logger.info("   This may indicate a calculation error.")
             # Cap extreme returns
             totalReturn = max(-0.99, min(10.0, totalReturn))
         
@@ -943,7 +997,7 @@ class UnifiedGridTradingStrategy:
         self.dailyPortfolioHistory = []
         self.lastUpdateDate = None
         
-        print(f"Strategy reset with initial capital: ¥{initialCapital:,.2f}") 
+        logger.info("Strategy reset with initial capital: ¥{initialCapital:,.2f}") 
     
     def run(self, data: pd.DataFrame, initialCapital: float) -> Dict:
         """Main backtest execution logic"""
@@ -1036,23 +1090,23 @@ class UnifiedGridTradingStrategy:
             currentPrice: 当前价格
         """
         if self.compactLogging:
-            print(f"♻️ 网格回收 [{timestamp.strftime('%m-%d %H:%M')}] 价格¥{currentPrice:.1f}")
+            logger.info("♻️ 网格回收 [{timestamp.strftime('%m-%d %H:%M')}] 价格¥{currentPrice:.1f}")
         elif self.verboseLogging:
-            print(f"♻️ Grid recycling triggered at price ¥{currentPrice:.2f}")
-            print(f"   Filled grids: {sum(1 for g in self.buyGrids + self.sellGrids if g.isFilled)}/{len(self.buyGrids) + len(self.sellGrids)}")
+            logger.info("♻️ Grid recycling triggered at price ¥{currentPrice:.2f}")
+            logger.info("   Filled grids: {sum(1 for g in self.buyGrids + self.sellGrids if g.isFilled)}/{len(self.buyGrids) + len(self.sellGrids)}")
         
         # 只重置已填充的网格，保持未填充的网格继续工作
         for grid in self.buyGrids:
             if grid.isFilled and abs(currentPrice - grid.price) / currentPrice < self.gridSpacing * 2:
                 grid.isFilled = False  # 重置填充状态
                 if self.verboseLogging:
-                    print(f"   Recycled buy grid at ¥{grid.price:.2f}")
+                    logger.info("   Recycled buy grid at ¥{grid.price:.2f}")
         
         for grid in self.sellGrids:
             if grid.isFilled and abs(currentPrice - grid.price) / currentPrice < self.gridSpacing * 2:
                 grid.isFilled = False  # 重置填充状态
                 if self.verboseLogging:
-                    print(f"   Recycled sell grid at ¥{grid.price:.2f}")
+                    logger.info("   Recycled sell grid at ¥{grid.price:.2f}")
         
         self.lastRecyclingTime = timestamp
 
@@ -1077,8 +1131,8 @@ class UnifiedGridTradingStrategy:
         center_price = initial_prices.mean()
         
         if self.verboseLogging:
-            print(f"📊 Initial center price calculation:")
-            print(f"  Using {initial_period} days average: ¥{center_price:.2f}")
-            print(f"  Price range: ¥{initial_prices.min():.2f} - ¥{initial_prices.max():.2f}")
+            logger.info("📊 Initial center price calculation:")
+            logger.info("  Using {initial_period} days average: ¥{center_price:.2f}")
+            logger.info("  Price range: ¥{initial_prices.min():.2f} - ¥{initial_prices.max():.2f}")
         
         return center_price

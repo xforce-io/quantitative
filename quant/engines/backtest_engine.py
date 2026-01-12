@@ -9,7 +9,10 @@ from datetime import datetime, timedelta
 
 from ..data_providers.data_provider_factory import createDataProvider
 from ..strategies.unified_grid_strategy import UnifiedGridTradingStrategy
-from quant.config.config import Config
+from quant.core.legacy_config import Config
+from quant.core.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 class BacktestEngine:
     """Backtesting engine for grid trading strategy"""
@@ -25,7 +28,7 @@ class BacktestEngine:
         if dataProvider is not None and not isinstance(dataProvider, str):
             # If someone passed an object instead of a string, extract the class name
             if hasattr(dataProvider, '__class__'):
-                print(f"Warning: Expected string but got {type(dataProvider)}. Using 'auto' instead.")
+                logger.warning("Expected string but got {type(dataProvider)}. Using 'auto' instead.")
                 dataProvider = 'auto'
             else:
                 dataProvider = str(dataProvider)
@@ -34,7 +37,7 @@ class BacktestEngine:
         
         # Ensure providerName is a string
         if not isinstance(providerName, str):
-            print(f"Warning: Config defaultProvider is not a string: {type(providerName)}. Using 'auto'.")
+            logger.warning("Config defaultProvider is not a string: {type(providerName)}. Using 'auto'.")
             providerName = 'auto'
         
         try:
@@ -44,17 +47,17 @@ class BacktestEngine:
                 providerConfig = Config.DATA_PROVIDER_CONFIG.get(providerName, {})
                 self.dataProvider = createDataProvider(providerName, providerConfig)
             
-            print(f"Initialized backtest engine with {self.dataProvider.__class__.__name__}")
+            logger.info("Initialized backtest engine with {self.dataProvider.__class__.__name__}")
             
         except Exception as e:
-            print(f"Failed to initialize data provider '{providerName}': {str(e)}")
-            print("Falling back to auto mode...")
+            logger.info("Failed to initialize data provider '{providerName}': {str(e)}")
+            logger.info("Falling back to auto mode...")
             self.dataProvider = createDataProvider('auto', Config.DATA_PROVIDER_CONFIG)
         
         self.results = {}
         
     def runBacktest(self, symbol: str, startDate: str, endDate: str, 
-                   initialCapital: float = None, strategyConfig: Dict = None) -> Dict:
+                   initialCapital: float = None, strategyConfig: Dict = None, strategy = None) -> Dict:
         """
         Run backtest for grid trading strategy
         
@@ -64,13 +67,14 @@ class BacktestEngine:
             endDate (str): End date in YYYYMMDD format
             initialCapital (float): Initial capital for trading
             strategyConfig (Dict): Strategy configuration parameters
+            strategy: Strategy instance to use (if None, uses UnifiedGridTradingStrategy)
             
         Returns:
             Dict: Backtest results
         """
-        print(f"{'='*80}")
-        print(f"🚀 开始回测 {symbol} | 期间: {startDate} - {endDate} | 初始资金: ¥{initialCapital:,.0f}")
-        print(f"{'='*80}")
+        logger.info("{'='*80}")
+        logger.info("🚀 开始回测 {symbol} | 期间: {startDate} - {endDate} | 初始资金: ¥{initialCapital:,.0f}")
+        logger.info("{'='*80}")
         
         # Set default values
         if initialCapital is None:
@@ -81,75 +85,114 @@ class BacktestEngine:
         if stockData.empty:
             raise ValueError(f"No data available for {symbol}")
         
-        # Initialize strategy - FIXED: Always use unified strategy for better safety
-        # The old GridTradingStrategy has potential issues with position tracking
-        strategy = UnifiedGridTradingStrategy(symbol, strategyConfig)
-        
-        # Add safety check: ensure strategy has proper configuration
-        if not strategyConfig:
-            print("Warning: No strategy configuration provided, using default safe config")
-            strategyConfig = {
-                'gridLevels': 6,
-                'gridSpacing': 0.02,  # 2%
-                'maxPosition': 100000,
-                'baseRatio': 0.2,  # Conservative 20% base position
-                'commission': 0.0003,
-                'slippage': 0.001,
-                'dynamicEnabled': True  # Enable dynamic features for better risk control
-            }
+        # Initialize strategy
+        if strategy is None:
+            # Fall back to unified grid strategy
             strategy = UnifiedGridTradingStrategy(symbol, strategyConfig)
+            
+            # Add safety check: ensure strategy has proper configuration
+            if not strategyConfig:
+                logger.warning("No strategy configuration provided, using default safe config")
+                strategyConfig = {
+                    'gridLevels': 6,
+                    'gridSpacing': 0.02,  # 2%
+                    'maxPosition': 100000,
+                    'baseRatio': 0.2,  # Conservative 20% base position
+                    'commission': 0.0003,
+                    'slippage': 0.001,
+                    'dynamicEnabled': True  # Enable dynamic features for better risk control
+                }
+                strategy = UnifiedGridTradingStrategy(symbol, strategyConfig)
         
         strategy.reset(initialCapital)
         
-        # Calculate price range for grid setup
-        priceHigh = stockData['high'].max()
-        priceLow = stockData['low'].min()
-        referencePrice = stockData['close'].iloc[0]
-        
-        # Setup grids with some buffer
-        maxPrice = priceHigh * 1.1
-        minPrice = priceLow * 0.9
-        strategy.setupGrids(referencePrice, maxPrice, minPrice)
+        # Setup grids if strategy supports it (for grid-based strategies)
+        if hasattr(strategy, 'setupGrids'):
+            # Calculate price range for grid setup
+            priceHigh = stockData['high'].max()
+            priceLow = stockData['low'].min()
+            referencePrice = stockData['close'].iloc[0]
+            
+            # Setup grids with some buffer
+            maxPrice = priceHigh * 1.1
+            minPrice = priceLow * 0.9
+            strategy.setupGrids(referencePrice, maxPrice, minPrice)
         
         # Run simulation
         portfolioValues = []
         positions = []
         cashValues = []
         
+        # Import MarketState for non-grid strategies
+        from ..strategies.base_strategy import MarketState
+        
         for timestamp, row in stockData.iterrows():
             currentPrice = row['close']
             currentVolume = row.get('vol', 0)  # Get volume if available
             
-            # Process market data through strategy (pass volume for dynamic strategies)
-            if hasattr(strategy, 'onMarketData') and 'volume' in strategy.onMarketData.__code__.co_varnames:
-                strategy.onMarketData(timestamp, currentPrice, currentVolume)
-            else:
-                strategy.onMarketData(timestamp, currentPrice)
-            
-            # Update portfolio value
-            strategy.updatePortfolioValue(currentPrice)
+            # Check if strategy uses the new BaseStrategy interface
+            if hasattr(strategy, 'makeDecision'):
+                # New interface: use makeDecision with MarketState
+                market_state = MarketState(
+                    timestamp=timestamp,
+                    open=row.get('open', currentPrice),
+                    high=row.get('high', currentPrice),
+                    low=row.get('low', currentPrice),
+                    close=currentPrice,
+                    volume=currentVolume
+                )
+                decision = strategy.makeDecision(market_state)
+                
+                # Calculate portfolio value
+                portfolio_value = strategy.cash + (strategy.position * currentPrice)
+                positions.append(strategy.position)
+                cashValues.append(strategy.cash)
+            elif hasattr(strategy, 'onMarketData'):
+                # Old interface: use onMarketData
+                if 'volume' in strategy.onMarketData.__code__.co_varnames:
+                    strategy.onMarketData(timestamp, currentPrice, currentVolume)
+                else:
+                    strategy.onMarketData(timestamp, currentPrice)
+                
+                # Update portfolio value
+                strategy.updatePortfolioValue(currentPrice)
+                portfolio_value = strategy.totalValue
+                positions.append(strategy.currentPosition)
+                cashValues.append(strategy.currentCash)
             
             # Record daily values
-            portfolioValues.append(strategy.totalValue)
-            positions.append(strategy.currentPosition)
-            cashValues.append(strategy.currentCash)
+            portfolioValues.append(portfolio_value)
         
-        # Calculate performance metrics
+        # Calculate final portfolio value
+        final_price = stockData['close'].iloc[-1]
+        if hasattr(strategy, 'totalValue'):
+            final_value = strategy.totalValue
+        else:
+            final_value = strategy.cash + (strategy.position * final_price)
+        
         # SAFETY CHECK: Validate final portfolio value
-        if strategy.totalValue <= 0:
-            print(f"🚨 CRITICAL ERROR: Final portfolio value is 0 or negative: {strategy.totalValue}")
-            print(f"   Initial capital: {initialCapital}")
-            print(f"   This indicates a serious calculation error.")
+        if final_value <= 0:
+            logger.info("🚨 CRITICAL ERROR: Final portfolio value is 0 or negative: {final_value}")
+            logger.info("   Initial capital: {initialCapital}")
+            logger.info("   This indicates a serious calculation error.")
             # Set a reasonable minimum value
-            strategy.totalValue = max(initialCapital * 0.01, 1000)  # At least 1% of initial capital
+            final_value = max(initialCapital * 0.01, 1000)  # At least 1% of initial capital
         
-        if strategy.totalValue > initialCapital * 100:  # More than 10000% gain
-            print(f"🚨 WARNING: Extremely high portfolio value: {strategy.totalValue}")
-            print(f"   Initial capital: {initialCapital}")
-            print(f"   Gain: {(strategy.totalValue / initialCapital - 1):.1%}")
-            print(f"   This may indicate a calculation error.")
+        if final_value > initialCapital * 100:  # More than 10000% gain
+            logger.info("🚨 WARNING: Extremely high portfolio value: {final_value}")
+            logger.info("   Initial capital: {initialCapital}")
+            logger.info("   Gain: {(final_value / initialCapital - 1):.1%}")
+            logger.info("   This may indicate a calculation error.")
         
-        performanceMetrics = strategy.getPerformanceMetrics(initialCapital)
+        # Get performance metrics
+        if hasattr(strategy, 'getPerformanceMetrics'):
+            performanceMetrics = strategy.getPerformanceMetrics(initialCapital)
+        else:
+            # Calculate basic metrics
+            performanceMetrics = strategy.get_performance_metrics()
+            performanceMetrics['totalValue'] = final_value
+            performanceMetrics['totalReturn'] = (final_value - initialCapital) / initialCapital
+            performanceMetrics['totalTrades'] = len(strategy.trades) if hasattr(strategy, 'trades') else 0
         
         # Calculate additional metrics
         additionalMetrics = self._calculateAdditionalMetrics(
@@ -190,12 +233,12 @@ class BacktestEngine:
         
         optimization_method = strategyConfig.get('optimizationMethod') if strategyConfig else None
         method_tag = f" [{optimization_method}]" if optimization_method else ""
-        print(f"✅ 回测完成{method_tag} {symbol} | 总收益: {performanceMetrics.get('totalReturn', 0):+.2%} | 交易: {performanceMetrics.get('totalTrades', 0)}次 | 胜率: {performanceMetrics.get('winRate', 0):.1%}")
+        logger.info("✅ 回测完成{method_tag} {symbol} | 总收益: {performanceMetrics.get('totalReturn', 0):+.2%} | 交易: {performanceMetrics.get('totalTrades', 0)}次 | 胜率: {performanceMetrics.get('winRate', 0):.1%}")
         if dynamicEnabled:
-            print(f"📊 策略参数 | 动态调整: 启用 (阈值{adjustmentThreshold:.1%} 冷却{adjustmentCooldown}天) | 网格: {gridLevels}层 {gridSpacing:.1%}间距 | 基础仓位: {baseRatio:.1%} | 网格调整: {gridAdjustmentCount}次")
+            logger.info("📊 策略参数 | 动态调整: 启用 (阈值{adjustmentThreshold:.1%} 冷却{adjustmentCooldown}天) | 网格: {gridLevels}层 {gridSpacing:.1%}间距 | 基础仓位: {baseRatio:.1%} | 网格调整: {gridAdjustmentCount}次")
         else:
-            print(f"📊 策略参数 | 动态调整: 禁用 | 网格: {gridLevels}层 {gridSpacing:.1%}间距 | 基础仓位: {baseRatio:.1%} | 网格调整: {gridAdjustmentCount}次")
-        print(f"{'='*80}")
+            logger.info("📊 策略参数 | 动态调整: 禁用 | 网格: {gridLevels}层 {gridSpacing:.1%}间距 | 基础仓位: {baseRatio:.1%} | 网格调整: {gridAdjustmentCount}次")
+        logger.info("{'='*80}")
         
         return results
     
@@ -230,21 +273,37 @@ class BacktestEngine:
         else:
             beta = 0
         
-        # Calculate alpha
+        # Calculate alpha and annualized return
         riskFreeRate = 0.03  # Assume 3% risk-free rate
         stockReturn = (stockData['close'].iloc[-1] / stockData['close'].iloc[0]) - 1
         portfolioReturn = (portfolioSeries.iloc[-1] / portfolioSeries.iloc[0]) - 1
         alpha = portfolioReturn - (riskFreeRate + beta * (stockReturn - riskFreeRate))
+        
+        # Calculate annualized return
+        numDays = (stockData.index[-1] - stockData.index[0]).days
+        numYears = numDays / 365.25
+        annualReturn = (1 + portfolioReturn) ** (1 / numYears) - 1 if numYears > 0 else 0
         
         # Calculate Calmar ratio
         calmarRatio = portfolioReturn / abs(maxDrawdown) if maxDrawdown != 0 and abs(maxDrawdown) > 1e-10 else 0
         
         # Trade statistics
         if trades:
-            profitableTrades = [t for t in trades if t.pnl > 0]
-            avgProfit = np.mean([t.pnl for t in profitableTrades]) if profitableTrades else 0
-            avgLoss = np.mean([t.pnl for t in trades if t.pnl < 0]) if any(t.pnl < 0 for t in trades) else 0
-            profitFactor = abs(avgProfit / avgLoss) if avgLoss != 0 and abs(avgLoss) > 1e-10 else float('inf')
+            # Handle both dict and object trades
+            try:
+                if isinstance(trades[0], dict):
+                    # Dict-based trades
+                    profitableTrades = [t for t in trades if t.get('pnl', 0) > 0]
+                    avgProfit = np.mean([t.get('pnl', 0) for t in profitableTrades]) if profitableTrades else 0
+                    avgLoss = np.mean([t.get('pnl', 0) for t in trades if t.get('pnl', 0) < 0]) if any(t.get('pnl', 0) < 0 for t in trades) else 0
+                else:
+                    # Object-based trades
+                    profitableTrades = [t for t in trades if t.pnl > 0]
+                    avgProfit = np.mean([t.pnl for t in profitableTrades]) if profitableTrades else 0
+                    avgLoss = np.mean([t.pnl for t in trades if t.pnl < 0]) if any(t.pnl < 0 for t in trades) else 0
+                profitFactor = abs(avgProfit / avgLoss) if avgLoss != 0 and abs(avgLoss) > 1e-10 else float('inf')
+            except:
+                avgProfit = avgLoss = profitFactor = 0
         else:
             avgProfit = avgLoss = profitFactor = 0
         
@@ -258,7 +317,8 @@ class BacktestEngine:
             'avgLoss': avgLoss,
             'profitFactor': profitFactor,
             'finalValue': portfolioSeries.iloc[-1],
-            'benchmarkReturn': stockReturn
+            'benchmarkReturn': stockReturn,
+            'annualReturn': annualReturn
         }
     
     def optimizeParameters(self, symbol: str, startDate: str, endDate: str, 
@@ -275,7 +335,7 @@ class BacktestEngine:
         Returns:
             Dict: Optimization results
         """
-        print(f"Starting parameter optimization for {symbol}")
+        logger.info("Starting parameter optimization for {symbol}")
         
         bestPerformance = -float('inf')
         bestParams = None
@@ -285,7 +345,7 @@ class BacktestEngine:
         paramCombinations = self._generateParameterCombinations(parameterRanges)
         
         for i, params in enumerate(paramCombinations):
-            print(f"Testing parameter set {i+1}/{len(paramCombinations)}: {params}")
+            logger.info("Testing parameter set {i+1}/{len(paramCombinations)}: {params}")
             
             try:
                 # Create custom config for this test
@@ -313,7 +373,7 @@ class BacktestEngine:
                     bestParams = params
                     
             except Exception as e:
-                print(f"Error testing parameters {params}: {str(e)}")
+                logger.error("testing parameters {params}: {str(e)}")
                 continue
         
         optimizationResults = {
@@ -323,15 +383,15 @@ class BacktestEngine:
             'symbol': symbol
         }
         
-        print(f"Optimization completed. Best performance: {bestPerformance:.2%}")
-        print(f"Best parameters: {bestParams}")
+        logger.info("Optimization completed. Best performance: {bestPerformance:.2%}")
+        logger.info("Best parameters: {bestParams}")
         
         return optimizationResults
     
     def _generateParameterCombinations(self, parameterRanges: Dict) -> List[Dict]:
         """Generate all parameter combinations for optimization"""
         import itertools
-        
+
         keys = list(parameterRanges.keys())
         values = list(parameterRanges.values())
         
@@ -378,7 +438,7 @@ class BacktestEngine:
     def plotResults(self, symbol: str):
         """Plot backtest results using plotly"""
         if symbol not in self.results:
-            print(f"No results found for {symbol}")
+            logger.info("No results found for {symbol}")
             return
         
         result = self.results[symbol]
@@ -490,7 +550,7 @@ class BacktestEngine:
     def exportResults(self, symbol: str, filename: str = None):
         """Export backtest results to Excel"""
         if symbol not in self.results:
-            print(f"No results found for {symbol}")
+            logger.info("No results found for {symbol}")
             return
         
         result = self.results[symbol]
@@ -532,4 +592,4 @@ class BacktestEngine:
             })
             portfolioDF.to_excel(writer, sheet_name='Portfolio_Daily', index=False)
         
-        print(f"Results exported to {filename}") 
+        logger.info("Results exported to {filename}") 

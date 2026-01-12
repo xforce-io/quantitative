@@ -363,7 +363,7 @@ def printColoredText(text: str, color: str = 'white') -> None:
     }
     
     colorCode = colors.get(color, colors['white'])
-    print(f"{colorCode}{text}{colors['reset']}")
+    logger.info("{colorCode}{text}{colors['reset']}")
 
 def createSystemReport() -> Dict[str, Any]:
     """

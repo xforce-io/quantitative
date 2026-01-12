@@ -16,6 +16,9 @@ import time
 from datetime import datetime, timedelta
 from typing import Dict, List
 from .base_data_provider import BaseDataProvider
+from quant.core.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 try:
     import yfinance as yf
@@ -68,10 +71,10 @@ class YahooDataProvider(BaseDataProvider):
             if cacheEnabled and os.path.exists(cacheFile):
                 fileTime = os.path.getmtime(cacheFile)
                 if time.time() - fileTime < cacheExpiry:
-                    print(f"Loading cached data for {symbol}")
+                    logger.info("Loading cached data for {symbol}")
                     return pd.read_csv(cacheFile, index_col=0, parse_dates=True)
             
-            print(f"Fetching data for {symbol} from Yahoo Finance")
+            logger.info("Fetching data for {symbol} from Yahoo Finance")
             
             # Convert dates to Yahoo Finance format
             start = pd.to_datetime(startDate, format='%Y%m%d')
@@ -109,7 +112,7 @@ class YahooDataProvider(BaseDataProvider):
             return df
             
         except Exception as e:
-            print(f"Error fetching data for {symbol}: {str(e)}")
+            logger.error("fetching data for {symbol}: {str(e)}")
             raise
     
     def _processYahooData(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -162,7 +165,7 @@ class YahooDataProvider(BaseDataProvider):
             }
             
         except Exception as e:
-            print(f"Error getting stock info for {symbol}: {str(e)}")
+            logger.error("getting stock info for {symbol}: {str(e)}")
             raise
     
     def searchStock(self, keyword: str) -> pd.DataFrame:
@@ -206,7 +209,7 @@ class YahooDataProvider(BaseDataProvider):
             return pd.DataFrame(results)
             
         except Exception as e:
-            print(f"Error searching stocks: {str(e)}")
+            logger.error("searching stocks: {str(e)}")
             return pd.DataFrame()
     
     def validateSymbol(self, symbol: str) -> bool:
@@ -225,9 +228,20 @@ class YahooDataProvider(BaseDataProvider):
         symbol = symbol.upper().strip()
         
         # Yahoo Finance uses different formats for different markets
-        # This is a basic implementation - extend as needed
+        # Handle Chinese A-shares
+        if symbol.endswith('.SH'):  # Shanghai Stock Exchange
+            # Yahoo Finance format for Shanghai: SYMBOL.SS
+            base_symbol = symbol.replace('.SH', '')
+            return f"{base_symbol}.SS"
+        elif symbol.endswith('.SZ'):  # Shenzhen Stock Exchange
+            # Yahoo Finance format for Shenzhen: SYMBOL.SZ
+            return symbol  # Already in correct format
         
-        # Handle Chinese stocks (if trading on US exchanges)
+        # Handle Hong Kong stocks
+        if symbol.endswith('.HK'):
+            return symbol  # Already in correct format
+        
+        # Handle Chinese ADRs on US exchanges
         chineseAdrs = {
             'BABA': 'BABA',    # Alibaba
             'JD': 'JD',        # JD.com
@@ -239,6 +253,14 @@ class YahooDataProvider(BaseDataProvider):
         
         if symbol in chineseAdrs:
             return chineseAdrs[symbol]
+        
+        # Handle common indices
+        if symbol == 'HSI':
+            return '^HSI'  # Hang Seng Index
+        elif symbol == 'HKTECH':
+            return '3032.HK'  # Hang Seng Tech Index ETF
+        elif symbol == 'IXIC':
+            return '^IXIC'  # NASDAQ Composite
         
         return symbol
     

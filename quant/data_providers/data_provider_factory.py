@@ -15,6 +15,10 @@ from .data_provider import TushareDataProvider
 from .yahoo_data_provider import YahooDataProvider
 from .cached_provider import CachedDataProvider
 
+from quant.core.logging_config import get_logger
+logger = get_logger(__name__)
+
+
 class DataProviderFactory:
     """Factory class for creating data providers"""
     
@@ -151,10 +155,10 @@ class AutoDataProvider:
                 providerConfig = self.config.get(providerName, {})
                 self.activeProvider = DataProviderFactory.create(providerName, providerConfig, self.enableCache)
                 cacheStatus = "with cache" if self.enableCache else "without cache"
-                print(f"Initialized data provider: {providerName} ({cacheStatus})")
+                logger.info("Initialized data provider: {providerName} ({cacheStatus})")
                 return
             except Exception as e:
-                print(f"Failed to initialize {providerName}: {str(e)}")
+                logger.info("Failed to initialize {providerName}: {str(e)}")
                 continue
         
         raise RuntimeError(f"No data providers could be initialized from: {self.preferredProviders}")
@@ -193,7 +197,7 @@ class AutoDataProvider:
             return self.activeProvider.getIndexData(symbol, startDate, endDate, freq)
         else:
             # Fallback to getStockData for providers that don't support index data
-            print(f"Provider does not support getIndexData, falling back to getStockData for {symbol}")
+            logger.info("Provider does not support getIndexData, falling back to getStockData for {symbol}")
             formattedSymbol = self.activeProvider.formatSymbol(symbol)
             return self.activeProvider.getStockData(formattedSymbol, startDate, endDate, freq)
     
@@ -204,9 +208,9 @@ class AutoDataProvider:
             newProvider = DataProviderFactory.create(providerName, providerConfig, self.enableCache)
             self.activeProvider = newProvider
             cacheStatus = "with cache" if self.enableCache else "without cache"
-            print(f"Switched to data provider: {providerName} ({cacheStatus})")
+            logger.info("Switched to data provider: {providerName} ({cacheStatus})")
         except Exception as e:
-            print(f"Failed to switch to {providerName}: {str(e)}")
+            logger.info("Failed to switch to {providerName}: {str(e)}")
             raise
     
     def getActiveProviderInfo(self):

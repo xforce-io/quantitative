@@ -6,100 +6,87 @@
 
 ```
 quantitative_trading/
-├── .gitignore                    # Git忽略文件配置
-├── README.md                     # 项目主要说明文档
-├── requirements.txt              # Python依赖包列表
-├── env_example_unified.txt       # 环境变量配置示例
-├── archive_old_analysis/         # 旧版分析脚本存档
-├── cache/                        # API响应缓存数据
-├── config/                       # 配置文件目录
-├── data/                         # 数据存储目录
-├── demo/                         # 演示脚本目录
-├── docs/                         # 项目文档目录
-├── log/                          # 日志文件目录
-├── quant/                        # 核心量化分析代码
-├── reports/                      # 生成的分析报告
-├── tools/                        # 工具脚本目录
-└── venv/                         # Python虚拟环境
+├── README.md              # 项目说明文档
+├── GEMINI.md              # Gemini AI助手配置
+├── CLAUDE.md              # Claude AI助手配置
+├── requirements.txt       # Python依赖包列表
+├── mypy.ini               # MyPy类型检查配置
+├── pytest.ini             # Pytest测试配置
+│
+├── bin/                   # 脚本和工具目录
+│   ├── examples/          # 演示脚本
+│   └── *.py / *.sh        # CLI工具脚本
+│
+├── config/                # 配置文件目录
+│   ├── config.yaml        # 主配置文件
+│   ├── portfolios.yaml    # 投资组合配置
+│   └── ...                # 其他配置
+│
+├── quant/                 # 核心代码目录
+├── tests/                 # 单元测试目录
+├── docs/                  # 项目文档目录
+│
+├── data/                  # 数据存储目录
+├── cache/                 # API缓存目录
+├── logs/                  # 日志目录
+├── reports/               # 分析报告目录
+│
+└── venv/                  # Python虚拟环境
 ```
 
 ## 各目录详细说明
 
-### `/docs/` - 项目文档
-存放所有项目相关的文档，包括：
-- 架构设计文档
-- 配置说明文档
-- 使用指南
-- 开发文档
-- 改进建议文档
-
-### `/demo/` - 演示脚本
-存放各种演示和测试脚本，包括：
-- 投资分析演示
-- 新闻分析演示
-- 系统功能测试脚本
-- 主要功能展示脚本
-
-### `/tools/` - 工具脚本
-存放独立的工具脚本，包括：
-- 新闻质量评估器
-- 智能关键词匹配器
-- 增强情感分析器
-- 缓存管理工具
-- 公司分析工具
-
-### `/quant/` - 核心代码
-存放核心的量化分析代码，按功能模块组织：
-- 新闻收集和分析
-- 数据接口
-- 交易策略
-- 配置管理
+### `/bin/` - 脚本和工具
+存放所有可执行脚本和工具：
+- **入口脚本**: `advisor.py`, `backtest.py`, `analyze_portfolio.py`
+- **分析工具**: `momentum_analyzer.py`, `screen_etfs.py`
+- **辅助工具**: `system_check.py`, `verify_etf_codes.py`, `calculate_returns.py`
+- **演示脚本**: `examples/` 子目录
 
 ### `/config/` - 配置文件
-存放实际的配置文件（YAML格式），按股票/投资品组织。
-注意：配置相关的代码应放在 `quant/config/` 下。
+所有配置文件统一存放：
+- `config.yaml` - 系统主配置
+- `portfolios.yaml` - 投资组合配置
+- `screens.yaml` - 筛选器配置
+- `etf_categories.yaml` - ETF分类
+- `industry_taxonomy.yaml` - 行业分类
+
+### `/quant/` - 核心代码
+核心量化分析代码，按功能模块组织：
+- `agents/` - 智能代理
+- `analysis/` - 分析模块
+- `cli/` - 命令行接口
+- `config/` - 配置加载器
+- `core/` - 核心基础设施
+- `data_providers/` - 数据提供者
+- `engines/` - 执行引擎
+- `strategies/` - 交易策略
+
+### `/docs/` - 项目文档
+所有项目文档：
+- 架构设计、使用指南、功能说明
+- 开发规范、任务计划
+
+### `/tests/` - 单元测试
+项目测试代码。
 
 ### `/data/` - 数据存储
-存放收集的原始数据：
-- 新闻数据
-- 股价数据
-- 其他市场数据
+股价、ETF等市场数据。
 
-### `/cache/` - 缓存数据
-存放API响应的缓存数据，按提供商和API类型组织，避免重复调用。
+### `/cache/` - 缓存
+API响应缓存，避免重复调用。
 
-### `/reports/` - 分析报告
-存放生成的分析报告，按时间间隔和分析类型组织：
-```
-reports/
-├── daily/
-├── weekly/
-└── monthly/
-    ├── sentiment_analysis/
-    ├── technical_analysis/
-    └── fundamental_analysis/
-        └── <company>/
-```
+### `/logs/` - 日志
+系统运行日志。
 
-### `/log/` - 日志文件
-存放系统运行日志。
-
-### `/archive_old_analysis/` - 旧版存档
-存放旧版本的分析脚本，用于参考和备份。
-
-## 文件组织原则
-
-1. **文档集中化**：所有文档统一放在 `docs/` 目录
-2. **代码模块化**：核心代码按功能模块组织在 `quant/` 下
-3. **工具独立化**：独立工具脚本放在 `tools/` 目录
-4. **演示分离化**：演示和测试脚本放在 `demo/` 目录
-5. **配置分层化**：配置文件和配置代码分别存放
-6. **数据结构化**：数据按类型和时间结构化存储
+### `/reports/` - 报告
+生成的分析报告。
 
 ## 开发建议
 
-- 新增功能时，优先考虑放在合适的模块目录下
-- 创建新工具时，放在 `tools/` 目录并添加说明文档
-- 编写演示脚本时，放在 `demo/` 目录
-- 所有文档更新都应反映在 `docs/` 目录中
-- 遵循现有的命名规范和代码风格 
+- **新工具** → `bin/`
+- **演示脚本** → `bin/examples/`
+- **功能模块** → `quant/` 对应子目录
+- **配置文件** → `config/`
+- **文档** → `docs/`
+- 避免在根目录创建临时文件

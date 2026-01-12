@@ -68,6 +68,42 @@ class BaseDataProvider(ABC):
         """
         pass
     
+    def getIndexData(self, symbol: str, startDate: str, endDate: str, freq: str = 'D') -> pd.DataFrame:
+        """
+        Get index data for a given symbol and date range (optional implementation)
+        
+        Args:
+            symbol (str): Index symbol
+            startDate (str): Start date in YYYYMMDD format
+            endDate (str): End date in YYYYMMDD format  
+            freq (str): Data frequency ('D' for daily, '1h' for hourly, etc.)
+            
+        Returns:
+            pd.DataFrame: Index data with standardized columns
+            
+        Raises:
+            NotImplementedError: If provider doesn't support index data
+        """
+        raise NotImplementedError(f"Index data not supported by {self.providerName}")
+    
+    def getGlobalIndexData(self, symbol: str, startDate: str, endDate: str, freq: str = 'D') -> pd.DataFrame:
+        """
+        Get global index data for a given symbol and date range (optional implementation)
+        
+        Args:
+            symbol (str): Global index symbol (e.g., IXIC, SPX, DJI)
+            startDate (str): Start date in YYYYMMDD format
+            endDate (str): End date in YYYYMMDD format  
+            freq (str): Data frequency ('D' for daily, '1h' for hourly, etc.)
+            
+        Returns:
+            pd.DataFrame: Global index data with standardized columns
+            
+        Raises:
+            NotImplementedError: If provider doesn't support global index data
+        """
+        raise NotImplementedError(f"Global index data not supported by {self.providerName}")
+    
     @abstractmethod
     def validateSymbol(self, symbol: str) -> bool:
         """

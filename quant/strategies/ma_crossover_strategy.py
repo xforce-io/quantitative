@@ -5,7 +5,7 @@
 Moving Average Crossover Strategy
 均线交叉策略
 
-实现基于移动平均线交叉的趋势跟踪策略
+实现基于移动平均线交叉的趋势跟踪策略，符合统一BaseStrategy接口
 """
 
 import pandas as pd
@@ -13,25 +13,36 @@ import numpy as np
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
+from collections import deque
+
+# 导入基础策略类
+try:
+    from .base_strategy import BaseStrategy, MarketState, TradingDecision
+except ImportError:
+    # 回退到绝对导入
+    from quant.strategies.base_strategy import BaseStrategy, MarketState, TradingDecision
+
+from quant.core.logging_config import get_logger
+logger = get_logger(__name__)
 
 
 @dataclass
 class MACrossoverTrade:
     """均线交叉策略交易记录"""
     timestamp: datetime
-    action: str  # 'buy' or 'sell'
+    action: str  # 'buy', 'sell', 'hold'
     price: float
     shares: int
     amount: float
     commission: float
     balance: float
     position: int
-    signal_type: str  # 'golden_cross' or 'death_cross'
+    signal_type: str  # 'golden_cross', 'death_cross', 'hold'
     ma_short: float
     ma_long: float
 
 
-class MACrossoverStrategy:
+class MACrossoverStrategy(BaseStrategy):
     """移动平均线交叉策略
     
     策略逻辑:
@@ -46,23 +57,107 @@ class MACrossoverStrategy:
             symbol: 股票代码
             config: 策略配置参数
         """
-        self.symbol = symbol
-        self.config = config or {}
+        super().__init__(symbol, config)
         
         # 策略参数
         self.ma_short = self.config.get('ma_short', 5)  # 短期均线周期
         self.ma_long = self.config.get('ma_long', 10)   # 长期均线周期
         self.commission = self.config.get('commission', 0.0003)  # 手续费率
         self.slippage = self.config.get('slippage', 0.001)       # 滑点率
-        self.min_shares = self.config.get('min_shares', 100)     # 最小交易股数
+        
+        # 根据标的类型调整最小交易股数
+        if symbol in ['IXIC', 'SPX', 'DJI', 'NDX', 'NASDAQ', 'HKTECH', 'HSI', 'HSCEI'] or symbol.startswith('^'):
+            # 对于高价指数，使用更小的最小交易单位
+            self.min_shares = self.config.get('min_shares', 1)   # 指数最少1股
+        else:
+            # 对于股票，保持100股的整数倍要求
+            self.min_shares = self.config.get('min_shares', 100) # 股票最少100股
+            
         self.position_size = self.config.get('position_size', 1.0)  # 仓位大小(0-1)
         
-        # 过滤条件
-        self.min_volume_ratio = self.config.get('min_volume_ratio', 1.0)  # 最小成交量倍数
-        self.min_price_change = self.config.get('min_price_change', 0.005)  # 最小价格变化
+        # 放宽过滤条件，提高信号捕获率
+        self.min_volume_ratio = self.config.get('min_volume_ratio', 0.5)  # 降低成交量要求
+        self.min_price_change = self.config.get('min_price_change', 0.001)  # 降低价格变化要求
+        self.volume_ma_period = self.config.get('volume_ma_period', 20)  # 成交量均线周期
+        self.volume_surge_threshold = self.config.get('volume_surge_threshold', 1.1)  # 降低放量阈值
+        self.price_volume_correlation = self.config.get('price_volume_correlation', False)  # 关闭价量配合检查
+        
+        # 日志配置
+        self.verbose_logging = self.config.get('verbose_logging', True)
+        self.compact_logging = self.config.get('compact_logging', False)
         
         # 状态变量
         self.reset()
+        
+        logger.info("MA Crossover strategy initialized for {self.symbol}")
+        logger.info("  MA periods: {self.ma_short}/{self.ma_long}, position size: {self.position_size:.1%}")
+        logger.info("  Commission: {self.commission:.2%}, slippage: {self.slippage:.2%}")
+        logger.info("  Volume filters: ratio≥{self.min_volume_ratio:.1f}x, surge≥{self.volume_surge_threshold:.1f}x, correlation={self.price_volume_correlation}")
+    
+    def makeDecision(self, market_state: MarketState) -> TradingDecision:
+        """统一的决策接口"""
+        current_price = market_state.currentPrice
+        timestamp = market_state.timestamp
+        volume = market_state.volume
+        
+        # 生成交易信号
+        signal = self.generate_signal(timestamp, current_price, volume)
+        
+        if signal == 'buy' and self.current_cash > 0:
+            # 计算买入数量
+            available_cash = self.current_cash * self.position_size
+            shares = int(available_cash / (current_price * (1 + self.slippage)))
+            
+            # 根据最小股数要求调整
+            if self.min_shares > 1:
+                shares = (shares // self.min_shares) * self.min_shares  # 股票：100股整数倍
+            shares = max(shares, self.min_shares)  # 确保至少达到最小股数
+            
+            actual_cost = shares * current_price * (1 + self.slippage + self.commission)
+            
+            if actual_cost <= self.current_cash and shares >= self.min_shares:
+                ma_short = self.ma_short_history[-1] if self.ma_short_history else 0
+                ma_long = self.ma_long_history[-1] if self.ma_long_history else 0
+                
+                return TradingDecision(
+                    action='buy',
+                    amount=shares,
+                    reason=f'Golden cross: MA{self.ma_short}({ma_short:.2f}) > MA{self.ma_long}({ma_long:.2f})',
+                    confidence=0.8,
+                    metadata={
+                        'signal_type': 'golden_cross',
+                        'ma_short': ma_short,
+                        'ma_long': ma_long,
+                        'ma_short_period': self.ma_short,
+                        'ma_long_period': self.ma_long
+                    }
+                )
+        
+        elif signal == 'sell' and self.current_position > 0:
+            ma_short = self.ma_short_history[-1] if self.ma_short_history else 0
+            ma_long = self.ma_long_history[-1] if self.ma_long_history else 0
+            
+            return TradingDecision(
+                action='sell',
+                amount=self.current_position,
+                reason=f'Death cross: MA{self.ma_short}({ma_short:.2f}) < MA{self.ma_long}({ma_long:.2f})',
+                confidence=0.8,
+                metadata={
+                    'signal_type': 'death_cross',
+                    'ma_short': ma_short,
+                    'ma_long': ma_long,
+                    'ma_short_period': self.ma_short,
+                    'ma_long_period': self.ma_long
+                }
+            )
+        
+        # 默认持有
+        return TradingDecision(
+            action='hold',
+            amount=0,
+            reason='No MA crossover signal or insufficient funds/position',
+            confidence=0.5
+        )
     
     def reset(self, initial_capital: float = 100000.0):
         """重置策略状态"""
@@ -77,6 +172,7 @@ class MACrossoverStrategy:
         self.volume_history = []
         self.ma_short_history = []
         self.ma_long_history = []
+        self.volume_ma_history = []  # 成交量均线历史
         
         # 信号状态
         self.last_signal = None
@@ -99,6 +195,13 @@ class MACrossoverStrategy:
             self.ma_long_history.append(ma_long)
         else:
             self.ma_long_history.append(np.nan)
+        
+        # 计算成交量均线
+        if len(self.volume_history) >= self.volume_ma_period:
+            volume_ma = np.mean(self.volume_history[-self.volume_ma_period:])
+            self.volume_ma_history.append(volume_ma)
+        else:
+            self.volume_ma_history.append(np.nan)
     
     def generate_signal(self, timestamp: datetime, price: float, volume: float = 0) -> Optional[str]:
         """生成交易信号
@@ -141,23 +244,96 @@ class MACrossoverStrategy:
         return signal
     
     def _validate_signal(self, signal: str, timestamp: datetime, price: float, volume: float) -> bool:
-        """验证信号有效性"""
-        # 检查成交量
-        if len(self.volume_history) >= 20 and volume > 0:
-            avg_volume = np.mean(self.volume_history[-20:])
-            if volume < avg_volume * self.min_volume_ratio:
-                return False
+        """验证信号有效性 - 极度简化版本"""
         
-        # 检查价格变化幅度
-        if len(self.price_history) >= 2:
-            price_change = abs(price - self.price_history[-2]) / self.price_history[-2]
-            if price_change < self.min_price_change:
-                return False
-        
-        # 避免频繁交易 (可选)
-        if self.last_signal and self.last_signal == signal:
+        # 对于指数数据，volume可能为NaN，这是正常的
+        if not (np.isnan(volume) or volume > 0):
+            if self.verbose_logging:
+                logger.info("  ❌ 信号被拒绝: 无效成交量 (volume={volume:.0f})")
             return False
-            
+        
+        # 避免连续的同一信号
+        if self.last_signal and self.last_signal == signal:
+            if self.verbose_logging:
+                logger.info("  ❌ 信号被拒绝: 重复信号 ({signal})")
+            return False
+        
+        if self.verbose_logging:
+            logger.info("  ✅ 信号通过验证: {signal.upper()} (volume={volume:.0f})")
+        return True
+    
+    def _validate_volume_basic(self, volume: float) -> bool:
+        """基础成交量验证"""
+        if volume <= 0:
+            return False
+        
+        # 需要足够的历史数据
+        if len(self.volume_history) < self.volume_ma_period:
+            return True  # 数据不足时放行
+        
+        # 与成交量均线比较
+        if len(self.volume_ma_history) > 0:
+            volume_ma = self.volume_ma_history[-1]
+            if not np.isnan(volume_ma) and volume < volume_ma * self.min_volume_ratio:
+                return False
+        
+        return True
+    
+    def _validate_volume_surge(self, volume: float, signal: str) -> bool:
+        """成交量放量验证"""
+        if len(self.volume_history) < 5:  # 需要足够历史数据
+            return True
+        
+        # 计算近期成交量均值
+        recent_volume_avg = np.mean(self.volume_history[-5:])
+        
+        # 买入信号需要适度放量
+        if signal == 'buy':
+            if volume < recent_volume_avg * 1.2:
+                return False
+            # 特别强的信号需要更大放量
+            if volume > recent_volume_avg * self.volume_surge_threshold:
+                return True
+        
+        # 卖出信号也需要成交量配合
+        elif signal == 'sell':
+            if volume < recent_volume_avg * 0.8:  # 卖出允许稍低的成交量
+                return False
+        
+        return True
+    
+    def _validate_price_volume_correlation(self, price: float, volume: float, signal: str) -> bool:
+        """价量配合验证"""
+        if len(self.price_history) < 2 or len(self.volume_history) < 2:
+            return True
+        
+        # 计算价格和成交量的变化
+        price_change = (price - self.price_history[-1]) / self.price_history[-1]
+        prev_volume = self.volume_history[-1]
+        volume_change = (volume - prev_volume) / prev_volume if prev_volume > 0 else 0
+        
+        # 买入信号: 价格上涨伴随成交量放大
+        if signal == 'buy':
+            if price_change > 0.01 and volume_change > 0.2:  # 价涨量增
+                return True
+            elif price_change > 0 and volume_change > 0:  # 温和价涨量增
+                return True
+            elif abs(price_change) < 0.005:  # 价格变化很小时放宽要求
+                return True
+            else:
+                return False
+        
+        # 卖出信号: 价格下跌时成交量放大，或价格上涨但成交量萎缩
+        elif signal == 'sell':
+            if price_change < -0.01 and volume_change > 0.2:  # 价跌量增
+                return True
+            elif price_change > 0.01 and volume_change < -0.2:  # 价涨量缩
+                return True
+            elif abs(price_change) < 0.005:  # 价格变化很小时放宽要求
+                return True
+            else:
+                return False
+        
         return True
     
     def execute_trade(self, timestamp: datetime, price: float, signal: str, volume: float = 0):
@@ -176,8 +352,9 @@ class MACrossoverStrategy:
         available_cash = self.current_cash * self.position_size
         shares_to_buy = int(available_cash / (price * (1 + self.slippage)))
         
-        # 调整为100股的整数倍
-        shares_to_buy = (shares_to_buy // self.min_shares) * self.min_shares
+        # 根据最小股数要求调整
+        if self.min_shares > 1:
+            shares_to_buy = (shares_to_buy // self.min_shares) * self.min_shares
         
         if shares_to_buy >= self.min_shares:
             # 计算实际成本
@@ -254,8 +431,10 @@ class MACrossoverStrategy:
         # 更新组合价值
         self.update_portfolio_value(price)
     
-    def get_performance_metrics(self, initial_capital: float) -> Dict:
-        """计算策略性能指标"""
+    def get_performance_metrics(self) -> Dict:
+        """获取性能指标 - 符合BaseStrategy接口"""
+        initial_capital = getattr(self, 'initial_capital', 100000)
+        
         if not self.trades:
             return {
                 'totalReturn': 0.0,
@@ -266,7 +445,16 @@ class MACrossoverStrategy:
                 'maxDrawdown': 0.0,
                 'finalCapital': self.total_value,
                 'signalCount': self.signal_count,
-                'profitableTrades': 0
+                'profitableTrades': 0,
+                'currentPosition': self.current_position,
+                'currentCash': self.current_cash,
+                'totalValue': self.total_value,
+                'strategySpecific': {
+                    'ma_short_period': self.ma_short,
+                    'ma_long_period': self.ma_long,
+                    'golden_crosses': len([t for t in self.trades if t.signal_type == 'golden_cross']),
+                    'death_crosses': len([t for t in self.trades if t.signal_type == 'death_cross'])
+                }
             }
         
         # 基础指标
@@ -341,7 +529,18 @@ class MACrossoverStrategy:
             'maxDrawdown': max_drawdown,
             'finalCapital': self.total_value,
             'signalCount': self.signal_count,
-            'profitableTrades': profitable_trades
+            'profitableTrades': profitable_trades,
+            'currentPosition': self.current_position,
+            'currentCash': self.current_cash,
+            'totalValue': self.total_value,
+            'strategySpecific': {
+                'ma_short_period': self.ma_short,
+                'ma_long_period': self.ma_long,
+                'golden_crosses': len([t for t in self.trades if t.signal_type == 'golden_cross']),
+                'death_crosses': len([t for t in self.trades if t.signal_type == 'death_cross']),
+                'current_ma_short': self.ma_short_history[-1] if self.ma_short_history else 0,
+                'current_ma_long': self.ma_long_history[-1] if self.ma_long_history else 0
+            }
         }
     
     def get_current_status(self) -> Dict:

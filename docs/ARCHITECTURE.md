@@ -1,556 +1,1594 @@
-# 量化交易系统架构文档
+# 系统架构文档 (ARCHITECTURE)
 
-## 项目概述
-
-本项目是一个基于 Python 的量化交易分析系统，集成了新闻收集、情感分析、投资建议生成、策略开发、数据分析等功能。系统采用模块化设计，支持多种数据源和分析方法，具备完整的缓存机制和配置管理能力。
-
-## 项目目录结构
-
-```
-quantitative_trading/
-├── README.md                           # 项目主要说明文档
-├── README_investment_analysis.md       # 投资分析功能说明
-├── requirements.txt                    # Python 依赖包列表
-├── 
-├── config/                            # 配置文件目录
-│   ├── investment_analysis.yaml      # 投资分析配置
-│   ├── trading_config.yaml          # 交易策略配置
-│   ├── env_example.txt              # 环境变量示例
-│   └── stocks/                      # 个股配置目录
-│
-├── quant/                            # 核心量化分析模块
-│   ├── __init__.py                  # 模块初始化
-│   ├── news/                        # 新闻分析模块
-│   │   ├── __init__.py
-│   │   ├── news_collector.py        # 新闻数据收集器
-│   │   ├── news_analyzer.py         # 新闻分析器
-│   │   └── investment_analyzer.py   # 投资分析器
-│   ├── data_providers/              # 数据提供商接口
-│   │   ├── __init__.py
-│   │   ├── cache_manager.py         # 缓存管理器
-│   │   └── base_provider.py         # 基础数据提供商类
-│   ├── strategies/                  # 交易策略模块
-│   ├── engines/                     # 交易引擎模块
-│   ├── agents/                      # 智能代理模块
-│   ├── environments/                # 交易环境模拟
-│   ├── company_analysis/            # 公司分析模块
-│   ├── config/                      # 配置管理模块
-│   ├── data/                        # 数据处理模块
-│   └── log/                         # 日志管理模块
-│
-├── demo/                            # 演示脚本目录 (重新组织)
-│   ├── README.md                   # 演示脚本说明文档
-│   ├── main.py                     # 主演示程序
-│   ├── trading/                    # 交易相关演示
-│   │   ├── strategy_demo.py        # 交易策略演示
-│   │   ├── backtest_demo.py        # 回测演示
-│   │   └── portfolio_demo.py       # 投资组合演示
-│   ├── analysis/                   # 分析相关演示
-│   │   ├── investment_analysis_demo.py      # 投资分析演示
-│   │   ├── technical_analysis_demo.py       # 技术分析演示
-│   │   ├── fundamental_analysis_demo.py     # 基本面分析演示
-│   │   └── risk_analysis_demo.py            # 风险分析演示
-│   ├── news/                       # 新闻相关演示
-│   │   ├── news_collection_demo.py # 新闻收集演示
-│   │   ├── sentiment_analysis_demo.py # 情感分析演示
-│   │   └── news_impact_demo.py     # 新闻影响分析演示
-│   ├── automation/                 # 自动化演示
-│   │   ├── scheduler_demo.py       # 定时任务演示
-│   │   ├── alert_demo.py          # 告警系统演示
-│   │   └── automation_pipeline_demo.py # 自动化流水线演示
-│   └── utils/                      # 工具类演示
-│       ├── data_utils_demo.py      # 数据工具演示
-│       ├── cache_demo.py           # 缓存功能演示
-│       └── config_demo.py          # 配置管理演示
-│
-├── data/                           # 数据存储目录
-│   ├── news/                      # 新闻数据存储
-│   ├── tushare/                   # Tushare数据存储
-│   ├── market/                    # 市场数据存储
-│   ├── analysis/                  # 分析结果存储
-│   └── *.csv                      # 各种股票数据文件
-│
-├── cache/                         # API 响应缓存目录
-│   ├── tushare/                  # Tushare API 缓存
-│   └── other_providers/          # 其他数据提供商缓存
-│
-├── reports/                       # 分析报告输出目录
-│   ├── daily/                    # 每日报告
-│   ├── weekly/                   # 周报告
-│   └── YYYY-MM-DD/              # 按日期组织的报告
-│
-├── logs/                         # 日志文件目录
-├── log/                          # 备用日志目录
-├── tools/                        # 工具脚本目录
-├── docs/                         # 文档目录
-│   ├── ARCHITECTURE.md          # 本架构文档
-│   ├── investment_analysis_guide.md # 投资分析指南
-│   ├── news_module_summary.md   # 新闻模块总结
-│   └── value_grid_strategy_guide.md # 价值网格策略指南
-├── archive_old_analysis/         # 旧分析数据归档
-└── venv/                        # Python 虚拟环境
-```
-
-## 核心模块详述
-
-### 1. 新闻分析模块 (`quant/news/`)
-
-#### NewsCollector (新闻收集器)
-- **功能**: 从多个数据源收集金融新闻
-- **支持的数据源**: 
-  - Tushare Pro API (新浪财经、东方财富、华尔街见闻等)
-  - 国际新闻源 (Reuters, Bloomberg, CNBC 等)
-- **特性**: 
-  - 缓存机制，避免重复API调用
-  - 批量数据收集
-  - 错误处理和重试机制
-  - 多线程并发收集
-
-#### NewsAnalyzer (新闻分析器)
-- **功能**: 对收集的新闻进行分析和处理
-- **能力**:
-  - 中文文本分词 (jieba) - 已修复 `add_word()` 函数缺失频率参数的问题
-  - 情感分析和情绪识别
-  - 关键词提取和主题识别
-  - 新闻摘要生成
-  - 新闻重要性评分
-  - 批量新闻处理和情感分布统计
-  - 热门关键词分析和排序
-
-#### InvestmentAnalyzer (投资分析器)
-- **功能**: 基于新闻数据生成投资建议
-- **特性**:
-  - 多投资品支持 (股指、股票、商品、外汇等)
-  - LLM 集成 (支持多种大模型提供商)
-  - 配置驱动的分析流程
-  - 自动化报告生成
-  - 风险评估和建议评级
-
-### 2. 数据提供商模块 (`quant/data_providers/`)
-
-#### CacheManager (缓存管理器)
-- **功能**: 统一管理 API 响应缓存
-- **特性**:
-  - 多层次缓存策略
-  - 自动过期管理
-  - 跨会话缓存共享
-  - 缓存统计和监控
-
-#### BaseProvider (基础数据提供商)
-- **功能**: 统一的数据源接口
-- **特性**:
-  - 标准化数据格式
-  - 错误处理和重试机制
-  - 数据质量验证
-  - 支持多数据源聚合
-
-### 3. 策略开发模块 (`quant/strategies/`)
-
-提供多种交易策略的实现和回测框架：
-- 趋势跟踪策略
-- 均值回归策略
-- 技术指标策略
-- 基本面分析策略
-- 复合策略组合
-
-### 4. 智能代理模块 (`quant/agents/`) **[新增]**
-
-基于 Agent 的智能交易架构是系统的核心创新，提供了更强的智能化和模块化能力：
-
-#### AgentManager (代理管理器)
-- **功能**: 中央代理管理和协调系统
-- **特性**:
-  - 多种 Agent 类型支持 (Grid, DCA, Momentum, Hybrid)
-  - 自动生成 Agent 变体和参数组合
-  - 并行优化执行引擎
-  - 智能推荐和排序系统
-  - 性能监控和评估
-
-#### Agent 类型体系
-
-##### GridTradingAgent (网格交易代理)
-- **策略特点**: 震荡市场低买高卖
-- **参数空间**: 网格层数、间距、基础仓位比例
-- **优化范围**: 8-15层网格，1.5%-3%间距
-- **适用场景**: 价格震荡、高流动性股票
-
-##### DCAAgent (定投代理)
-- **策略特点**: 定期定额投资，风险分散
-- **参数空间**: 投资频率、投资金额、基础仓位比例
-- **优化范围**: 周/月频率，1000-5000元额度
-- **适用场景**: 长期投资、分散风险
-
-##### MomentumAgent (动量代理)
-- **策略特点**: 趋势跟随交易
-- **参数空间**: 回望期、触发阈值、基础仓位比例
-- **优化范围**: 15-30天回望期，5%-10%阈值
-- **适用场景**: 趋势明确的市场
-
-##### HybridAgent (混合代理)
-- **策略特点**: 多策略权重组合
-- **参数空间**: 各策略权重分配
-- **优化范围**: 动态权重调整
-- **适用场景**: 复杂市场环境
-
-#### Agent 优化框架
-
-##### 分层优化策略
-- **Level 1**: Agent 类型选择 (策略类型适配)
-- **Level 2**: Agent 参数优化 (参数空间搜索)
-- **Level 3**: 多 Agent 组合 (投资组合优化)
-
-##### 智能推荐系统
-- 基于历史性能的推荐算法
-- 市场环境适应性评估
-- 风险调整收益排序
-- 策略组合建议生成
-
-#### 新旧架构对比
-
-```
-传统架构:
-Stock Analyzer → Strategy Parameters → Backtest Engine → Results
-
-新 Agent 架构:
-Stock Analyzer → Agent Manager → Agent Variants → Parallel Optimization → Intelligent Recommendations
-```
-
-#### 技术优势
-1. **更强的抽象能力**: Agent 封装了完整的策略逻辑
-2. **更好的扩展性**: 新策略类型可以轻松添加为新 Agent
-3. **智能参数管理**: 每种 Agent 类型有专门的参数空间定义
-4. **并行优化**: 支持大量 Agent 变体的并行测试
-5. **性能评估标准化**: 统一的性能指标和排序机制
-
-### 5. 演示脚本模块 (`demo/`)
-
-重新组织的演示脚本提供完整的功能展示：
-
-#### 交易相关演示 (`demo/trading/`)
-- **策略演示**: 展示各种交易策略的实现和使用
-- **回测演示**: 策略历史表现回测和分析
-- **投资组合演示**: 多资产投资组合构建和优化
-
-#### 分析相关演示 (`demo/analysis/`)
-- **投资分析演示**: 基于新闻和数据的投资建议生成
-- **技术分析演示**: 技术指标计算和图表分析
-- **基本面分析演示**: 公司财务数据分析
-- **风险分析演示**: 风险评估和管理
-
-#### 新闻相关演示 (`demo/news/`)
-- **新闻收集演示**: 从多数据源收集和处理新闻
-- **情感分析演示**: 新闻情感和市场影响分析
-- **新闻影响演示**: 新闻对股价影响的量化分析
-
-#### 自动化演示 (`demo/automation/`)
-- **定时任务演示**: 自动化分析和报告生成
-- **告警系统演示**: 市场异常和机会告警
-- **自动化流水线演示**: 完整的自动化交易流程
-
-### 6. 配置管理
-
-#### 投资分析配置 (`config/investment_analysis.yaml`)
-- **LLM 配置**: 大模型提供商、API密钥、模型参数
-- **投资品配置**: 目标投资品列表、关键词、权重
-- **新闻源配置**: 数据源选择、搜索参数
-- **分析配置**: 分析维度、阈值设置
-- **缓存配置**: 缓存策略、过期时间
-
-## 数据流程
-
-```mermaid
-graph TD
-    A[配置文件] --> B[InvestmentAnalyzer初始化]
-    B --> C[NewsCollector]
-    C --> D{检查缓存}
-    D -->|缓存命中| E[从缓存获取]
-    D -->|缓存未命中| F[API调用]
-    F --> G{API限制?}
-    G -->|是| H[使用模拟数据]
-    G -->|否| I[收集真实数据]
-    E --> J[NewsAnalyzer处理]
-    H --> J
-    I --> J
-    J --> K[LLM分析]
-    K --> L[生成投资建议]
-    L --> M[保存报告]
-    M --> N[缓存更新]
-    N --> O[风险评估]
-    O --> P[决策支持]
-```
-
-## 技术栈
-
-### 核心依赖
-- **Python 3.8+**: 主要编程语言
-- **pandas**: 数据处理和分析
-- **numpy**: 数值计算
-- **tushare**: 金融数据接口
-- **jieba**: 中文分词
-- **PyYAML**: 配置文件解析
-- **requests**: HTTP 请求
-- **schedule**: 定时任务调度
-
-### 可选依赖
-- **OpenAI API**: GPT模型集成
-- **transformers**: 本地NLP模型
-- **matplotlib/plotly**: 数据可视化
-- **scikit-learn**: 机器学习算法
-- **ta-lib**: 技术分析指标库
-
-### 开发工具
-- **pytest**: 单元测试框架
-- **black**: 代码格式化
-- **flake8**: 代码质量检查
-- **mypy**: 类型检查
-
-## 扩展性设计
-
-### 1. 数据源扩展
-- 新数据源只需实现标准接口
-- 支持多数据源并行收集
-- 统一的数据格式标准化
-- 插件式数据源管理
-
-### 2. 分析方法扩展
-- 插件式分析器架构
-- 可配置的分析维度
-- 多模型集成支持
-- 自定义分析策略
-
-### 3. 策略扩展
-- 标准化策略接口
-- 策略组合和优化
-- 动态策略切换
-- 策略性能评估
-
-### 4. 报告格式扩展
-- 支持多种输出格式 (JSON, Markdown, HTML, PDF)
-- 模板化报告生成
-- 自定义报告样式
-- 交互式报告界面
-
-## 配置管理原则
-
-### 1. 分离关注点
-- 实际配置文件存储在 `config/` 目录
-- 配置相关代码存储在 `quant/config/`
-- 环境相关配置通过环境变量管理
-- 个股配置独立管理
-
-### 2. 通用化设计
-- 分析代码通用化，参数通过配置文件传递
-- 避免硬编码公司或产品特定逻辑
-- 支持批量配置和动态配置更新
-- 配置验证和默认值管理
-
-### 3. 层次化配置
-- 全局配置 > 模块配置 > 个股配置
-- 配置继承和覆盖机制
-- 运行时配置动态调整
-
-## 缓存策略
-
-### 1. 分层缓存
-- **内存缓存**: 会话期间的临时数据
-- **文件缓存**: 跨会话的持久化缓存
-- **数据库缓存**: 大规模数据的结构化存储
-- **分布式缓存**: 支持多实例共享
-
-### 2. 智能过期
-- 新闻数据: 6-24小时过期
-- 市场数据: 按数据频率动态调整
-- 分析结果: 根据分析类型动态调整，新闻分析报告保存在 `reports/` 目录
-- API响应: 按提供商限制策略管理
-
-### 3. 缓存优化
-- 数据压缩存储
-- 异步缓存更新
-- 缓存预热机制
-- 缓存监控和统计
-
-## 错误处理
-
-### 1. API限制处理
-- 自动检测API调用限制
-- 指数退避重试策略
-- 模拟数据回退机制
-- 多数据源容错
-
-### 2. 数据质量保证
-- 数据验证和清洗
-- 异常数据标记和处理
-- 数据来源追踪
-- 数据完整性检查
-
-### 3. 系统稳定性
-- 异常监控和告警
-- 自动恢复机制
-- 降级策略
-- 灾难恢复
-
-## 日志和监控
-
-### 1. 分级日志
-- **DEBUG**: 详细调试信息
-- **INFO**: 一般流程信息
-- **WARNING**: 警告和非关键错误
-- **ERROR**: 严重错误和异常
-- **CRITICAL**: 系统级严重问题
-
-### 2. 性能监控
-- API调用次数和响应时间统计
-- 缓存命中率监控
-- 分析任务执行时间跟踪
-- 内存和CPU使用率监控
-
-### 3. 业务监控
-- 交易策略性能监控
-- 投资建议准确性跟踪
-- 风险指标监控
-- 用户行为分析
-
-## 部署和运维
-
-### 1. 环境管理
-- 虚拟环境隔离
-- 依赖版本锁定
-- 配置文件模板化
-- 多环境配置管理
-
-### 2. 自动化运维
-- 定时任务调度
-- 自动报告生成
-- 异常情况通知
-- 系统健康检查
-
-### 3. 容器化部署
-- Docker镜像构建
-- 容器编排
-- 服务发现
-- 负载均衡
-
-## 安全考虑
-
-### 1. API密钥管理
-- 环境变量存储
-- 配置文件加密
-- 访问权限控制
-- 密钥轮换机制
-
-### 2. 数据安全
-- 敏感数据脱敏
-- 本地数据加密存储
-- 网络传输安全
-- 数据访问审计
-
-### 3. 系统安全
-- 输入验证和过滤
-- SQL注入防护
-- XSS攻击防护
-- 安全漏洞扫描
-
-## 开发规范
-
-### 1. 代码风格
-- 函数名和变量采用驼峰风格
-- 注释、日志、异常信息使用英文
-- 用户界面和文档使用中文
-- 遵循PEP 8规范
-
-### 2. 模块职责
-- 单一职责原则
-- 松耦合设计
-- 清晰的接口定义
-- 依赖注入模式
-
-### 3. 测试规范
-- 单元测试覆盖率 > 80%
-- 集成测试和端到端测试
-- 性能测试和压力测试
-- 自动化测试流程
-
-### 4. 文档规范
-- API文档自动生成
-- 代码注释完整性
-- 用户手册和开发指南
-- 架构设计文档
-
-## 性能优化
-
-### 1. 计算优化
-- 向量化计算
-- 并行处理
-- 内存管理优化
-- 算法复杂度优化
-
-### 2. I/O优化
-- 异步I/O操作
-- 批量数据处理
-- 连接池管理
-- 缓存策略优化
-
-### 3. 网络优化
-- HTTP连接复用
-- 数据压缩传输
-- CDN加速
-- 负载均衡
-
-## 未来扩展方向
-
-### 1. 功能扩展
-- 实时交易执行
-- 高频交易支持
-- 多市场交易
-- 衍生品交易
-- 投资组合优化
-- 风险管理增强
-
-### 2. 技术升级
-- 微服务架构
-- 容器化部署
-- 云原生支持
-- 实时数据流处理
-- 机器学习集成
-- 区块链集成
-
-### 3. 用户体验
-- Web界面开发
-- 移动端应用
-- 数据可视化增强
-- 交互式分析工具
-- 用户个性化定制
-
-### 4. 生态建设
-- 插件市场
-- 开放API
-- 社区建设
-- 第三方集成
-
-## 版本管理
-
-### 1. 版本控制
-- Git分支管理策略
-- 代码审查流程
-- 自动化CI/CD
-- 版本发布管理
-
-### 2. 数据版本
-- 数据模型版本控制
-- 配置版本管理
-- 分析结果版本追踪
-- 回滚和恢复机制
-
-## 最近更新日志
-
-### 2025年6月2日
-- **新闻分析功能修复**: 修复了 `jieba` 库 `add_word()` 函数缺失频率参数的问题
-- **投资分析增强**: 改进了投资分析报告，增加了新闻来源和链接以提高可解释性
-- **功能验证**: 成功运行新闻分析功能，分析了849条新闻数据，生成了情感分布和热门关键词统计
-- **报告输出**: 新闻分析报告保存在 `reports/news_analysis_YYYYMMDD_HHMMSS.json` 格式
+> 本文档描述量化交易系统的分层架构设计、核心流程以及重构计划。
 
 ---
 
-*本文档持续更新，反映项目架构的最新状态。如有疑问请查看相关源码或联系维护团队。* 
+## 📋 目录
 
-*最后更新: 2025年6月2日* 
+1. [当前架构问题分析](#当前架构问题分析)
+   - [数据层重复问题详解](#数据层重复问题详解)
+2. [目标架构设计](#目标架构设计)
+3. [分层架构详解](#分层架构详解)
+   - [数据层统一方案](#数据层统一方案-layer-1)
+   - [组合层设计](#组合层设计-layer-3-新增)
+   - [风控层设计](#风控层设计-layer-4-新增)
+4. [核心数据流程](#核心数据流程)
+5. [现有工具兼容性设计](#现有工具兼容性设计)
+6. [模块依赖关系](#模块依赖关系)
+7. [重构迁移计划](#重构迁移计划)
+
+---
+
+## 🔍 当前架构问题分析
+
+### 现状结构图
+
+```
+quantitative_trading/
+├── bin/                           # ❌ 混合了脚本入口和业务逻辑
+│   ├── regression_analyzer.py     #    → 应该是 quant/analysis/valuation/
+│   ├── momentum_analyzer.py       #    → 应该是 quant/analysis/technical/
+│   ├── advisor.py                 #    → 与 quant/cli/advisor.py 重复
+│   └── screen_etfs.py             #    → 核心逻辑应在 quant/ 中
+│
+├── quant/
+│   ├── config/                    # ❌ 与 core/config.py 功能重叠
+│   │
+│   ├── analysis/
+│   │   ├── etf_valuation_analyzer.py      # ❌ 应该在 valuation/ 子目录
+│   │   ├── etf_fundamental_analyzer.py    # ❌ 应该在 valuation/ 子目录
+│   │   └── screener/
+│   │       └── peg_valuation_analyzer.py  # ❌ 估值分析不应在 screener 下
+│   │
+│   └── company_analysis/          # ❌ 与 analysis/ 功能重复
+│       └── stock_analyzer.py
+```
+
+### 核心问题
+
+| 问题 | 影响 | 严重度 |
+|------|------|--------|
+| **估值分析分散** | 相似功能散落在 3+ 个位置，难以复用和维护 | 🔴 高 |
+| **bin/ 承载业务逻辑** | 核心分析类在 bin/ 中，无法被其他模块 import | 🔴 高 |
+| **数据层重复实现** | `data/` 和 `data_providers/` 两套数据层并存 | 🔴 高 |
+| **职责边界模糊** | screener/ 同时做筛选和估值，company_analysis/ 与 analysis/ 重复 | 🟡 中 |
+| **配置管理分散** | config/ 目录和 core/config.py 功能重叠 | 🟡 中 |
+| **ETF vs 个股混杂** | 缺乏统一的资产抽象，每种资产类型独立实现 | 🟡 中 |
+
+### 数据层重复问题详解
+
+当前存在两套数据层实现：
+
+```
+┌──────────────────────────────────┐    ┌──────────────────────────────────┐
+│   quant/data/ (新架构)           │    │   quant/data_providers/ (旧架构) │
+├──────────────────────────────────┤    ├──────────────────────────────────┤
+│                                  │    │                                  │
+│   providers.py                   │    │   base_data_provider.py          │
+│   └── class DataProvider         │    │   └── class BaseDataProvider     │
+│       ├── _fetch_tushare_data()  │    │       (抽象基类)                  │
+│       ├── _fetch_yahoo_data()    │    │                                  │
+│       └── 内置缓存逻辑            │    │   data_provider.py               │
+│                                  │    │   └── class TushareDataProvider  │
+│   一个类包含所有逻辑              │    │                                  │
+│   (Monolithic 单体设计)          │    │   yahoo_data_provider.py         │
+│                                  │    │   └── class YahooDataProvider    │
+│                                  │    │                                  │
+│                                  │    │   data_provider_factory.py       │
+│                                  │    │   └── class DataProviderFactory  │
+│                                  │    │                                  │
+│                                  │    │   策略模式 + 工厂模式             │
+│                                  │    │   (Strategy + Factory Pattern)   │
+└──────────────────────────────────┘    └──────────────────────────────────┘
+```
+
+**问题**:
+- 两处都实现了 tushare/yahoo 调用逻辑（代码重复）
+- 命名风格不一致：`get_stock_data()` vs `getStockData()`
+- 新旧代码混用，维护成本高
+- 修复 bug 需要改两个地方
+
+---
+
+## 🎯 目标架构设计
+
+### 设计原则
+
+1. **单一职责**: 每个模块只做一件事
+2. **分层清晰**: 上层依赖下层，禁止反向依赖
+3. **入口与逻辑分离**: bin/ 和 cli/ 只做入口，核心逻辑在 quant/ 中
+4. **按功能域组织**: 而非按资产类型组织
+5. **Fail Fast**: 错误快速暴露，避免无休止的 fallback
+
+### 目标结构图
+
+```
+quantitative_trading/
+│
+├── bin/                           # 🟢 命令行入口 (仅入口)
+│   ├── regression.py              #    → 调用 quant.analysis.valuation
+│   ├── momentum.py                #    → 调用 quant.analysis.technical
+│   ├── advisor.py                 #    → 调用 quant.analysis.advisor
+│   └── screen.py                  #    → 调用 quant.analysis.screener
+│
+├── cli/                           # 🟢 Typer CLI 入口
+│   └── main.py
+│
+├── config/                        # 🟢 配置文件 (YAML/JSON)
+│   ├── config.yaml
+│   ├── portfolios.yaml
+│   └── screens.yaml
+│
+└── quant/                         # 🟢 核心业务逻辑
+    │
+    ├── core/                      # Layer 0: 基础设施层
+    │   ├── config.py              #   配置管理
+    │   ├── logging_config.py      #   日志配置
+    │   ├── exceptions.py          #   异常定义
+    │   ├── utils.py               #   通用工具
+    │   ├── indicators.py          #   技术指标计算
+    │   └── metrics.py             #   绩效指标计算
+    │
+    ├── data/                      # Layer 1: 数据层 (统一)
+    │   ├── __init__.py            #   模块入口
+    │   ├── base_provider.py       #   抽象基类 (Strategy Pattern)
+    │   ├── provider_factory.py    #   工厂函数 (Factory Pattern)
+    │   ├── cache_manager.py       #   缓存管理
+    │   └── implementations/       #   具体提供者实现
+    │       ├── __init__.py
+    │       ├── tushare_provider.py
+    │       └── yahoo_provider.py
+    │
+    │   # ❌ 废弃: data_providers/ → 迁移到 data/implementations/
+    │
+    ├── analysis/                  # Layer 2: 分析层 (重构重点)
+    │   │
+    │   ├── valuation/             # 📍 估值分析 (统一)
+    │   │   ├── __init__.py
+    │   │   ├── price_valuation.py         # 价格分位数估值
+    │   │   ├── fundamental_valuation.py   # 基本面估值 (PE/PB/ROE)
+    │   │   ├── peg_valuation.py           # PEG 估值
+    │   │   ├── regression_analyzer.py     # 回归拟合分析
+    │   │   └── systemic_undervalue.py     # 🆕 系统性低估判断
+    │   │
+    │   ├── technical/             # 📍 技术分析
+    │   │   ├── __init__.py
+    │   │   ├── momentum_analyzer.py       # 动量分析
+    │   │   ├── trend_analyzer.py          # 趋势分析
+    │   │   └── relative_strength.py       # 相对强弱
+    │   │
+    │   ├── fundamental/           # 📍 基本面分析
+    │   │   ├── __init__.py
+    │   │   ├── financial_analyzer.py      # 财务分析
+    │   │   └── industry_analyzer.py       # 行业分析
+    │   │
+    │   ├── screener/              # 📍 筛选器 (纯筛选逻辑)
+    │   │   ├── __init__.py
+    │   │   ├── etf_screener.py
+    │   │   ├── stock_screener.py
+    │   │   └── industry_classifier.py
+    │   │
+    │   ├── alpha/                 # 🆕 Alpha模型 (信号生成)
+    │   │   ├── __init__.py
+    │   │   ├── base_alpha.py              # Alpha基类
+    │   │   ├── momentum_alpha.py          # 动量Alpha
+    │   │   ├── mean_reversion_alpha.py    # 均值回归Alpha
+    │   │   └── multi_factor_alpha.py      # 多因子Alpha
+    │   │
+    │   ├── advisor/               # 📍 投资顾问
+    │   │   ├── __init__.py
+    │   │   ├── investment_advisor.py
+    │   │   └── unified_advisor.py
+    │   │
+    │   └── strategy/              # 📍 策略分析
+    │       ├── __init__.py
+    │       ├── strategy_comparator.py
+    │       └── performance_analyzer.py
+    │
+    ├── portfolio/                 # 🆕 Layer 3: 组合层 (新增)
+    │   ├── __init__.py
+    │   ├── base_constructor.py            # 组合构建基类
+    │   ├── mean_variance.py               # 均值方差优化
+    │   ├── risk_parity.py                 # 风险平价
+    │   ├── rebalancer.py                  # 再平衡逻辑
+    │   └── portfolio_analyzer.py          # 投资组合分析 (从 analysis/ 迁移)
+    │
+    ├── risk/                      # 🆕 Layer 4: 风控层 (新增)
+    │   ├── __init__.py
+    │   ├── base_risk_model.py             # 风控模型基类
+    │   ├── position_limits.py             # 仓位限制
+    │   ├── var_calculator.py              # VaR计算
+    │   └── drawdown_monitor.py            # 回撤监控
+    │
+    ├── strategies/                # Layer 5: 策略层 (✅ 完全保留)
+    │   ├── base_strategy.py
+    │   ├── unified_grid_strategy.py
+    │   ├── dca_strategy.py
+    │   ├── momentum_strategy.py
+    │   ├── mean_reversion_strategy.py
+    │   └── ...其他策略
+    │
+    ├── engines/                   # Layer 6: 执行引擎层
+    │   ├── backtest_engine.py             # ✅ 保留 (支持全功能策略)
+    │   ├── algorithm_engine.py            # 🆕 新增 (支持组件化策略)
+    │   ├── backtest_executor.py
+    │   └── strategy_optimizer.py
+    │
+    └── agents/                    # Layer 7: 代理层 (可选)
+        ├── agent_manager.py
+        └── strategy_agent.py
+```
+
+---
+
+## 📚 分层架构详解
+
+### 架构分层图 (行业标准4层架构)
+
+> **设计说明**: 参考 QuantConnect LEAN、Zipline 等顶级量化框架，将原有的"策略层"拆分为
+> **Alpha/Analysis → Portfolio → Risk → Execution** 四个独立层，实现单一职责和可插拔设计。
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         Layer 8: 入口层 (Entry)                          │
+│                      bin/ | cli/ | notebooks/                           │
+│   ┌─────────────┐   ┌─────────────┐   ┌─────────────┐                   │
+│   │ regression  │   │   advisor   │   │   screen    │                   │
+│   └──────┬──────┘   └──────┬──────┘   └──────┬──────┘                   │
+└──────────┼─────────────────┼─────────────────┼──────────────────────────┘
+           │                 │                 │
+           ▼                 ▼                 ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                       Layer 7: 代理层 (Agents)                           │
+│                      (可选 - 用于复杂策略协调)                            │
+│   ┌─────────────────────────────────────────────────────────────────┐   │
+│   │                      AgentManager                               │   │
+│   └─────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                       Layer 6: 执行引擎层 (Engines)                      │
+│                                                                         │
+│   ┌──────────────────────────────┐  ┌──────────────────────────────┐    │
+│   │ BacktestEngine (保留)        │  │ AlgorithmEngine (🆕 新增)    │    │
+│   │ 支持全功能策略               │  │ 支持组件化策略                │    │
+│   │                              │  │                              │    │
+│   │ engine.run(strategy)         │  │ engine.run(algorithm)        │    │
+│   │   ↳ 策略自己决定买卖         │  │   ↳ Alpha→Portfolio→Risk    │    │
+│   └──────────────────────────────┘  └──────────────────────────────┘    │
+│                                                                         │
+│   ┌─────────────┐   ┌─────────────┐   ┌─────────────┐                   │
+│   │  Executor   │   │  Validator  │   │  Optimizer  │                   │
+│   └─────────────┘   └─────────────┘   └─────────────┘                   │
+└─────────────────────────────────────────────────────────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                 Layer 5: 策略层 (Strategies) ✅ 完全保留                 │
+│                                                                         │
+│   ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌────────────┐        │
+│   │    Grid    │  │    DCA     │  │  Momentum  │  │ MeanRevert │        │
+│   │  Strategy  │  │  Strategy  │  │  Strategy  │  │  Strategy  │        │
+│   └─────┬──────┘  └─────┬──────┘  └─────┬──────┘  └─────┬──────┘        │
+│         │               │               │               │               │
+│         └───────────────┴───────────────┴───────────────┘               │
+│                                │                                         │
+│                     ┌──────────┴──────────┐                              │
+│                     │    BaseStrategy     │  ← 全功能策略 (现有模式)      │
+│                     └─────────────────────┘                              │
+│                                                                         │
+│   说明: 现有策略完全保留，不需要任何修改                                   │
+└─────────────────────────────────────────────────────────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                       Layer 4: 风控层 (Risk) 🆕                          │
+│                                                                         │
+│   ┌─────────────────────────────────────────────────────────────────┐   │
+│   │                      BaseRiskModel (抽象基类)                    │   │
+│   │  + check_position(symbol, weight) -> adjusted_weight            │   │
+│   │  + check_portfolio(positions) -> adjusted_positions             │   │
+│   │  + get_risk_metrics() -> Dict                                   │   │
+│   └───────────────────────────┬─────────────────────────────────────┘   │
+│                               │                                         │
+│         ┌─────────────────────┼─────────────────────────────────────┐   │
+│         ▼                     ▼                     ▼               ▼   │
+│   ┌───────────┐         ┌───────────┐         ┌───────────┐  ┌──────────┐
+│   │ Position  │         │    VaR    │         │ Drawdown  │  │ Sector   │
+│   │  Limits   │         │Calculator │         │  Monitor  │  │ Exposure │
+│   │           │         │           │         │           │  │          │
+│   │ max 10%   │         │ 95% VaR   │         │ max 20%   │  │ max 30%  │
+│   │ per pos   │         │           │         │ drawdown  │  │ per sect │
+│   └───────────┘         └───────────┘         └───────────┘  └──────────┘
+│                                                                         │
+│   输入: target_positions = {symbol: weight}                             │
+│   输出: adjusted_positions (风控调整后的仓位)                            │
+└─────────────────────────────────────────────────────────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                       Layer 3: 组合层 (Portfolio) 🆕                     │
+│                                                                         │
+│   ┌─────────────────────────────────────────────────────────────────┐   │
+│   │              BasePortfolioConstructor (抽象基类)                 │   │
+│   │  + construct(insights) -> target_positions                      │   │
+│   │  + rebalance(current, target, threshold) -> orders              │   │
+│   └───────────────────────────┬─────────────────────────────────────┘   │
+│                               │                                         │
+│         ┌─────────────────────┼─────────────────────────────────────┐   │
+│         ▼                     ▼                     ▼               ▼   │
+│   ┌───────────┐         ┌───────────┐         ┌───────────┐  ┌──────────┐
+│   │   Mean    │         │   Risk    │         │  Equal    │  │ Portfolio│
+│   │ Variance  │         │  Parity   │         │  Weight   │  │ Analyzer │
+│   │           │         │           │         │           │  │          │
+│   │ 均值方差  │         │ 风险平价  │         │ 等权重    │  │ 分析工具 │
+│   └───────────┘         └───────────┘         └───────────┘  └──────────┘
+│                                                                         │
+│   输入: List[Insight] (来自Alpha层)                                      │
+│   输出: target_positions = {symbol: weight}                             │
+└─────────────────────────────────────────────────────────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                       Layer 2: 分析/Alpha层 (Analysis)                   │
+│                                                                         │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌─────────────┐  │
+│  │  valuation/  │  │  technical/  │  │ fundamental/ │  │  screener/  │  │
+│  │              │  │              │  │              │  │             │  │
+│  │ - price      │  │ - momentum   │  │ - financial  │  │ - etf       │  │
+│  │ - peg        │  │ - trend      │  │ - industry   │  │ - stock     │  │
+│  │ - regression │  │ - rs         │  │              │  │ - classify  │  │
+│  │ - undervalue │  │              │  │              │  │             │  │
+│  └──────────────┘  └──────────────┘  └──────────────┘  └─────────────┘  │
+│                                                                         │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────────────┐   │
+│  │   advisor/   │  │  strategy/   │  │       alpha/ (🆕)            │   │
+│  │              │  │              │  │                              │   │
+│  │ - investment │  │ - comparator │  │ - base_alpha.py              │   │
+│  │ - unified    │  │ - performance│  │ - momentum_alpha.py          │   │
+│  │              │  │              │  │ - mean_reversion_alpha.py    │   │
+│  │              │  │              │  │ - multi_factor_alpha.py      │   │
+│  └──────────────┘  └──────────────┘  └──────────────────────────────┘   │
+│                                                                         │
+│   输出: Insight = {symbol, direction, magnitude, confidence}            │
+└─────────────────────────────────────────────────────────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                       Layer 1: 数据层 (Data)                             │
+│                                                                         │
+│   ┌─────────────────────────────────────────────────────────────────┐   │
+│   │              create_data_provider() 工厂函数                     │   │
+│   └───────────────────────────┬─────────────────────────────────────┘   │
+│                               │                                         │
+│                               ▼                                         │
+│   ┌─────────────────────────────────────────────────────────────────┐   │
+│   │                  BaseDataProvider (抽象基类)                     │   │
+│   │  + get_stock_data(symbol, start, end, freq) -> DataFrame        │   │
+│   │  + get_index_data(...)                                          │   │
+│   │  + get_financial_data(...)                                      │   │
+│   └───────────────────────────┬─────────────────────────────────────┘   │
+│                               │                                         │
+│         ┌─────────────────────┼─────────────────────────────────────┐   │
+│         ▼                     ▼                     ▼               │   │
+│   ┌───────────┐         ┌───────────┐         ┌───────────┐         │   │
+│   │  Tushare  │         │   Yahoo   │         │   Cache   │         │   │
+│   │  Provider │         │  Provider │         │  Manager  │         │   │
+│   │ (A-share) │         │ (Global)  │         │ (Wrapper) │         │   │
+│   └───────────┘         └───────────┘         └───────────┘         │   │
+└─────────────────────────────────────────────────────────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                       Layer 0: 基础设施层 (Core)                         │
+│                                                                         │
+│   ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐       │
+│   │ Config  │  │ Logging │  │ Errors  │  │  Utils  │  │ Metrics │       │
+│   └─────────┘  └─────────┘  └─────────┘  └─────────┘  └─────────┘       │
+│                                                                         │
+│   ┌─────────────────────────────────────────────────────────────────┐   │
+│   │                    TechnicalIndicators                          │   │
+│   └─────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### 3层 vs 4层对比
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    原设计 (3层) vs 新设计 (4层)                          │
+└─────────────────────────────────────────────────────────────────────────┘
+
+原 3 层设计 (策略层职责过重):
+═══════════════════════════════════════
+
+   分析层                    策略层                    执行层
+   ───────                   ───────                   ───────
+   
+   ┌──────────┐             ┌──────────┐             ┌──────────┐
+   │ 估值分析  │────────────►│ 策略生成  │────────────►│ 回测执行  │
+   │ 技术分析  │   信号      │ ❌同时负责: │   订单      │ 撮合     │
+   │ 基本面   │             │ • 信号生成  │             │          │
+   │          │             │ • 仓位决策  │             │          │
+   │          │             │ • 风险控制  │             │          │
+   └──────────┘             └──────────┘             └──────────┘
+
+
+新 4 层设计 (单一职责):
+═══════════════════════════════════════
+
+   Alpha层              组合层               风控层              执行层
+   ──────              ──────               ──────              ──────
+   
+┌──────────┐        ┌──────────┐        ┌──────────┐        ┌──────────┐
+│ Analysis │───────►│ Portfolio│───────►│   Risk   │───────►│ Execution│
+│  /Alpha  │Insight │ Construct│ Target │  Model   │ Checked│  Engine  │
+│          │        │          │Position│          │Position│          │
+│ 信号生成  │        │ 仓位配置  │        │ 风险检查  │        │ 订单执行  │
+└──────────┘        └──────────┘        └──────────┘        └──────────┘
+```
+
+### 各层职责定义
+
+| 层级 | 名称 | 职责 | 输入 → 输出 | 依赖 |
+|------|------|------|------------|------|
+| **Layer 0** | Core | 基础工具、配置、日志、异常、指标计算 | - | 无外部依赖 |
+| **Layer 1** | Data | 数据获取、缓存、标准化 | symbol → DataFrame | Layer 0 |
+| **Layer 2** | Analysis/Alpha | 因子计算、信号生成、估值分析 | DataFrame → Insight | Layer 0, 1 |
+| **Layer 3** | Portfolio 🆕 | 组合构建、权重优化、再平衡 | Insight → Positions | Layer 0, 1, 2 |
+| **Layer 4** | Risk 🆕 | 仓位限制、VaR检查、回撤监控 | Positions → Checked Positions | Layer 0, 1, 2, 3 |
+| **Layer 5** | Strategies | 交易策略实现 (全功能策略，保留) | DataFrame → Orders | Layer 0, 1, 2 |
+| **Layer 6** | Engines | 回测执行、订单撮合、优化 | Strategy/Algorithm → Result | Layer 0~5 |
+| **Layer 7** | Agents | 策略协调、多策略管理 | - | All layers |
+| **Layer 8** | Entry | 命令行入口、脚本 | - | All layers |
+
+#### Insight 数据结构 (Alpha层输出)
+
+```python
+@dataclass
+class Insight:
+    """Alpha模型产生的交易洞察"""
+    symbol: str           # 股票代码
+    direction: int        # 方向: 1=多, -1=空, 0=平
+    magnitude: float      # 信号强度: 0.0 ~ 1.0
+    confidence: float     # 置信度: 0.0 ~ 1.0
+    period: timedelta     # 预期持有周期
+    source: str           # 来源Alpha模型名称
+    generated_at: datetime
+```
+
+### 数据层统一方案 (Layer 1)
+
+#### 目标结构
+
+```
+quant/data/                        # 统一数据层
+├── __init__.py                    # 模块入口，导出公共接口
+│   from .provider_factory import create_data_provider
+│   from .base_provider import BaseDataProvider
+│
+├── base_provider.py               # 抽象基类
+│   class BaseDataProvider(ABC):
+│       @abstractmethod
+│       def get_stock_data(...) -> pd.DataFrame
+│       @abstractmethod
+│       def get_index_data(...) -> pd.DataFrame
+│       def add_technical_indicators(...)  # 通用方法
+│
+├── provider_factory.py            # 工厂函数
+│   def create_data_provider(provider: str, config: dict) -> BaseDataProvider
+│
+├── cache_manager.py               # 缓存管理
+│   class CacheManager:
+│       def get(key) -> Optional[DataFrame]
+│       def set(key, data, ttl_hours)
+│       def invalidate(pattern)
+│
+└── implementations/               # 具体提供者实现
+    ├── __init__.py
+    ├── tushare_provider.py        # Tushare 实现 (A股)
+    │   class TushareDataProvider(BaseDataProvider)
+    ├── yahoo_provider.py          # Yahoo 实现 (全球)
+    │   class YahooDataProvider(BaseDataProvider)
+    └── cached_provider.py         # 缓存装饰器
+        class CachedDataProvider(BaseDataProvider)  # Decorator Pattern
+```
+
+#### 设计模式
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         数据层设计模式                                   │
+└─────────────────────────────────────────────────────────────────────────┘
+
+1. Strategy Pattern (策略模式)
+   ─────────────────────────────
+   
+   ┌─────────────────────┐
+   │  BaseDataProvider   │ ◄─── 抽象接口
+   │  (Abstract Class)   │
+   └──────────┬──────────┘
+              │
+    ┌─────────┼─────────┐
+    │         │         │
+    ▼         ▼         ▼
+┌────────┐ ┌────────┐ ┌────────┐
+│Tushare │ │ Yahoo  │ │ Mock   │  ◄─── 具体策略
+│Provider│ │Provider│ │Provider│
+└────────┘ └────────┘ └────────┘
+
+
+2. Factory Pattern (工厂模式)
+   ─────────────────────────────
+   
+   create_data_provider('tushare', config)
+           │
+           ▼
+   ┌─────────────────────────────────────┐
+   │  if provider == 'tushare':          │
+   │      return TushareDataProvider()   │
+   │  elif provider == 'yahoo':          │
+   │      return YahooDataProvider()     │
+   │  elif provider == 'auto':           │
+   │      return _select_best_provider() │
+   └─────────────────────────────────────┘
+
+
+3. Decorator Pattern (装饰器模式 - 缓存)
+   ─────────────────────────────────────
+   
+   ┌────────────────────────────────────────────────────────────────┐
+   │  CachedDataProvider                                            │
+   │  ┌──────────────────────────────────────────────────────────┐  │
+   │  │  inner: BaseDataProvider  (被装饰的提供者)                │  │
+   │  └──────────────────────────────────────────────────────────┘  │
+   │                                                                │
+   │  def get_stock_data(self, ...):                               │
+   │      cache_key = self._build_key(...)                         │
+   │      if cached := self.cache.get(cache_key):                  │
+   │          return cached  # 缓存命中                             │
+   │      data = self.inner.get_stock_data(...)  # 调用内层        │
+   │      self.cache.set(cache_key, data)                          │
+   │      return data                                               │
+   └────────────────────────────────────────────────────────────────┘
+```
+
+#### 统一接口规范
+
+```python
+class BaseDataProvider(ABC):
+    """数据提供者抽象基类"""
+    
+    @abstractmethod
+    def get_stock_data(
+        self,
+        symbol: str,           # 股票代码: '000001.SZ', '600036.SH'
+        start_date: str,       # 开始日期: 'YYYYMMDD' 或 'YYYY-MM-DD'
+        end_date: str,         # 结束日期
+        freq: str = 'D'        # 频率: 'D'(日), 'W'(周), 'M'(月)
+    ) -> pd.DataFrame:
+        """
+        获取股票行情数据
+        
+        Returns:
+            DataFrame with columns: [open, high, low, close, volume]
+            Index: DatetimeIndex
+        """
+        pass
+    
+    @abstractmethod
+    def get_index_data(
+        self,
+        symbol: str,
+        start_date: str,
+        end_date: str,
+        freq: str = 'D'
+    ) -> pd.DataFrame:
+        """获取指数数据"""
+        pass
+    
+    def get_financial_data(
+        self,
+        symbol: str,
+        report_type: str = 'income'  # 'income', 'balance', 'cashflow'
+    ) -> pd.DataFrame:
+        """获取财务数据 (可选实现)"""
+        raise NotImplementedError("Financial data not supported by this provider")
+    
+    def get_valuation_data(
+        self,
+        symbol: str,
+        trade_date: str = None
+    ) -> Dict:
+        """获取估值数据 PE/PB/PS (可选实现)"""
+        raise NotImplementedError("Valuation data not supported by this provider")
+```
+
+#### 迁移步骤
+
+| 步骤 | 操作 | 说明 |
+|------|------|------|
+| 1 | 创建 `quant/data/implementations/` 目录 | 放置具体提供者 |
+| 2 | 从 `data_providers/` 迁移实现类 | 保持向后兼容 |
+| 3 | 将 `data/providers.py` 中的逻辑拆分 | 单体类 → 策略模式 |
+| 4 | 在 `data_providers/__init__.py` 添加 deprecated 警告 | 引导用户迁移 |
+| 5 | 更新所有调用方使用新接口 | 统一使用 `quant.data` |
+
+#### 向后兼容
+
+```python
+# quant/data_providers/__init__.py (过渡期保留)
+import warnings
+
+def _deprecated_import():
+    warnings.warn(
+        "quant.data_providers is deprecated. Use quant.data instead.",
+        DeprecationWarning,
+        stacklevel=3
+    )
+
+# Re-export for backward compatibility
+from quant.data import create_data_provider
+from quant.data.implementations import TushareDataProvider, YahooDataProvider
+
+_deprecated_import()
+```
+
+### 组合层设计 (Layer 3 🆕)
+
+组合层负责将 Alpha 信号转化为具体的仓位配置，实现组合优化和再平衡逻辑。
+
+#### 目标结构
+
+```
+quant/portfolio/                   # 组合层
+├── __init__.py                    # 模块入口
+│   from .base_constructor import BasePortfolioConstructor
+│   from .mean_variance import MeanVarianceConstructor
+│   from .risk_parity import RiskParityConstructor
+│
+├── base_constructor.py            # 抽象基类
+│   class BasePortfolioConstructor(ABC):
+│       @abstractmethod
+│       def construct(insights: List[Insight]) -> Dict[str, float]
+│       @abstractmethod
+│       def rebalance(current, target, threshold) -> List[Order]
+│
+├── mean_variance.py               # 均值方差优化
+│   class MeanVarianceConstructor(BasePortfolioConstructor)
+│
+├── risk_parity.py                 # 风险平价
+│   class RiskParityConstructor(BasePortfolioConstructor)
+│
+├── equal_weight.py                # 等权重
+│   class EqualWeightConstructor(BasePortfolioConstructor)
+│
+├── rebalancer.py                  # 再平衡逻辑
+│   class Rebalancer:
+│       def calculate_trades(current, target, threshold)
+│
+└── portfolio_analyzer.py          # 投资组合分析 (从 analysis/ 迁移)
+    class PortfolioAnalyzer
+```
+
+#### 核心接口
+
+```python
+class BasePortfolioConstructor(ABC):
+    """组合构建器抽象基类"""
+    
+    @abstractmethod
+    def construct(
+        self,
+        insights: List[Insight],
+        current_positions: Dict[str, float] = None
+    ) -> Dict[str, float]:
+        """
+        根据 Alpha 信号构建目标组合
+        
+        Args:
+            insights: Alpha模型产生的信号列表
+            current_positions: 当前持仓 {symbol: weight}
+            
+        Returns:
+            目标持仓 {symbol: target_weight}
+        """
+        pass
+    
+    def rebalance(
+        self,
+        current: Dict[str, float],
+        target: Dict[str, float],
+        threshold: float = 0.05
+    ) -> List[Order]:
+        """
+        计算再平衡订单
+        
+        Args:
+            current: 当前持仓权重
+            target: 目标持仓权重
+            threshold: 偏离阈值，低于此值不调整
+            
+        Returns:
+            需要执行的订单列表
+        """
+        orders = []
+        all_symbols = set(current.keys()) | set(target.keys())
+        
+        for symbol in all_symbols:
+            curr_weight = current.get(symbol, 0.0)
+            tgt_weight = target.get(symbol, 0.0)
+            diff = tgt_weight - curr_weight
+            
+            if abs(diff) >= threshold:
+                orders.append(Order(
+                    symbol=symbol,
+                    direction='BUY' if diff > 0 else 'SELL',
+                    weight_change=abs(diff)
+                ))
+        
+        return orders
+```
+
+### 风控层设计 (Layer 4 🆕)
+
+风控层对组合层输出的目标仓位进行约束检查和调整，确保符合风险管理要求。
+
+#### 目标结构
+
+```
+quant/risk/                        # 风控层
+├── __init__.py                    # 模块入口
+│   from .base_risk_model import BaseRiskModel
+│   from .position_limits import PositionLimits
+│   from .var_calculator import VaRCalculator
+│
+├── base_risk_model.py             # 抽象基类
+│   class BaseRiskModel(ABC):
+│       @abstractmethod
+│       def check(positions) -> AdjustedPositions
+│
+├── position_limits.py             # 仓位限制
+│   class PositionLimits(BaseRiskModel):
+│       - max_single_position: float = 0.10  # 单仓位上限 10%
+│       - max_sector_exposure: float = 0.30  # 行业敞口上限 30%
+│       - max_total_exposure: float = 1.00   # 总敞口上限 100%
+│
+├── var_calculator.py              # VaR计算
+│   class VaRCalculator(BaseRiskModel):
+│       - var_confidence: float = 0.95       # VaR置信度
+│       - var_limit: float = 0.05            # 日VaR上限 5%
+│
+├── drawdown_monitor.py            # 回撤监控
+│   class DrawdownMonitor(BaseRiskModel):
+│       - max_drawdown: float = 0.20         # 最大回撤 20%
+│       - drawdown_action: str = 'reduce'    # 触发动作
+│
+└── composite_risk.py              # 组合风控
+    class CompositeRiskModel(BaseRiskModel):
+        # 组合多个风控模型
+```
+
+#### 核心接口
+
+```python
+class BaseRiskModel(ABC):
+    """风控模型抽象基类"""
+    
+    @abstractmethod
+    def check(
+        self,
+        positions: Dict[str, float],
+        market_data: pd.DataFrame = None
+    ) -> RiskCheckResult:
+        """
+        检查仓位是否符合风控要求
+        
+        Args:
+            positions: 目标仓位 {symbol: weight}
+            market_data: 市场数据 (用于计算风险指标)
+            
+        Returns:
+            RiskCheckResult:
+                - passed: bool
+                - adjusted_positions: Dict[str, float]
+                - violations: List[str]
+                - risk_metrics: Dict
+        """
+        pass
+
+
+@dataclass
+class RiskCheckResult:
+    """风控检查结果"""
+    passed: bool                           # 是否通过检查
+    adjusted_positions: Dict[str, float]   # 调整后的仓位
+    violations: List[str]                  # 违反的规则列表
+    risk_metrics: Dict                     # 风险指标
+
+
+class PositionLimits(BaseRiskModel):
+    """仓位限制风控"""
+    
+    def __init__(
+        self,
+        max_single_position: float = 0.10,
+        max_sector_exposure: float = 0.30,
+        max_total_exposure: float = 1.00
+    ):
+        self.max_single_position = max_single_position
+        self.max_sector_exposure = max_sector_exposure
+        self.max_total_exposure = max_total_exposure
+    
+    def check(self, positions: Dict[str, float], **kwargs) -> RiskCheckResult:
+        violations = []
+        adjusted = positions.copy()
+        
+        # 检查单仓位限制
+        for symbol, weight in positions.items():
+            if weight > self.max_single_position:
+                violations.append(
+                    f"{symbol}: {weight:.1%} exceeds limit {self.max_single_position:.1%}"
+                )
+                adjusted[symbol] = self.max_single_position
+        
+        # 检查总敞口
+        total = sum(adjusted.values())
+        if total > self.max_total_exposure:
+            violations.append(f"Total exposure {total:.1%} exceeds limit")
+            # 等比例缩放
+            scale = self.max_total_exposure / total
+            adjusted = {k: v * scale for k, v in adjusted.items()}
+        
+        return RiskCheckResult(
+            passed=len(violations) == 0,
+            adjusted_positions=adjusted,
+            violations=violations,
+            risk_metrics={'total_exposure': sum(adjusted.values())}
+        )
+```
+
+---
+
+## 🔄 核心数据流程
+
+### 1. 回测流程
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           回测执行流程                                   │
+└─────────────────────────────────────────────────────────────────────────┘
+
+  User Input                    System Processing                   Output
+  ──────────                    ─────────────────                   ──────
+
+┌──────────┐
+│ CLI/API  │
+│ 参数输入  │
+│ - symbol │
+│ - dates  │
+│ - config │
+└────┬─────┘
+     │
+     ▼
+┌────────────────┐
+│  ConfigManager │──────────────────────────────────────────┐
+│  加载配置       │                                          │
+└────────┬───────┘                                          │
+         │                                                  │
+         ▼                                                  │
+┌────────────────┐      ┌────────────────┐                  │
+│  DataProvider  │◄─────│   CacheManager │                  │
+│  获取行情数据   │      │   查询/更新缓存 │                  │
+└────────┬───────┘      └────────────────┘                  │
+         │                                                  │
+         │  price_data: DataFrame                           │
+         ▼                                                  │
+┌────────────────┐                                          │
+│ TechnicalIndi- │                                          │
+│ cators.add()   │                                          │
+│ 计算技术指标    │                                          │
+└────────┬───────┘                                          │
+         │                                                  │
+         │  data_with_indicators: DataFrame                 │
+         ▼                                                  ▼
+┌────────────────┐      ┌────────────────┐      ┌────────────────┐
+│   Strategy     │◄─────│ StrategyConfig │◄─────│    Config      │
+│   实例化策略    │      │   策略参数      │      │    YAML        │
+└────────┬───────┘      └────────────────┘      └────────────────┘
+         │
+         │  strategy: BaseStrategy
+         ▼
+┌────────────────┐
+│ BacktestEngine │
+│ 执行回测        │
+│                │
+│ for each bar:  │
+│   1. update    │
+│      market    │
+│      state     │
+│   2. strategy  │
+│      .decide() │
+│   3. execute   │
+│      trades    │
+│   4. update    │
+│      portfolio │
+└────────┬───────┘
+         │
+         │  BacktestResult
+         ▼
+┌────────────────┐      ┌────────────────┐
+│ BacktestAnaly- │─────►│    Report      │
+│ zer 分析结果    │      │  JSON/MD/PNG   │
+└────────────────┘      └────────────────┘
+```
+
+### 2. 估值分析流程
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        估值分析流程 (Valuation)                          │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌──────────┐
+│  Input   │
+│ - symbol │
+│ - period │
+└────┬─────┘
+     │
+     ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         SystemicUndervalueAnalyzer                      │
+└─────────────────────────────────────────────────────────────────────────┘
+     │
+     ├──────────────────────┬──────────────────────┬──────────────────────┐
+     ▼                      ▼                      ▼                      ▼
+┌──────────────┐      ┌──────────────┐      ┌──────────────┐      ┌───────────────┐
+│   Price      │      │ Fundamental  │      │     PEG      │      │  Regression   │
+│  Valuation   │      │  Valuation   │      │  Valuation   │      │   Analyzer    │
+│              │      │              │      │              │      │               │
+│ • percentile │      │ • PE/PB/PS   │      │ • PEG ratio  │      │ • linear fit  │
+│ • z-score    │      │ • ROE/ROA    │      │ • growth est │      │ • deviation   │
+│ • mean rever │      │ • margins    │      │ • industry   │      │ • trend       │
+└──────┬───────┘      └──────┬───────┘      └──────┬───────┘      └───────┬───────┘
+       │                     │                     │                      │
+       │ score: -3~+3        │ score: -3~+3        │ score: -3~+3         │ score: -3~+3
+       │                     │                     │                      │
+       └─────────────────────┴─────────────────────┴──────────────────────┘
+                                       │
+                                       ▼
+                          ┌────────────────────────┐
+                          │   Composite Scoring    │
+                          │   综合评分加权          │
+                          │                        │
+                          │   score = Σ(w_i × s_i) │
+                          │                        │
+                          │   confidence =         │
+                          │     agreement_ratio    │
+                          └───────────┬────────────┘
+                                      │
+                                      ▼
+                          ┌────────────────────────┐
+                          │  Undervalue Judgment   │
+                          │                        │
+                          │  if score < -6 and     │
+                          │     confidence > 70%:  │
+                          │    → 系统性严重低估     │
+                          │                        │
+                          │  elif score < -3:      │
+                          │    → 低估               │
+                          │                        │
+                          │  else:                 │
+                          │    → 合理/高估          │
+                          └───────────┬────────────┘
+                                      │
+                                      ▼
+                          ┌────────────────────────┐
+                          │   Value Trap Check     │
+                          │   价值陷阱检测          │
+                          │                        │
+                          │  • revenue_trend < 0   │
+                          │  • margin_declining    │
+                          │  • high_debt           │
+                          │  • cyclical_peak       │
+                          └───────────┬────────────┘
+                                      │
+                                      ▼
+                          ┌────────────────────────┐
+                          │      Final Report      │
+                          │                        │
+                          │  {                     │
+                          │    is_undervalued: T/F │
+                          │    confidence: 0-100%  │
+                          │    composite_score:    │
+                          │    signals: [...]      │
+                          │    warnings: [...]     │
+                          │    recommendation: ... │
+                          │  }                     │
+                          └────────────────────────┘
+```
+
+### 3. 投资组合分析流程
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      投资组合分析流程 (Portfolio)                        │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────┐
+│ portfolios.  │
+│    yaml      │
+└──────┬───────┘
+       │
+       ▼
+┌──────────────────┐
+│ PortfolioConfig  │
+│ - sleeves[]      │
+│ - holdings[]     │
+│ - target_return  │
+└────────┬─────────┘
+         │
+         ├─────────────────────────────────────────────────────────────┐
+         │                                                             │
+         ▼                                                             ▼
+┌────────────────────────┐                                 ┌─────────────────────┐
+│   For each holding:    │                                 │ Portfolio Metrics   │
+│                        │                                 │                     │
+│   1. Fetch price data  │                                 │ • total_value       │
+│   2. Calculate return  │                                 │ • weighted_return   │
+│   3. Run valuation     │                                 │ • risk_assessment   │
+│   4. Check allocation  │                                 │ • rebalance_needed  │
+└────────────┬───────────┘                                 └──────────┬──────────┘
+             │                                                        │
+             │  holdings_analysis[]                                   │
+             │                                                        │
+             ▼                                                        ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│                           Portfolio Report                               │
+│                                                                          │
+│  ┌─────────────────────────────────────────────────────────────────────┐ │
+│  │ Sleeve Analysis                                                     │ │
+│  │  • ETF: 40% → return: +5.2% → valuation: 合理                       │ │
+│  │  • Stock: 30% → return: +12.1% → valuation: 偏高                    │ │
+│  │  • Bond: 30% → return: +2.1% → valuation: 低估                      │ │
+│  └─────────────────────────────────────────────────────────────────────┘ │
+│  ┌─────────────────────────────────────────────────────────────────────┐ │
+│  │ Valuation Summary                                                   │ │
+│  │  🟢 低估: 510500.SH, 159915.SZ                                       │ │
+│  │  🟡 合理: 510300.SH                                                  │ │
+│  │  🔴 高估: 512480.SH                                                  │ │
+│  └─────────────────────────────────────────────────────────────────────┘ │
+│  ┌─────────────────────────────────────────────────────────────────────┐ │
+│  │ Recommendations                                                     │ │
+│  │  • 减持: 512480.SH (高估警告)                                        │ │
+│  │  • 加仓: 510500.SH (低估机会)                                        │ │
+│  │  • 再平衡: ETF配置超标 5%                                            │ │
+│  └─────────────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+### 4. 组件化策略回测流程 (🆕 新增)
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│               组件化策略回测流程 (AlgorithmEngine)                       │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│                          Algorithm 定义                                  │
+│  algorithm = Algorithm(                                                  │
+│      alpha_models=[MomentumAlpha(), MeanReversionAlpha()],              │
+│      portfolio_model=RiskParityConstructor(),                           │
+│      risk_model=PositionLimits(max_single=0.1)                          │
+│  )                                                                       │
+└──────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│                     AlgorithmEngine.run() 主循环                         │
+│                                                                          │
+│  for each bar in data:                                                   │
+│      │                                                                   │
+│      ▼                                                                   │
+│  ┌────────────────────────────────────────────────────────────────────┐  │
+│  │ Step 1: Alpha Layer (生成信号)                                     │  │
+│  │                                                                    │  │
+│  │   insights = []                                                    │  │
+│  │   for alpha_model in algorithm.alpha_models:                       │  │
+│  │       insights += alpha_model.generate_insights(data)              │  │
+│  │                                                                    │  │
+│  │   Output: List[Insight] with direction, magnitude, confidence      │  │
+│  └────────────────────────────────────────────────────────────────────┘  │
+│      │                                                                   │
+│      ▼                                                                   │
+│  ┌────────────────────────────────────────────────────────────────────┐  │
+│  │ Step 2: Portfolio Layer (构建组合)                                 │  │
+│  │                                                                    │  │
+│  │   target_positions = algorithm.portfolio_model.construct(          │  │
+│  │       insights=insights,                                           │  │
+│  │       current_positions=current_holdings                           │  │
+│  │   )                                                                │  │
+│  │                                                                    │  │
+│  │   Output: Dict[symbol, target_weight]                              │  │
+│  └────────────────────────────────────────────────────────────────────┘  │
+│      │                                                                   │
+│      ▼                                                                   │
+│  ┌────────────────────────────────────────────────────────────────────┐  │
+│  │ Step 3: Risk Layer (风险检查)                                      │  │
+│  │                                                                    │  │
+│  │   risk_result = algorithm.risk_model.check(                        │  │
+│  │       positions=target_positions,                                  │  │
+│  │       market_data=data                                             │  │
+│  │   )                                                                │  │
+│  │   adjusted_positions = risk_result.adjusted_positions              │  │
+│  │                                                                    │  │
+│  │   Output: Dict[symbol, adjusted_weight] + violations               │  │
+│  └────────────────────────────────────────────────────────────────────┘  │
+│      │                                                                   │
+│      ▼                                                                   │
+│  ┌────────────────────────────────────────────────────────────────────┐  │
+│  │ Step 4: Execution (执行订单)                                       │  │
+│  │                                                                    │  │
+│  │   orders = self.rebalancer.calculate_orders(                       │  │
+│  │       current=current_holdings,                                    │  │
+│  │       target=adjusted_positions                                    │  │
+│  │   )                                                                │  │
+│  │   for order in orders:                                             │  │
+│  │       self.executor.execute(order)                                 │  │
+│  └────────────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 🔄 现有工具兼容性设计
+
+> **设计原则**: 现有的 10+ 个策略和回测引擎**完全保留**，不需要任何修改。
+> 新增的组合层和风控层是**可选的高级功能**，采用渐进式迁移方式。
+
+### 两种策略模式并存
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        策略层兼容设计                                    │
+└─────────────────────────────────────────────────────────────────────────┘
+
+方案1: 全功能策略 (现有模式，✅ 完全保留)
+═══════════════════════════════════════════
+
+   ┌─────────────────────────────────────────────────────────────────────┐
+   │  UnifiedGridStrategy / DCAStrategy / MomentumStrategy               │
+   │                                                                     │
+   │  一个类包含所有逻辑:                                                  │
+   │  • 信号生成 (什么时候买卖)                                            │
+   │  • 仓位决策 (买卖多少)                                               │
+   │  • 执行逻辑 (如何下单)                                               │
+   │                                                                     │
+   │  适用场景: 简单策略、快速开发、回测                                    │
+   └─────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+                    BacktestEngine.run(strategy)  ← 现有引擎
+
+
+方案2: 组件化策略 (🆕 新模式，推荐复杂场景)
+═══════════════════════════════════════════
+
+   ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
+   │ Alpha Model  │───►│  Portfolio   │───►│ Risk Model   │
+   │ (信号生成)    │    │ Constructor  │    │ (风险过滤)    │
+   └──────────────┘    └──────────────┘    └──────────────┘
+                              │
+                              ▼
+                    AlgorithmEngine.run(algorithm)  ← 🆕 新引擎
+   
+   适用场景: 多因子策略、组合策略、机构级应用
+```
+
+### 代码示例
+
+```python
+# ═══════════════════════════════════════════════════════════════════════
+# 方案1: 现有策略直接使用 (完全兼容，不需要任何修改)
+# ═══════════════════════════════════════════════════════════════════════
+
+from quant.strategies import UnifiedGridStrategy
+from quant.engines import BacktestEngine
+
+strategy = UnifiedGridStrategy(symbol='000001.SZ', config={...})
+engine = BacktestEngine(data_provider)
+result = engine.run(strategy, start_date, end_date)  # ✅ 照常工作
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# 方案2: 组件化策略 (🆕 新模式)
+# ═══════════════════════════════════════════════════════════════════════
+
+from quant.analysis.alpha import MomentumAlpha, MeanReversionAlpha
+from quant.portfolio import RiskParityConstructor
+from quant.risk import PositionLimits, VaRCalculator
+from quant.engines import AlgorithmEngine, Algorithm  # 🆕
+
+# 组装组件
+algorithm = Algorithm(
+    alpha_models=[
+        MomentumAlpha(lookback=20, weight=0.6),
+        MeanReversionAlpha(threshold=2.0, weight=0.4),
+    ],
+    portfolio_model=RiskParityConstructor(
+        rebalance_threshold=0.05
+    ),
+    risk_model=PositionLimits(
+        max_single_position=0.10,
+        max_sector_exposure=0.30
+    ),
+)
+
+engine = AlgorithmEngine(data_provider)
+result = engine.run(algorithm, start_date, end_date)
+```
+
+### 现有工具映射表
+
+| 现有工具 | 位置 | 处理方式 | 新位置 |
+|---------|------|---------|--------|
+| **策略类** ||||
+| `unified_grid_strategy.py` | `strategies/` | ✅ 完全保留 | 不动 |
+| `dca_strategy.py` | `strategies/` | ✅ 完全保留 | 不动 |
+| `momentum_strategy.py` | `strategies/` | ✅ 完全保留 | 不动 |
+| `mean_reversion_strategy.py` | `strategies/` | ✅ 完全保留 | 不动 |
+| `ma_crossover_strategy.py` | `strategies/` | ✅ 完全保留 | 不动 |
+| **引擎类** ||||
+| `backtest_engine.py` | `engines/` | ✅ 完全保留 | 不动 |
+| `backtest_executor.py` | `engines/` | ✅ 完全保留 | 不动 |
+| `strategy_optimizer.py` | `engines/` | ✅ 完全保留 | 不动 |
+| **分析类** ||||
+| `etf_valuation_analyzer.py` | `analysis/` | 🔄 迁移 | `analysis/valuation/` |
+| `etf_fundamental_analyzer.py` | `analysis/` | 🔄 迁移 | `analysis/valuation/` |
+| `peg_valuation_analyzer.py` | `analysis/screener/` | 🔄 迁移 | `analysis/valuation/` |
+| `regression_analyzer.py` | `bin/` | 🔄 提取核心类 | `analysis/valuation/` |
+| `momentum_analyzer.py` | `bin/` | 🔄 提取核心类 | `analysis/technical/` |
+| `portfolio_analyzer.py` | `analysis/portfolio/` | 🔄 迁移 | `portfolio/` |
+| **新增** ||||
+| `algorithm_engine.py` | - | 🆕 新增 | `engines/` |
+| `base_alpha.py` | - | 🆕 新增 | `analysis/alpha/` |
+| `base_constructor.py` | - | 🆕 新增 | `portfolio/` |
+| `base_risk_model.py` | - | 🆕 新增 | `risk/` |
+
+### 兼容性保证
+
+1. **现有策略不受影响**: `strategies/` 目录下的所有策略类保持原样
+2. **现有引擎不受影响**: `BacktestEngine` 继续支持全功能策略
+3. **渐进式新增**: 新的 `portfolio/` 和 `risk/` 层是增量添加
+4. **向后兼容导入**: 旧的导入路径继续工作，添加 deprecation 警告
+
+```python
+# 向后兼容示例
+# quant/analysis/portfolio/__init__.py
+import warnings
+
+def _deprecated_import():
+    warnings.warn(
+        "quant.analysis.portfolio is deprecated. Use quant.portfolio instead.",
+        DeprecationWarning,
+        stacklevel=3
+    )
+
+# Re-export for backward compatibility
+from quant.portfolio import PortfolioAnalyzer
+_deprecated_import()
+```
+
+---
+
+## 🔗 模块依赖关系
+
+### 依赖矩阵 (更新为8层)
+
+```
+                       依赖方向 →
+         ┌────────────────────────────────────────────────────────────────┐
+         │  core  data  analysis  portfolio  risk  strategies  engines   │
+    ─────┼────────────────────────────────────────────────────────────────┤
+    core │   -     ✗       ✗          ✗        ✗       ✗          ✗      │
+    data │   ✓     -       ✗          ✗        ✗       ✗          ✗      │
+analysis │   ✓     ✓       -          ✗        ✗       ✗          ✗      │
+portfolio│   ✓     ✓       ✓          -        ✗       ✗          ✗      │
+    risk │   ✓     ✓       ✓          ✓        -       ✗          ✗      │
+strategy │   ✓     ✓       ✓          ✗        ✗       -          ✗      │
+ engines │   ✓     ✓       ✓          ✓        ✓       ✓          -      │
+    ─────┴────────────────────────────────────────────────────────────────┘
+    
+    ✓ = 允许依赖    ✗ = 禁止依赖 (反向依赖)
+    
+    注: strategies 不依赖 portfolio/risk (保持全功能策略独立性)
+        engines 依赖所有层 (协调全功能策略和组件化策略)
+```
+
+### Analysis 子模块依赖
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         quant/analysis/                                 │
+└─────────────────────────────────────────────────────────────────────────┘
+
+                              ┌───────────┐
+                              │  advisor  │
+                              └─────┬─────┘
+                                    │ 聚合
+          ┌─────────────────────────┼─────────────────────────┐
+          │                         │                         │
+          ▼                         ▼                         ▼
+    ┌───────────┐            ┌───────────┐            ┌───────────┐
+    │ valuation │            │ technical │            │fundamental│
+    └─────┬─────┘            └─────┬─────┘            └─────┬─────┘
+          │                        │                        │
+          │                        │                        │
+          └────────────────────────┼────────────────────────┘
+                                   │
+                                   ▼
+                          ┌─────────────────┐
+                          │    screener     │
+                          │  (uses filters) │
+                          └─────────────────┘
+                                   │
+                                   ▼
+                          ┌─────────────────┐
+                          │   portfolio     │
+                          └─────────────────┘
+
+    ────────────────────────────────────────────────────────────────
+    允许的依赖: advisor → valuation, technical, fundamental
+               screener → valuation, technical
+               portfolio → valuation, advisor, screener
+    
+    禁止的依赖: valuation ↛ advisor (反向)
+               technical ↛ screener (反向)
+```
+
+---
+
+## 📋 重构迁移计划
+
+> **迁移原则**: 渐进式迁移，保持向后兼容，每个阶段独立可测试。
+
+### Phase 1: 统一数据层 (Week 1)
+
+```bash
+# 创建数据层新结构
+mkdir -p quant/data/implementations
+
+# 迁移和重构
+# 1. 将 data_providers/ 中的类迁移到 data/implementations/
+# 2. 创建统一的 base_provider.py
+# 3. 更新 provider_factory.py
+```
+
+| 源文件 | 目标文件 | 操作 |
+|--------|----------|------|
+| `data_providers/base_data_provider.py` | `data/base_provider.py` | 移动 + 优化 |
+| `data_providers/data_provider.py` | `data/implementations/tushare_provider.py` | 提取类 |
+| `data_providers/yahoo_data_provider.py` | `data/implementations/yahoo_provider.py` | 移动 |
+| `data/providers.py` | 拆分到上述文件 | 拆分单体类 |
+| `data_providers/cache_manager.py` | `data/cache_manager.py` | 移动 |
+
+### Phase 2: 创建 Analysis 目录结构 (Week 2)
+
+```bash
+# 创建 analysis 子目录
+mkdir -p quant/analysis/valuation
+mkdir -p quant/analysis/technical
+mkdir -p quant/analysis/fundamental
+mkdir -p quant/analysis/alpha
+
+# 创建 __init__.py
+touch quant/analysis/valuation/__init__.py
+touch quant/analysis/technical/__init__.py
+touch quant/analysis/fundamental/__init__.py
+touch quant/analysis/alpha/__init__.py
+```
+
+### Phase 3: 迁移估值分析模块 (Week 3)
+
+| 源文件 | 目标文件 | 操作 |
+|--------|----------|------|
+| `analysis/etf_valuation_analyzer.py` | `analysis/valuation/price_valuation.py` | 移动 + 重命名 |
+| `analysis/etf_fundamental_analyzer.py` | `analysis/valuation/fundamental_valuation.py` | 移动 + 重命名 |
+| `analysis/screener/peg_valuation_analyzer.py` | `analysis/valuation/peg_valuation.py` | 移动 |
+| `bin/regression_analyzer.py` | `analysis/valuation/regression_analyzer.py` | 提取核心类 |
+| *(新建)* | `analysis/valuation/systemic_undervalue.py` | 新建 |
+
+### Phase 4: 迁移技术分析模块 (Week 4)
+
+| 源文件 | 目标文件 | 操作 |
+|--------|----------|------|
+| `bin/momentum_analyzer.py` | `analysis/technical/momentum_analyzer.py` | 提取核心类 |
+| `analysis/screener/relative_strength_analyzer.py` | `analysis/technical/relative_strength.py` | 移动 |
+| `analysis/indicators/technical_analyzer.py` | `analysis/technical/` | 整合 |
+
+### Phase 5: 创建组合层 (Week 5) 🆕
+
+```bash
+# 创建组合层目录
+mkdir -p quant/portfolio
+
+# 创建核心文件
+touch quant/portfolio/__init__.py
+touch quant/portfolio/base_constructor.py
+touch quant/portfolio/mean_variance.py
+touch quant/portfolio/risk_parity.py
+touch quant/portfolio/equal_weight.py
+touch quant/portfolio/rebalancer.py
+```
+
+| 文件 | 操作 | 说明 |
+|------|------|------|
+| `portfolio/base_constructor.py` | 🆕 新建 | 组合构建抽象基类 |
+| `portfolio/mean_variance.py` | 🆕 新建 | 均值方差优化实现 |
+| `portfolio/risk_parity.py` | 🆕 新建 | 风险平价实现 |
+| `portfolio/equal_weight.py` | 🆕 新建 | 等权重实现 |
+| `portfolio/rebalancer.py` | 🆕 新建 | 再平衡逻辑 |
+| `analysis/portfolio/portfolio_analyzer.py` | 迁移 | 迁移到 `portfolio/` |
+
+### Phase 6: 创建风控层 (Week 6) 🆕
+
+```bash
+# 创建风控层目录
+mkdir -p quant/risk
+
+# 创建核心文件
+touch quant/risk/__init__.py
+touch quant/risk/base_risk_model.py
+touch quant/risk/position_limits.py
+touch quant/risk/var_calculator.py
+touch quant/risk/drawdown_monitor.py
+```
+
+| 文件 | 操作 | 说明 |
+|------|------|------|
+| `risk/base_risk_model.py` | 🆕 新建 | 风控模型抽象基类 |
+| `risk/position_limits.py` | 🆕 新建 | 仓位限制检查 |
+| `risk/var_calculator.py` | 🆕 新建 | VaR 计算 |
+| `risk/drawdown_monitor.py` | 🆕 新建 | 回撤监控 |
+| `risk/composite_risk.py` | 🆕 新建 | 组合风控模型 |
+
+### Phase 7: 创建 Alpha 层和新引擎 (Week 7) 🆕
+
+```bash
+# Alpha 模型
+touch quant/analysis/alpha/base_alpha.py
+touch quant/analysis/alpha/momentum_alpha.py
+touch quant/analysis/alpha/mean_reversion_alpha.py
+
+# 新引擎
+touch quant/engines/algorithm_engine.py
+```
+
+| 文件 | 操作 | 说明 |
+|------|------|------|
+| `analysis/alpha/base_alpha.py` | 🆕 新建 | Alpha 模型抽象基类 |
+| `analysis/alpha/momentum_alpha.py` | 🆕 新建 | 动量 Alpha |
+| `analysis/alpha/mean_reversion_alpha.py` | 🆕 新建 | 均值回归 Alpha |
+| `engines/algorithm_engine.py` | 🆕 新建 | 支持组件化策略的引擎 |
+
+**Alpha 模型与现有策略的关系**:
+```python
+# 从现有策略提取信号生成逻辑
+class MomentumAlpha(BaseAlpha):
+    """提取自 momentum_strategy.py 的信号生成部分"""
+    
+    def generate_insights(self, data: pd.DataFrame) -> List[Insight]:
+        # 复用 momentum_strategy 的计算逻辑
+        # 但只返回 Insight，不包含仓位决策
+        pass
+```
+
+### Phase 8: 清理和收尾 (Week 8)
+
+| 操作 | 说明 |
+|------|------|
+| 删除 `quant/company_analysis/` | 功能已合并到 `analysis/` |
+| 删除 `quant/config/` | 使用 `core/config.py` |
+| 标记 `quant/data_providers/` deprecated | 保留 re-export，添加警告 |
+| 简化 `bin/` 脚本 | 只保留入口，核心逻辑调用 `quant.analysis` |
+| 更新 `__init__.py` | 导出新模块 |
+| 更新测试 | 添加 portfolio/ 和 risk/ 的单元测试 |
+
+```python
+# 更新 quant/__init__.py
+from .analysis import (
+    PriceValuationAnalyzer,
+    FundamentalValuationAnalyzer,
+    PEGValuationAnalyzer,
+    RegressionAnalyzer,
+    SystemicUndervalueAnalyzer,
+    MomentumAnalyzer,
+    RelativeStrengthAnalyzer,
+)
+from .analysis.alpha import (
+    BaseAlpha,
+    MomentumAlpha,
+    MeanReversionAlpha,
+)
+from .portfolio import (
+    BasePortfolioConstructor,
+    MeanVarianceConstructor,
+    RiskParityConstructor,
+)
+from .risk import (
+    BaseRiskModel,
+    PositionLimits,
+    VaRCalculator,
+)
+from .engines import (
+    BacktestEngine,      # 保留 - 全功能策略
+    AlgorithmEngine,     # 🆕 - 组件化策略
+)
+```
+
+### 迁移原则
+
+1. **向后兼容**: 在旧位置保留 re-export 别名，逐步废弃
+2. **渐进式**: 每次只迁移一个模块，确保测试通过
+3. **文档同步**: 每次迁移后更新相关文档
+
+---
+
+## 📊 附录: 核心类设计
+
+### SystemicUndervalueAnalyzer (新增)
+
+```python
+class SystemicUndervalueAnalyzer:
+    """
+    系统性低估判断器
+    
+    综合多个维度判断公司是否被系统性严重低估
+    """
+    
+    def __init__(self, data_provider: DataProvider):
+        self.price_analyzer = PriceValuationAnalyzer()
+        self.fundamental_analyzer = FundamentalValuationAnalyzer(data_provider)
+        self.peg_analyzer = PEGValuationAnalyzer()
+        self.regression_analyzer = RegressionAnalyzer()
+    
+    def analyze(self, symbol: str, period_days: int = 756) -> Dict:
+        """
+        执行系统性低估分析
+        
+        Returns:
+            {
+                'is_undervalued': bool,           # 是否低估
+                'is_severely_undervalued': bool,  # 是否严重低估
+                'confidence': float,              # 置信度 0-100%
+                'composite_score': float,         # 综合评分 -12 ~ +12
+                'dimension_scores': {
+                    'price_percentile': float,    # -3 ~ +3
+                    'fundamental': float,         # -3 ~ +3
+                    'peg': float,                 # -3 ~ +3
+                    'regression': float,          # -3 ~ +3
+                },
+                'quality_checks': {...},          # 基本面质量检查
+                'value_trap_warnings': [...],     # 价值陷阱警告
+                'signals': [...],                 # 支撑判断的信号
+                'recommendation': str,            # 投资建议
+            }
+        """
+        pass
+```
+
+---
+
+## 📝 变更日志
+
+| 日期 | 版本 | 变更内容 |
+|------|------|---------|
+| 2026-01-01 | v2.0 | **重大更新**: 采用行业标准4层架构 (Alpha→Portfolio→Risk→Execution)，新增组合层和风控层设计，添加现有工具兼容性设计，扩展迁移计划至8个阶段 |
+| 2026-01-01 | v1.1 | 新增数据层统一方案、设计模式说明、更新迁移计划 |
+| 2026-01-01 | v1.0 | 初始架构设计文档 |
+
+---
+
+*本文档由量化交易系统团队维护，如有问题请提交 Issue。*

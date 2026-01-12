@@ -160,19 +160,22 @@ python bin/run.py trading backtest grid 002594.SZ # 传统网格回测
 ### 1. 配置化公司分析（推荐）
 
 ```python
-from quant.company_analysis import UniversalStockAnalyzer, listAvailableCompanies
+# 使用新的分析模块 (推荐)
+from quant.analysis.valuation import SystemicUndervalueAnalyzer
+from quant.analysis.advisor import UnifiedAdvisor
+from quant import create_data_provider, get_config
 
-# 查看可用的公司配置
-companies = listAvailableCompanies()
-for company in companies:
-    print(f"{company['name']} ({company['symbol']}) - {company['industry']}")
+# 创建数据提供者和分析器
+config = get_config()
+provider = create_data_provider('tushare', config.get_providers_config())
 
-# 创建分析器
-analyzer = UniversalStockAnalyzer('tushare')
+# 使用系统性低估分析器
+analyzer = SystemicUndervalueAnalyzer(provider)
+result = analyzer.analyze('002594.SZ', period_days=756)
 
-# 分析比亚迪股票（自动使用预配置参数）
-results = analyzer.analyzeCompany('BYD', saveReports=True)
-print(f"分析完成，报告保存在 reports/ 目录")
+print(f"综合评分: {result['composite_score']}")
+print(f"是否低估: {result['is_undervalued']}")
+print(f"投资建议: {result['recommendation']}")
 ```
 
 ### 2. 传统回测方式
@@ -286,14 +289,17 @@ engine.exportResults('000001.SZ', 'backtest_results.xlsx')
 ### 2. 多数据源支持
 
 ```python
-from quant.data_providers.data_provider_factory import createDataProvider
+# 使用新的数据层 (推荐)
+from quant import create_data_provider, get_config
+
+config = get_config()
 
 # 自动选择最佳数据源
-dataProvider = createDataProvider('auto')
+data_provider = create_data_provider('auto', config.get_providers_config())
 
 # 指定数据源
-tushareProvider = createDataProvider('tushare', enableCache=True)
-yahooProvider = createDataProvider('yahoo', enableCache=True)
+tushare_provider = create_data_provider('tushare', config.get_providers_config())
+yahoo_provider = create_data_provider('yahoo', config.get_providers_config())
 ```
 
 ### 3. 风险管理

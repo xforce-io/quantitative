@@ -163,13 +163,13 @@ class CachedDataProvider:
             logger.error(f"Error getting company info for {symbol}: {e}")
             raise
     
-    def getFinancialData(self, symbol: str, expiryHours: int = 72) -> Optional[Dict]:
+    def getFinancialData(self, symbol: str, expiryHours: int = 24) -> Optional[Dict]:
         """
-        获取财务数据（带缓存，默认3天过期）
+        获取财务数据（带缓存，默认1天过期）
         
         Args:
             symbol: 股票代码
-            expiryHours: 缓存过期时间（默认72小时=3天）
+            expiryHours: 缓存过期时间（默认24小时=1天）
         """
         # 尝试从缓存获取
         cachedData = self.cacheManager.get(
@@ -257,6 +257,55 @@ class CachedDataProvider:
             logger.error(f"Error getting index data for {symbol}: {e}")
             # 对于指数数据，不要回退到getStockData，因为可能会导致"No data found"错误
             # 直接抛出异常，让上层处理
+            raise
+
+    def getFundBasic(self, market='E', status='L', expiryHours: int = 168) -> Optional[Any]:
+        """
+        Get fund basic information (with cache)
+        
+        Args:
+            market (str): Market, E for exchange traded funds
+            status (str): Status, L for listed
+            expiryHours: Cache expiry in hours
+            
+        Returns:
+            pd.DataFrame: Fund basic information
+        """
+        # Build cache parameters
+        cacheParams = {
+            'market': market,
+            'status': status
+        }
+        
+        # Try to get from cache
+        cachedData = self.cacheManager.get(
+            provider=self.providerName,
+            apiType='fund_basic',
+            symbol='all', # Not symbol specific
+            expiryHours=expiryHours,
+            **cacheParams
+        )
+        
+        if cachedData is not None:
+            return cachedData
+        
+        # If not in cache, call the original method
+        try:
+            result = self.provider.getFundBasic(market=market, status=status)
+            
+            if result is not None and not result.empty:
+                self.cacheManager.set(
+                    provider=self.providerName,
+                    apiType='fund_basic',
+                    symbol='all',
+                    data=result,
+                    **cacheParams
+                )
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error getting fund basic data: {e}")
             raise
     
     def clearCache(self):

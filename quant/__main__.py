@@ -1,9 +1,20 @@
-"""Quantitative Trading System CLI Entry Point
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
-统一的命令行入口，支持：
-- 新闻分析
-- 交易策略分析
-- 系统管理
+"""
+量化交易系统统一CLI入口
+
+Quantitative Trading System Unified CLI Entry Point
+
+使用方式:
+    python -m quant <command> <subcommand> [options]
+
+示例:
+    python -m quant etf screen --types broad_market --save
+    python -m quant portfolio analyze USER_REAL_PORTFOLIO
+    python -m quant advisor single 002594.SZ
+    python -m quant strategy backtest ma_crossover 002594.SZ
+    python -m quant system status
 """
 
 import sys
@@ -11,315 +22,143 @@ import argparse
 import logging
 from pathlib import Path
 
-# Add project root to Python path
+# 确保项目根目录在路径中
 project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
-from quant.core.config_manager import ConfigManager
-from quant.core.data_manager import DataManager
+from quant.cli import (
+    register_etf_commands,
+    register_portfolio_commands,
+    register_advisor_commands,
+    register_strategy_commands,
+    register_system_commands,
+    register_screener_commands
+)
+from quant.cli.etf import handle_etf_command
+from quant.cli.portfolio import handle_portfolio_command
+from quant.cli.advisor import handle_advisor_command
+from quant.cli.strategy import handle_strategy_command
+from quant.cli.system import handle_system_command
+from quant.cli.screener import handle_screener_command
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# 配置日志
+logging.basicConfig(
+    level=logging.WARNING,  # 默认只显示警告和错误
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
+# 获取版本号
+try:
+    from quant import __version__
+except ImportError:
+    __version__ = "未知"
 
 
 def create_parser():
-    """Create argument parser"""
+    """创建命令行参数解析器"""
     parser = argparse.ArgumentParser(
-        description='Quantitative Trading System CLI',
+        prog='python -m quant',
+        description=f'量化交易系统统一CLI (v{__version__})',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Examples:
-  # News analysis
-  python -m quant news analyze --targets nasdaq,gold --days 7
-  python -m quant news collect --sources sina,eastmoney
-  
-  # Trading analysis  
-  python -m quant trading analyze --symbol 002594.SZ --strategy grid
-  python -m quant trading backtest --config config/trading.yaml
-  
-  # System management
-  python -m quant config validate
-  python -m quant cache clear
+命令示例:
+
+  ETF筛选:
+    python -m quant etf screen --types broad_market sector --save
+    python -m quant etf screen --from-config INDUSTRY_ETF --save
+    python -m quant etf single 510300.SH
+    python -m quant etf config --list
+
+  投资组合分析:
+    python -m quant portfolio analyze USER_REAL_PORTFOLIO
+    python -m quant portfolio list
+
+  投资顾问:
+    python -m quant advisor single 002594.SZ
+    python -m quant advisor comprehensive 002594.SZ
+
+  策略回测:
+    python -m quant strategy backtest ma_crossover 002594.SZ
+    python -m quant strategy list
+
+  股票排名:
+    python -m quant screener rank --symbols "000001.SZ,002594.SZ" --profile balanced
+    python -m quant screener rank --pool BANK --profile value --top 10
+    python -m quant screener profiles
+
+  系统管理:
+    python -m quant system status
+    python -m quant system clean --type all
+    python -m quant system version
+
+更多信息请查看文档: docs/
         """
     )
     
-    subparsers = parser.add_subparsers(dest='command', help='Available commands')
+    parser.add_argument('--version', action='version', version=f'%(prog)s {__version__}')
+    parser.add_argument('--verbose', '-v', action='store_true', help='显示详细日志')
     
-    # News analysis commands
-    news_parser = subparsers.add_parser('news', help='News analysis commands')
-    news_subparsers = news_parser.add_subparsers(dest='news_action', help='News actions')
+    # 创建子命令解析器
+    subparsers = parser.add_subparsers(dest='command', help='可用命令', metavar='<command>')
     
-    # News analyze
-    news_analyze_parser = news_subparsers.add_parser('analyze', help='Analyze news data')
-    news_analyze_parser.add_argument('--targets', type=str, default='nasdaq,gold,csi300', 
-                                    help='Investment targets (comma separated)')
-    news_analyze_parser.add_argument('--days', type=int, default=7, 
-                                    help='Number of days to look back')
-    news_analyze_parser.add_argument('--mode', type=str, choices=['simple', 'two_stage'], 
-                                    default='simple', help='Analysis mode')
-    news_analyze_parser.add_argument('--output', type=str, default='reports/', 
-                                    help='Output directory')
-    news_analyze_parser.add_argument('--format', type=str, choices=['json', 'markdown', 'html'], 
-                                    default='json', help='Output format')
-    
-    # News collect
-    news_collect_parser = news_subparsers.add_parser('collect', help='Collect news data')
-    news_collect_parser.add_argument('--sources', type=str, default='sina,eastmoney', 
-                                    help='News sources (comma separated)')
-    news_collect_parser.add_argument('--days', type=int, default=3, 
-                                    help='Number of days to collect')
-    
-    # Trading analysis commands
-    trading_parser = subparsers.add_parser('trading', help='Trading analysis commands')
-    trading_subparsers = trading_parser.add_subparsers(dest='trading_action', help='Trading actions')
-    
-    # Trading analyze
-    trading_analyze_parser = trading_subparsers.add_parser('analyze', help='Analyze trading strategy')
-    trading_analyze_parser.add_argument('--symbol', type=str, required=True, 
-                                       help='Stock symbol to analyze')
-    trading_analyze_parser.add_argument('--strategy', type=str, choices=['grid', 'dca', 'momentum'], 
-                                       default='grid', help='Trading strategy')
-    trading_analyze_parser.add_argument('--start-date', type=str, default='2023-01-01', 
-                                       help='Start date for analysis')
-    trading_analyze_parser.add_argument('--end-date', type=str, default='2024-01-01', 
-                                       help='End date for analysis')
-    
-    # Trading backtest
-    trading_backtest_parser = trading_subparsers.add_parser('backtest', help='Run strategy backtest')
-    trading_backtest_parser.add_argument('--config', type=str, default='config/trading.yaml', 
-                                        help='Trading configuration file')
-    trading_backtest_parser.add_argument('--symbol', type=str, required=True, 
-                                        help='Stock symbol to backtest')
-    
-    # Config management commands
-    config_parser = subparsers.add_parser('config', help='Configuration management')
-    config_subparsers = config_parser.add_subparsers(dest='config_action', help='Config actions')
-    
-    # Config validate
-    config_validate_parser = config_subparsers.add_parser('validate', help='Validate configurations')
-    config_validate_parser.add_argument('--config', type=str, help='Specific config to validate')
-    
-    # Config list
-    config_list_parser = config_subparsers.add_parser('list', help='List available configurations')
-    
-    # Cache management commands
-    cache_parser = subparsers.add_parser('cache', help='Cache management')
-    cache_subparsers = cache_parser.add_subparsers(dest='cache_action', help='Cache actions')
-    
-    # Cache clear
-    cache_clear_parser = cache_subparsers.add_parser('clear', help='Clear cache')
-    cache_clear_parser.add_argument('--type', type=str, choices=['all', 'news', 'trading'], 
-                                   default='all', help='Type of cache to clear')
+    # 注册各个模块的命令
+    register_etf_commands(subparsers)
+    register_portfolio_commands(subparsers)
+    register_advisor_commands(subparsers)
+    register_strategy_commands(subparsers)
+    register_system_commands(subparsers)
+    register_screener_commands(subparsers)
     
     return parser
 
 
-def handle_news_analyze(args):
-    """Handle news analysis command"""
-    try:
-        logger.info(f"Starting news analysis for targets: {args.targets}")
-        
-        # Initialize managers
-        config_manager = ConfigManager()
-        data_manager = DataManager(config_manager)
-        
-        # Parse targets
-        targets = [t.strip() for t in args.targets.split(',')]
-        
-        # Get news data
-        logger.info(f"Collecting news data for last {args.days} days...")
-        news_data = data_manager.get_news_data(days_back=args.days)
-        
-        if not news_data:
-            logger.warning("No news data found")
-            return
-        
-        logger.info(f"Found {len(news_data)} news articles")
-        
-        # For now, save the collected data as a simple report
-        report_data = {
-            "title": "News Analysis Report",
-            "analysis_date": data_manager._standardize_timestamp(""),
-            "targets": targets,
-            "days_analyzed": args.days,
-            "total_articles": len(news_data),
-            "articles_summary": [
-                {
-                    "title": article.get("title", ""),
-                    "source": article.get("source", ""),
-                    "timestamp": article.get("timestamp", "")
-                } 
-                for article in news_data[:10]  # Show first 10 articles
-            ]
-        }
-        
-        # Save report
-        report_path = data_manager.save_report(
-            report_data=report_data,
-            report_type="news_analysis",
-            target="multi_target",
-            format_type=args.format
-        )
-        
-        logger.info(f"News analysis completed. Report saved to: {report_path}")
-        
-    except Exception as e:
-        logger.error(f"News analysis failed: {e}")
-        sys.exit(1)
-
-
-def handle_config_validate(args):
-    """Handle configuration validation"""
-    try:
-        config_manager = ConfigManager()
-        
-        if args.config:
-            # Validate specific config
-            logger.info(f"Validating configuration: {args.config}")
-            is_valid = config_manager.validate_config(args.config)
-            if is_valid:
-                logger.info(f"Configuration {args.config} is valid ✓")
-            else:
-                logger.error(f"Configuration {args.config} is invalid ✗")
-                sys.exit(1)
-        else:
-            # Validate all configs
-            logger.info("Validating all configurations...")
-            configs = config_manager.list_available_configs()
-            all_valid = True
-            
-            for config_name in configs:
-                try:
-                    is_valid = config_manager.validate_config(config_name)
-                    status = "✓" if is_valid else "✗"
-                    logger.info(f"  {config_name}: {status}")
-                    if not is_valid:
-                        all_valid = False
-                except Exception as e:
-                    logger.error(f"  {config_name}: Error - {e}")
-                    all_valid = False
-            
-            if all_valid:
-                logger.info("All configurations are valid ✓")
-            else:
-                logger.error("Some configurations are invalid ✗")
-                sys.exit(1)
-                
-    except Exception as e:
-        logger.error(f"Configuration validation failed: {e}")
-        sys.exit(1)
-
-
-def handle_config_list(args):
-    """Handle configuration listing"""
-    try:
-        config_manager = ConfigManager()
-        configs = config_manager.list_available_configs()
-        
-        logger.info("Available configurations:")
-        for config_name in configs:
-            logger.info(f"  - {config_name}")
-            
-    except Exception as e:
-        logger.error(f"Failed to list configurations: {e}")
-        sys.exit(1)
-
-
-def handle_cache_clear(args):
-    """Handle cache clearing"""
-    try:
-        config_manager = ConfigManager()
-        data_manager = DataManager(config_manager)
-        
-        logger.info(f"Clearing {args.type} cache...")
-        
-        if args.type in ['all', 'news']:
-            # Clear news cache
-            news_cache_dir = data_manager.cache_dir / "news_analysis"
-            if news_cache_dir.exists():
-                import shutil
-                shutil.rmtree(news_cache_dir)
-                news_cache_dir.mkdir(parents=True, exist_ok=True)
-                logger.info("News cache cleared")
-        
-        if args.type in ['all', 'trading']:
-            # Clear trading cache
-            trading_cache_dir = data_manager.cache_dir / "trading"
-            if trading_cache_dir.exists():
-                import shutil
-                shutil.rmtree(trading_cache_dir)
-                trading_cache_dir.mkdir(parents=True, exist_ok=True)
-                logger.info("Trading cache cleared")
-        
-        if args.type == 'all':
-            # Clear configuration cache
-            config_manager.clear_cache()
-            logger.info("Configuration cache cleared")
-        
-        logger.info("Cache clearing completed ✓")
-        
-    except Exception as e:
-        logger.error(f"Cache clearing failed: {e}")
-        sys.exit(1)
-
-
 def main():
-    """Main CLI entry point"""
+    """主函数"""
     parser = create_parser()
     args = parser.parse_args()
     
+    # 设置日志级别
+    if args.verbose:
+        logging.getLogger().setLevel(logging.INFO)
+    
+    # 如果没有提供命令，显示帮助
     if not args.command:
         parser.print_help()
-        sys.exit(1)
+        return 0
     
     try:
-        # Route to appropriate handler
-        if args.command == 'news':
-            if args.news_action == 'analyze':
-                handle_news_analyze(args)
-            elif args.news_action == 'collect':
-                logger.info("News collection not implemented yet")
-            else:
-                logger.error("Unknown news action")
-                sys.exit(1)
-                
-        elif args.command == 'trading':
-            if args.trading_action == 'analyze':
-                logger.info("Trading analysis not implemented yet")
-            elif args.trading_action == 'backtest':
-                logger.info("Trading backtest not implemented yet")
-            else:
-                logger.error("Unknown trading action")
-                sys.exit(1)
-                
-        elif args.command == 'config':
-            if args.config_action == 'validate':
-                handle_config_validate(args)
-            elif args.config_action == 'list':
-                handle_config_list(args)
-            else:
-                logger.error("Unknown config action")
-                sys.exit(1)
-                
-        elif args.command == 'cache':
-            if args.cache_action == 'clear':
-                handle_cache_clear(args)
-            else:
-                logger.error("Unknown cache action")
-                sys.exit(1)
-                
+        # 路由到对应的命令处理器
+        if args.command == 'etf':
+            handle_etf_command(args)
+        elif args.command == 'portfolio':
+            handle_portfolio_command(args)
+        elif args.command == 'advisor':
+            handle_advisor_command(args)
+        elif args.command == 'strategy':
+            handle_strategy_command(args)
+        elif args.command == 'system':
+            handle_system_command(args)
+        elif args.command == 'screener':
+            handle_screener_command(args)
         else:
-            logger.error("Unknown command")
-            sys.exit(1)
-            
+            print(f"❌ 未知命令: {args.command}")
+            parser.print_help()
+            return 1
+        
+        return 0
+    
     except KeyboardInterrupt:
-        logger.info("Operation cancelled by user")
-        sys.exit(0)
+        print("\n\n👋 操作已取消")
+        return 130
+    
     except Exception as e:
-        logger.error(f"Unexpected error: {e}")
-        sys.exit(1)
+        print(f"\n❌ 发生错误: {e}")
+        if args.verbose:
+            import traceback
+            traceback.print_exc()
+        return 1
 
 
 if __name__ == '__main__':
-    main() 
+    sys.exit(main())

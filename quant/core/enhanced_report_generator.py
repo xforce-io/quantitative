@@ -795,7 +795,7 @@ class EnhancedReportGenerator:
         
         # 如果没有有效交易，尝试从收益率估算
         if total_valid_trades == 0:
-            print("🔄 No valid P&L data found, estimating win rate from total return...")
+            logger.info("🔄 No valid P&L data found, estimating win rate from total return...")
             total_return = self._calculate_total_return(results)
             # 如果总收益为正，估算一个基本胜率
             if total_return > 0:
@@ -804,7 +804,7 @@ class EnhancedReportGenerator:
                 return max(0.0, 0.5 + total_return)  # 负收益时的估算胜率
         
         win_rate = profitable_trades / total_valid_trades
-        print(f"🔄 Win rate calculated: {profitable_trades}/{total_valid_trades} = {win_rate:.2%}")
+        logger.info("🔄 Win rate calculated: {profitable_trades}/{total_valid_trades} = {win_rate:.2%}")
         return win_rate
     
     def _count_trades(self, results: Dict[str, Any]) -> int:
