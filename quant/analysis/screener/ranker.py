@@ -22,6 +22,7 @@ from quant.data_providers.data_provider_factory import DataProviderFactory
 from quant.analysis.indicators.capital_flow_analyzer import CapitalFlowAnalyzer
 from quant.analysis.indicators.technical_analyzer import TechnicalAnalyzer
 from quant.analysis.valuation.price_valuation import ETFValuationAnalyzer
+from quant.analysis.indicators.momentum_analyzer import ShortTermMomentumAnalyzer
 
 logger = get_logger(__name__)
 
@@ -42,7 +43,9 @@ def _load_cache() -> Dict[str, Dict[str, float]]:
     if cache_file.exists():
         try:
             with open(cache_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                data = json.load(f)
+                logger.info(f"已加载排名缓存: {len(data)} 条记录")
+                return data
         except Exception as e:
             logger.warning(f"加载缓存文件失败: {e}")
     return {}
@@ -85,13 +88,13 @@ _score_cache: Dict[str, Dict[str, float]] = _load_cache()
 class StockRanker:
     """股票排名引擎"""
 
-    # 默认权重配置
+    # 默认权重配置 (4因子: money_flow, technical, valuation, trend)
     DEFAULT_PROFILES = {
-        'short_term': {'money_flow': 0.5, 'technical': 0.4, 'valuation': 0.1},
-        'balanced': {'money_flow': 0.33, 'technical': 0.33, 'valuation': 0.34},
-        'value': {'money_flow': 0.2, 'technical': 0.2, 'valuation': 0.6},
-        'trend': {'money_flow': 0.3, 'technical': 0.5, 'valuation': 0.2},
-        'momentum': {'money_flow': 0.6, 'technical': 0.3, 'valuation': 0.1},
+        'short_term': {'money_flow': 0.35, 'technical': 0.30, 'valuation': 0.05, 'trend': 0.30},
+        'balanced': {'money_flow': 0.25, 'technical': 0.25, 'valuation': 0.25, 'trend': 0.25},
+        'value': {'money_flow': 0.15, 'technical': 0.15, 'valuation': 0.55, 'trend': 0.15},
+        'trend': {'money_flow': 0.20, 'technical': 0.20, 'valuation': 0.10, 'trend': 0.50},
+        'momentum': {'money_flow': 0.40, 'technical': 0.15, 'valuation': 0.05, 'trend': 0.40},
     }
 
     def __init__(self, data_provider_name: str = 'tushare', use_cache: bool = True):
@@ -106,6 +109,7 @@ class StockRanker:
         self.capital_flow_analyzer = CapitalFlowAnalyzer(data_provider_name, use_cache)
         self.technical_analyzer = TechnicalAnalyzer()
         self.valuation_analyzer = ETFValuationAnalyzer()
+        self.momentum_analyzer = ShortTermMomentumAnalyzer(data_provider_name, mode='advanced')
 
         # 加载权重配置
         self.profiles = self._load_profiles()
@@ -197,6 +201,7 @@ class StockRanker:
                     'money_flow_score': scores.get('money_flow', 0),
                     'technical_score': scores.get('technical', 0),
                     'valuation_score': scores.get('valuation', 0),
+                    'trend_score': scores.get('trend', 0),
                     'status': 'success'
                 })
             except Exception as e:
@@ -207,6 +212,7 @@ class StockRanker:
                     'money_flow_score': 0,
                     'technical_score': 0,
                     'valuation_score': 0,
+                    'trend_score': 0,
                     'status': f'error: {str(e)}'
                 })
 
@@ -217,11 +223,16 @@ class StockRanker:
 
         # 调整列顺序
         columns = ['rank', 'symbol', 'composite_score', 'money_flow_score',
-                   'technical_score', 'valuation_score', 'status']
+                   'technical_score', 'valuation_score', 'trend_score', 'status']
         df = df[columns]
 
         if top_n is not None and top_n > 0:
             df = df.head(top_n)
+
+        # 批量保存缓存，避免频繁IO
+        global _score_cache
+        _save_cache(_score_cache)
+        logger.info(f"排名完成: 缓存已更新，共 {len(_score_cache)} 条记录")
 
         logger.info(f"排名完成: 成功 {len(df[df['status'] == 'success'])} 只")
         return df
@@ -279,10 +290,22 @@ class StockRanker:
             logger.debug(f"{symbol} 估值分析失败: {e}")
             scores['valuation'] = 50.0
 
-        # 存入缓存并持久化
+        # 5. 趋势分数 (使用 ShortTermMomentumAnalyzer 的高级模式)
+        try:
+            momentum_result = self.momentum_analyzer.analyze_symbol(symbol, days=days)
+            if 'error' not in momentum_result:
+                # momentum_score 范围是 0-100，直接使用
+                scores['trend'] = float(momentum_result.get('momentum_score', 50))
+            else:
+                scores['trend'] = 50.0
+        except Exception as e:
+            logger.debug(f"{symbol} 趋势分析失败: {e}")
+            scores['trend'] = 50.0
+
+        # 存入内存缓存
         _score_cache[cache_key] = scores
-        _save_cache(_score_cache)
-        logger.debug(f"{symbol} 分数已缓存并持久化")
+        # _save_cache(_score_cache)  # 移除：改为在 rank 方法结束时统一保存，避免频繁IO
+        logger.debug(f"{symbol} 分数已计算并存入内存缓存")
 
         return scores
 
@@ -399,11 +422,12 @@ class StockRanker:
             f"⚙️  排名配置: {profile}",
             f"📈 权重设置: 资金流向={weights.get('money_flow', 0):.0%}, "
             f"技术形态={weights.get('technical', 0):.0%}, "
-            f"估值={weights.get('valuation', 0):.0%}",
+            f"估值={weights.get('valuation', 0):.0%}, "
+            f"趋势={weights.get('trend', 0):.0%}",
             "=" * 80,
             "",
-            f"{'排名':<6}{'代码':<12}{'综合分':<10}{'资金分':<10}{'技术分':<10}{'估值分':<10}{'状态':<10}",
-            "-" * 80
+            f"{'排名':<6}{'代码':<12}{'综合分':<10}{'资金分':<10}{'技术分':<10}{'估值分':<10}{'趋势分':<10}{'状态':<10}",
+            "-" * 90
         ]
 
         for _, row in df.iterrows():
@@ -414,6 +438,7 @@ class StockRanker:
                 f"{row['money_flow_score']:<10.1f}"
                 f"{row['technical_score']:<10.1f}"
                 f"{row['valuation_score']:<10.1f}"
+                f"{row['trend_score']:<10.1f}"
                 f"{status:<10}"
             )
 

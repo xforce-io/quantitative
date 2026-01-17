@@ -1,6 +1,18 @@
 """
 Stock Chat Service - 个股分析对话服务
+
+DEPRECATED: 本模块已废弃，请使用 web/agent_manager.py + PageDataSkillkit
+新的 AI 分析师功能已移至页面右侧独立面板，支持页面级上下文和工具调用。
+计划在 v3.0 版本移除此模块。
 """
+
+import warnings
+warnings.warn(
+    "StockChatService is deprecated, use agent_manager with PageDataSkillkit instead. "
+    "See web/agent_manager.py and web/components_ai_panel.py for the new implementation.",
+    DeprecationWarning,
+    stacklevel=2
+)
 
 import json
 import os
@@ -11,6 +23,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 import yaml
+
 
 
 def _load_llm_config() -> Dict[str, Any]:

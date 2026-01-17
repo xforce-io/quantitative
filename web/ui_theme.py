@@ -18,7 +18,7 @@ class Colors:
     
     # 辅助色
     PRIMARY = '#3498db' # 蓝色
-    WARNING = '#f39c12' # 橙色
+    WARNING = '#FFD700' # 金黄色 (用于价格曲线)
     INFO = '#8e44ad'    # 紫色
     
     # 图表色
@@ -82,11 +82,20 @@ def apply_custom_css():
     """
     st.markdown("""
     <style>
-    /* 加宽主内容区域 */
+    /* 加宽主内容区域并减少顶部留白 */
     .block-container {
         max-width: 1400px !important;
         padding-left: 2rem !important;
         padding-right: 2rem !important;
+        padding-top: 2rem !important;
+    }
+
+    /* 隐藏顶部的装饰条和默认 Header 以节省空间 */
+    header[data-testid="stHeader"] {
+        display: none;
+    }
+    .stApp > header {
+        display: none;
     }
 
     /* 技术信号区域的 metric 组件样式调整 */

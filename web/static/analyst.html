@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 投研分析师 - Quantitative Trading</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;700&display=swap"
+        rel="stylesheet">
+
+    <!-- marked.js for Markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                        heading: ['Outfit', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            min-height: 100vh;
+        }
+
+        /* 玻璃拟态卡片 */
+        .glass-card {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .glass-card:hover {
+            box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.1);
+        }
+
+        /* 消息动画 */
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(12px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .animate-fade-in-up {
+            animation: fadeInUp 0.35s ease-out;
+        }
+
+        /* 打字光标 */
+        @keyframes blink {
+
+            0%,
+            50% {
+                opacity: 1;
+            }
+
+            51%,
+            100% {
+                opacity: 0;
+            }
+        }
+
+        .typing-cursor::after {
+            content: '▌';
+            animation: blink 0.8s infinite;
+            color: #7c3aed;
+        }
+
+        /* 脉冲状态指示器 */
+        @keyframes pulse-dot {
+            0% {
+                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5);
+            }
+
+            70% {
+                box-shadow: 0 0 0 8px rgba(16, 185, 129, 0);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+            }
+        }
+
+        .status-dot-pulse {
+            animation: pulse-dot 2s infinite;
+        }
+
+        /* 自定义滚动条 */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 3px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        /* Markdown 内容样式 */
+        .prose-chat {
+            font-size: 0.95rem;
+            line-height: 1.7;
+        }
+
+        .prose-chat p {
+            margin-bottom: 0.75em;
+        }
+
+        .prose-chat p:last-child {
+            margin-bottom: 0;
+        }
+
+        .prose-chat ul,
+        .prose-chat ol {
+            margin: 0.5em 0;
+            padding-left: 1.5em;
+        }
+
+        .prose-chat li {
+            margin: 0.25em 0;
+        }
+
+        .prose-chat code {
+            background: rgba(99, 102, 241, 0.1);
+            padding: 0.15em 0.4em;
+            border-radius: 4px;
+            font-family: ui-monospace, Menlo, Monaco, monospace;
+            font-size: 0.85em;
+            color: #6366f1;
+        }
+
+        .prose-chat pre {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 1em;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 0.75em 0;
+        }
+
+        .prose-chat pre code {
+            background: none;
+            color: inherit;
+            padding: 0;
+        }
+
+        .prose-chat strong {
+            font-weight: 600;
+            color: #1e293b;
+        }
+
+        .prose-chat a {
+            color: #6366f1;
+            text-decoration: underline;
+        }
+
+        .prose-chat blockquote {
+            border-left: 3px solid #e2e8f0;
+            padding-left: 1em;
+            color: #64748b;
+            font-style: italic;
+        }
+
+        /* 工具调用卡片 */
+        .tool-card {
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.05) 0%, rgba(168, 85, 247, 0.05) 100%);
+            border: 1px solid rgba(99, 102, 241, 0.15);
+        }
+
+        /* 快速提问按钮悬停效果 */
+        .quick-btn {
+            transition: all 0.2s ease;
+        }
+
+        .quick-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2);
+        }
+
+        /* 输入框聚焦效果 */
+        .chat-input:focus {
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+        }
+
+        /* 渐变背景头部 */
+        .header-gradient {
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a855f7 100%);
+        }
+
+        /* 强制固定定位 */
+        #aiPanel {
+            position: fixed !important;
+            bottom: 24px !important;
+            right: 24px !important;
+            display: none;
+            /* 由 JS 或 lg:block 控制 */
+        }
+
+        @media (min-width: 1024px) {
+            #aiPanel {
+                display: block !important;
+            }
+        }
+    </style>
+</head>
+
+<body class="min-h-screen font-sans">
+    <!-- 顶部导航 -->
+    <nav class="bg-white/80 backdrop-blur-md border-b border-slate-200 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-6 py-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div
+                        class="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/30">
+                        <span class="text-white text-xl">📊</span>
+                    </div>
+                    <div>
+                        <h1 class="text-xl font-bold font-heading text-slate-800">AI 投研分析师</h1>
+                        <p class="text-xs text-slate-500 font-medium">Quantitative Trading Platform</p>
+                    </div>
+                </div>
+                <nav class="flex items-center gap-4">
+                    <a href="/docs" target="_blank"
+                        class="text-slate-600 hover:text-indigo-600 transition-colors font-medium text-sm">API 文档</a>
+                    <div class="flex items-center gap-2 text-sm">
+                        <span class="w-2 h-2 bg-emerald-500 rounded-full status-dot-pulse"></span>
+                        <span class="text-emerald-600 font-medium">在线</span>
+                    </div>
+                </nav>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 主内容区 -->
+    <main class="max-w-7xl mx-auto px-6 py-8 lg:pr-[500px]">
+        <!-- 左侧：数据面板 -->
+        <div class="space-y-6">
+            <div class="glass-card rounded-2xl p-6">
+                <h2 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                    <span>📈</span> 市场概览
+                </h2>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="bg-gradient-to-br from-rose-50 to-rose-100 rounded-xl p-4">
+                        <div class="text-sm text-rose-600 font-medium">上证指数</div>
+                        <div class="text-2xl font-bold text-rose-700">3,089.26</div>
+                        <div class="text-sm text-rose-500">+0.45%</div>
+                    </div>
+                    <div class="bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-xl p-4">
+                        <div class="text-sm text-emerald-600 font-medium">深证成指</div>
+                        <div class="text-2xl font-bold text-emerald-700">9,876.54</div>
+                        <div class="text-sm text-emerald-500">+1.23%</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="glass-card rounded-2xl p-6">
+                <h2 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                    <span>🔥</span> 热门标的
+                </h2>
+                <div class="space-y-3" id="hotStocks">
+                    <div class="flex items-center justify-between p-3 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
+                        onclick="askAboutStock('贵州茅台', '600519.SH')">
+                        <div>
+                            <div class="font-semibold text-slate-800">贵州茅台</div>
+                            <div class="text-xs text-slate-500">600519.SH</div>
+                        </div>
+                        <div class="text-right">
+                            <div class="font-bold text-rose-600">1,756.00</div>
+                            <div class="text-xs text-rose-500">+2.35%</div>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between p-3 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
+                        onclick="askAboutStock('宁德时代', '300750.SZ')">
+                        <div>
+                            <div class="font-semibold text-slate-800">宁德时代</div>
+                            <div class="text-xs text-slate-500">300750.SZ</div>
+                        </div>
+                        <div class="text-right">
+                            <div class="font-bold text-emerald-600">198.50</div>
+                            <div class="text-xs text-emerald-500">-1.12%</div>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between p-3 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
+                        onclick="askAboutStock('比亚迪', '002594.SZ')">
+                        <div>
+                            <div class="font-semibold text-slate-800">比亚迪</div>
+                            <div class="text-xs text-slate-500">002594.SZ</div>
+                        </div>
+                        <div class="text-right">
+                            <div class="font-bold text-rose-600">256.80</div>
+                            <div class="text-xs text-rose-500">+3.67%</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- 右下角固定：AI 对话面板 -->
+    <div id="aiPanel"
+        style="position: fixed !important; bottom: 24px !important; right: 24px !important; z-index: 9999 !important;"
+        class="w-[420px] hidden lg:block">
+        <div class="glass-card rounded-2xl overflow-hidden shadow-2xl border border-indigo-100/50">
+            <!-- 头部 -->
+            <div class="header-gradient px-5 py-3">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3 text-white">
+                        <div class="w-9 h-9 bg-white/20 backdrop-blur rounded-xl flex items-center justify-center">
+                            <span class="text-xl">✦</span>
+                        </div>
+                        <div>
+                            <h2 class="font-bold font-heading text-base">AI 分析师</h2>
+                            <p class="text-xs text-white/70">智能投研助手</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-1">
+                        <button onclick="togglePanel()"
+                            class="p-2 hover:bg-white/20 rounded-lg transition-colors text-white/80 hover:text-white"
+                            title="最小化">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M19 9l-7 7-7-7" />
+                            </svg>
+                        </button>
+                        <button onclick="clearChat()"
+                            class="p-2 hover:bg-white/20 rounded-lg transition-colors text-white/80 hover:text-white"
+                            title="清空对话">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 快速提问区域 -->
+            <div id="quickQuestionsArea"
+                class="px-5 py-3 bg-gradient-to-r from-indigo-50/80 to-purple-50/80 border-b border-indigo-100">
+                <p class="text-xs text-slate-600 mb-2 flex items-center gap-2">
+                    <span>✨</span>
+                    <span>快速提问</span>
+                </p>
+                <div class="flex flex-wrap gap-1.5" id="quickButtons">
+                    <button onclick="askQuestion('今日市场有哪些值得关注的投资机会？')"
+                        class="quick-btn px-2.5 py-1 bg-white text-slate-700 text-xs rounded-md border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50">
+                        🎯 今日机会
+                    </button>
+                    <button onclick="askQuestion('分析一下当前大盘的技术形态')"
+                        class="quick-btn px-2.5 py-1 bg-white text-slate-700 text-xs rounded-md border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50">
+                        📊 大盘分析
+                    </button>
+                    <button onclick="askQuestion('哪些板块资金流入明显？')"
+                        class="quick-btn px-2.5 py-1 bg-white text-slate-700 text-xs rounded-md border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50">
+                        💰 资金流向
+                    </button>
+                    <button onclick="askQuestion('有哪些高风险信号需要警惕？')"
+                        class="quick-btn px-2.5 py-1 bg-white text-slate-700 text-xs rounded-md border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50">
+                        ⚠️ 风险提示
+                    </button>
+                </div>
+            </div>
+
+            <!-- 消息区域 -->
+            <div id="chatMessages" class="p-5 h-[350px] overflow-y-auto custom-scrollbar bg-white space-y-3">
+                <!-- 欢迎消息 -->
+                <div class="flex justify-start animate-fade-in-up">
+                    <div
+                        class="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center mr-2.5 flex-shrink-0 text-white font-bold text-xs shadow-md">
+                        AI
+                    </div>
+                    <div class="max-w-[85%] px-4 py-3 rounded-2xl rounded-tl-none bg-slate-50 border border-slate-100">
+                        <div class="prose-chat text-slate-700 text-sm">
+                            <p>👋 你好！我是您的 <strong>AI 投研分析师</strong>。</p>
+                            <p>我可以帮您分析股票、解读市场趋势、评估资金流向。</p>
+                            <p>点击上方快速提问，或直接输入您的问题开始对话。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 输入区域 -->
+            <div class="px-5 py-3 bg-slate-50 border-t border-slate-200">
+                <div class="flex gap-2">
+                    <input type="text" id="chatInput"
+                        class="chat-input flex-1 px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-400 text-slate-800 placeholder-slate-400 transition-all text-sm"
+                        placeholder="输入您的投资问题..."
+                        onkeydown="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(); }">
+                    <button onclick="sendMessage()" id="sendBtn"
+                        class="px-4 py-2 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-semibold rounded-lg transition-all shadow-lg shadow-indigo-500/25 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 text-sm">
+                        <span id="sendBtnText">发送</span>
+                        <svg id="sendBtnIcon" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                        </svg>
+                    </button>
+                </div>
+                <p class="text-xs text-slate-400 mt-1.5 text-center">
+                    💡 AI 分析仅供参考，不构成投资建议
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 最小化时的浮动按钮 -->
+    <button id="aiPanelToggle" onclick="togglePanel()"
+        class="fixed bottom-6 right-6 w-14 h-14 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-full shadow-lg shadow-indigo-500/40 flex items-center justify-center text-white text-2xl z-40 hover:scale-110 transition-transform lg:hidden">
+        ✦
+    </button>
+
+    <script>
+        // ==================== 全局状态 ====================
+        let sessionId = null;
+        let isGenerating = false;
+        let abortController = null;
+        let msgCounter = 0;
+
+        // 配置 marked
+        if (typeof marked !== 'undefined') {
+            marked.use({ breaks: true, gfm: true });
+        }
+
+        // ==================== 消息相关函数 ====================
+
+        function addMessage(role, content, isStreaming = false) {
+            const container = document.getElementById('chatMessages');
+            msgCounter++;
+            const msgId = 'msg-' + Date.now() + '-' + msgCounter;
+            const isUser = role === 'user';
+
+            const userAvatar = `
+                <div class="w-8 h-8 rounded-full bg-gradient-to-br from-slate-600 to-slate-700 flex items-center justify-center ml-3 flex-shrink-0 text-white shadow-md">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                    </svg>
+                </div>
+            `;
+
+            const aiAvatar = `
+                <div class="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center mr-3 flex-shrink-0 text-white font-bold text-sm shadow-md">
+                    AI
+                </div>
+            `;
+
+            let contentHtml = '';
+            if (isUser) {
+                contentHtml = escapeHtml(content).replace(/\n/g, '<br>');
+            } else if (!content && isStreaming) {
+                contentHtml = '<span class="typing-cursor text-slate-400">思考中</span>';
+            } else {
+                contentHtml = renderMarkdown(content);
+            }
+
+            const bubbleClass = isUser
+                ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-tr-none shadow-md'
+                : 'bg-slate-50 border border-slate-100 text-slate-800 rounded-tl-none';
+
+            const proseClass = isUser ? 'text-white' : 'prose-chat text-slate-700';
+
+            const msgHtml = `
+                <div id="${msgId}" class="flex ${isUser ? 'justify-end' : 'justify-start'} animate-fade-in-up">
+                    ${!isUser ? aiAvatar : ''}
+                    <div class="max-w-[85%] px-5 py-4 rounded-2xl ${bubbleClass}">
+                        <div class="msg-content ${proseClass}">${contentHtml}</div>
+                    </div>
+                    ${isUser ? userAvatar : ''}
+                </div>
+            `;
+
+            container.insertAdjacentHTML('beforeend', msgHtml);
+            scrollToBottom();
+            return msgId;
+        }
+
+        function updateMessage(msgId, content, isFinal = false) {
+            const msgEl = document.getElementById(msgId);
+            if (!msgEl) return;
+
+            const contentEl = msgEl.querySelector('.msg-content');
+            if (!contentEl) return;
+
+            let html = renderMarkdown(content);
+            if (!isFinal) {
+                html += '<span class="typing-cursor"></span>';
+            }
+            contentEl.innerHTML = html;
+
+            // 处理链接
+            contentEl.querySelectorAll('a').forEach(link => {
+                link.target = '_blank';
+                link.rel = 'noopener noreferrer';
+            });
+
+            scrollToBottom();
+        }
+
+        function addToolCallCard(toolName, args) {
+            const container = document.getElementById('chatMessages');
+            const cardHtml = `
+                <div class="flex justify-start animate-fade-in-up my-2">
+                    <div class="ml-11 tool-card rounded-lg px-4 py-2 text-sm">
+                        <div class="flex items-center gap-2 text-indigo-600">
+                            <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <span class="font-medium">调用工具: ${escapeHtml(toolName)}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+            container.insertAdjacentHTML('beforeend', cardHtml);
+            scrollToBottom();
+        }
+
+        // ==================== 辅助函数 ====================
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function renderMarkdown(text) {
+            if (typeof marked !== 'undefined') {
+                return marked.parse(text || '');
+            }
+            return escapeHtml(text || '').replace(/\n/g, '<br>');
+        }
+
+        function scrollToBottom() {
+            const container = document.getElementById('chatMessages');
+            const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 150;
+            if (isNearBottom) {
+                container.scrollTop = container.scrollHeight;
+            }
+        }
+
+        function updateSendButton(generating) {
+            const btn = document.getElementById('sendBtn');
+            const text = document.getElementById('sendBtnText');
+            const icon = document.getElementById('sendBtnIcon');
+
+            if (generating) {
+                btn.disabled = true;
+                text.textContent = '生成中';
+                icon.innerHTML = '<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>';
+                icon.classList.add('animate-spin');
+            } else {
+                btn.disabled = false;
+                text.textContent = '发送';
+                icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />';
+                icon.classList.remove('animate-spin');
+            }
+        }
+
+        // ==================== API 调用 ====================
+
+        async function sendMessage() {
+            const input = document.getElementById('chatInput');
+            const message = input.value.trim();
+            if (!message || isGenerating) return;
+
+            input.value = '';
+            isGenerating = true;
+            updateSendButton(true);
+
+            // 添加用户消息
+            addMessage('user', message);
+
+            // 添加 AI 消息占位
+            const aiMsgId = addMessage('assistant', '', true);
+
+            // 准备请求
+            abortController = new AbortController();
+            let fullContent = '';
+
+            try {
+                const response = await fetch('/api/analyst/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: message,
+                        session_id: sessionId,
+                        model_name: 'qwen-plus'
+                    }),
+                    signal: abortController.signal
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                // 处理 SSE 流
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const event = JSON.parse(line.substring(6));
+
+                                if (event.type === 'delta') {
+                                    fullContent += event.content || '';
+                                    updateMessage(aiMsgId, fullContent, false);
+                                } else if (event.type === 'done') {
+                                    fullContent = event.content || fullContent;
+                                    updateMessage(aiMsgId, fullContent, true);
+                                } else if (event.type === 'end') {
+                                    sessionId = event.session_id || sessionId;
+                                } else if (event.type === 'tool_call') {
+                                    addToolCallCard(event.name, event.args);
+                                } else if (event.type === 'error') {
+                                    updateMessage(aiMsgId, `❌ 错误: ${event.content}`, true);
+                                } else if (event.type === 'progress') {
+                                    // 可以显示进度，目前忽略
+                                }
+                            } catch (e) {
+                                console.warn('Parse error:', e);
+                            }
+                        }
+                    }
+                }
+
+                // 确保最终更新
+                if (fullContent) {
+                    updateMessage(aiMsgId, fullContent, true);
+                }
+
+            } catch (error) {
+                if (error.name === 'AbortError') {
+                    updateMessage(aiMsgId, fullContent || '⏹️ 已停止生成', true);
+                } else {
+                    console.error('Chat error:', error);
+                    updateMessage(aiMsgId, `❌ 发送失败: ${error.message}`, true);
+                }
+            } finally {
+                isGenerating = false;
+                abortController = null;
+                updateSendButton(false);
+            }
+        }
+
+        function askQuestion(question) {
+            document.getElementById('chatInput').value = question;
+            sendMessage();
+        }
+
+        function askAboutStock(name, symbol) {
+            const question = `分析一下 ${name}(${symbol}) 的投资价值`;
+            document.getElementById('chatInput').value = question;
+            sendMessage();
+        }
+
+        async function clearChat() {
+            if (sessionId) {
+                try {
+                    await fetch(`/api/analyst/clear/${sessionId}`, { method: 'POST' });
+                } catch (e) {
+                    console.warn('Clear session failed:', e);
+                }
+            }
+
+            sessionId = null;
+            const container = document.getElementById('chatMessages');
+            container.innerHTML = '';
+
+            // 添加欢迎消息
+            addMessage('assistant', `👋 你好！我是您的 **AI 投研分析师**。
+
+我可以帮您分析股票、解读市场趋势、评估资金流向。
+
+点击上方快速提问，或直接输入您的问题开始对话。`);
+        }
+
+        // ==================== 面板控制 ====================
+        let isPanelOpen = true;
+
+        function togglePanel() {
+            const panel = document.getElementById('aiPanel');
+            const toggleBtn = document.getElementById('aiPanelToggle');
+
+            isPanelOpen = !isPanelOpen;
+
+            if (isPanelOpen) {
+                panel.classList.remove('hidden');
+                panel.classList.add('lg:block');
+                toggleBtn.classList.add('lg:hidden');
+            } else {
+                panel.classList.add('hidden');
+                panel.classList.remove('lg:block');
+                toggleBtn.classList.remove('lg:hidden');
+            }
+        }
+
+        // ==================== 初始化 ====================
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('AI Analyst initialized');
+            // 确保面板在大屏幕上默认显示
+            const panel = document.getElementById('aiPanel');
+            const toggleBtn = document.getElementById('aiPanelToggle');
+            if (window.innerWidth >= 1024) {
+                panel.classList.remove('hidden');
+                panel.classList.add('lg:block');
+            }
+        });
+    </script>
+</body>
+
+</html>

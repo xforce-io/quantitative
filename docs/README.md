@@ -1,262 +1,170 @@
-# 量化交易系统 Quantitative Trading System
+# Documentation / 文档导航
 
-[![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+Welcome to the Quantitative Trading System documentation. This page serves as the central navigation hub for all documentation.
 
-一个集成了交易策略分析和新闻投资建议的量化交易系统。系统采用模块化设计，支持多种策略回测、新闻情感分析和智能投资建议生成。
+欢迎来到量化交易系统文档。本页面是所有文档的中心导航。
 
-## 🎯 核心功能
+## 📋 Language Policy / 语言政策
 
-### 1. 交易策略分析
-- **网格交易策略**：支持股票和基金的网格交易策略分析
-- **技术指标分析**：集成多种技术指标进行趋势分析
-- **策略回测**：基于历史数据的策略回测和性能评估
-- **参数优化**：使用遗传算法等方法进行策略参数优化
+Following the project's documentation best practices defined in `AGENTS.md`:
 
-### 2. 新闻投资分析
-- **多源新闻收集**：支持Tushare API和本地新闻数据
-- **智能内容分析**：使用大语言模型进行新闻内容分析
-- **情感分析**：评估新闻对投资品的情感倾向
-- **投资建议生成**：基于新闻分析生成投资建议
+- **Usage Documentation (`usage/`)**: English, for all users and developers
+- **Design Documentation (`design/`)**: Chinese, for internal technical discussions
+- **Exception**: Detailed technical guides may remain in Chinese, but should provide English quick reference
 
-### 3. 投资品支持
-- **股票指数**：纳斯达克指数、沪深300等
-- **国际股票**：印度股票等新兴市场
-- **商品期货**：黄金等避险资产
-- **ETF基金**：相关ETF产品分析
+遵循 `AGENTS.md` 中定义的文档最佳实践：
 
-## 🚀 快速开始
+- **使用文档 (`usage/`)**: 英文为主，面向所有使用者和开发者
+- **设计文档 (`design/`)**: 中文为主，面向团队内部技术讨论
+- **例外**: 详细技术指南可保留中文，但需提供英文快速参考版本
 
-### 环境要求
-- Python 3.8+
-- 推荐使用虚拟环境
+## 📚 Documentation Structure / 文档结构
 
-### 安装依赖
+```
+docs/
+├── README.md                           # This file / 本文件
+├── ARCHITECTURE.md                     # System architecture overview
+├── DIRECTORY_STRUCTURE.md              # Project directory layout
+├── design/                             # Design documents (Chinese)
+│   ├── AI_ANALYST_RIGHT_PANEL_AGENT_DESIGN.md
+│   ├── AI_PANEL_FIX_VERIFICATION.md
+│   ├── AI_PANEL_OUTPUT_FIX.md
+│   ├── AI_PANEL_TECHNICAL_REVIEW.md
+│   ├── PORTFOLIO_VALUATION_FEATURE.md
+│   └── WILLIAM_ONEIL_CANSLIM_ENHANCEMENT.md
+└── usage/                              # Usage documentation (English)
+    ├── quick_start/
+    │   └── GETTING_STARTED.md          # 5-minute quick start guide
+    ├── guides/
+    │   ├── AGENT_MANAGER_V2_MIGRATION.md
+    │   ├── TRADING_GUIDE.md
+    │   └── USER_PORTFOLIO_GUIDE.md
+    ├── configuration/
+    │   └── CONFIGURATION.md            # Configuration reference
+    └── concepts/                       # Core concepts (to be added)
+```
+
+## 🚀 Quick Links / 快速链接
+
+### For New Users / 新用户
+
+- [Getting Started Guide](usage/quick_start/GETTING_STARTED.md) - 5-minute setup and first run
+- [Architecture Overview](ARCHITECTURE.md) - System design and components
+- [Configuration Guide](usage/configuration/CONFIGURATION.md) - How to configure the system
+
+### For Developers / 开发者
+
+- [Agent Manager v2.0 Migration](usage/guides/AGENT_MANAGER_V2_MIGRATION.md) - Dolphin SDK v2.0 integration
+- [Trading Guide](usage/guides/TRADING_GUIDE.md) - Trading strategies and backtesting
+- [User Portfolio Guide](usage/guides/USER_PORTFOLIO_GUIDE.md) - Portfolio management
+
+### For Project Contributors / 项目贡献者
+
+- [AI Analyst Design](design/AI_ANALYST_RIGHT_PANEL_AGENT_DESIGN.md) - AI analyst architecture
+- [CANSLIM Enhancement](design/WILLIAM_ONEIL_CANSLIM_ENHANCEMENT.md) - CANSLIM strategy design
+- [Portfolio Valuation Feature](design/PORTFOLIO_VALUATION_FEATURE.md) - Valuation module design
+
+## 📖 Essential Documentation / 核心文档
+
+### 1. Quick Start / 快速开始
+
+Start here if you're new to the system:
+- [Getting Started](usage/quick_start/GETTING_STARTED.md) ✨
+
+### 2. Configuration / 配置
+
+Learn how to configure the system:
+- [Configuration Reference](usage/configuration/CONFIGURATION.md)
+
+### 3. User Guides / 使用指南
+
+Step-by-step guides for common tasks:
+- [Trading Guide](usage/guides/TRADING_GUIDE.md) - Trading strategies
+- [Portfolio Guide](usage/guides/USER_PORTFOLIO_GUIDE.md) - Portfolio management
+
+### 4. Migration Guides / 迁移指南
+
+Important updates and migrations:
+- [Agent Manager v2.0](usage/guides/AGENT_MANAGER_V2_MIGRATION.md) - Dolphin SDK v2.0
+
+### 5. Design Documents / 设计文档
+
+Technical design and architecture (Chinese):
+- [AI Analyst Design](design/AI_ANALYST_RIGHT_PANEL_AGENT_DESIGN.md)
+- [AI Panel Technical Review](design/AI_PANEL_TECHNICAL_REVIEW.md)
+
+## 🛠️ Web Application / Web 应用
+
+The system includes a Streamlit-based web dashboard. See [Web Application](../AGENTS.md#web-application) section in AGENTS.md for details.
+
+系统包含基于 Streamlit 的 Web 仪表板。详见 AGENTS.md 中的 [Web Application](../AGENTS.md#web-application) 章节。
+
+**Quick Start**:
 ```bash
-pip install -r requirements.txt
+# Start web platform
+scripts/run_web.sh start
+
+# Access at http://localhost:8501
 ```
 
-### 配置环境变量
-复制环境变量示例文件并配置：
+## 📝 Documentation Conventions / 文档约定
+
+### File Naming / 文件命名
+- Use lowercase with underscores: `getting_started.md`
+- Clear, descriptive titles
+- English for filenames in `usage/`, Chinese acceptable in `design/`
+
+### Content Guidelines / 内容指南
+- Clear heading hierarchy (`#`, `##`, `###`)
+- Include table of contents for long documents
+- Provide runnable code examples
+- Use relative paths for links
+- Avoid hardcoded personal paths
+
+### Code Examples / 代码示例
 ```bash
-cp env_example_unified.txt .env
+# ✅ Good example
+./scripts/run_web.sh start
+
+# ❌ Avoid
+cd /Users/alice/my-project  # Hardcoded path
 ```
 
-编辑 `.env` 文件，配置必要的API密钥：
-- `TUSHARE_TOKEN`: Tushare数据源API密钥
-- `LLM_API_KEY`: 大语言模型API密钥
-- `CHEAP_LLM_API_KEY`: 廉价模型API密钥（可选）
+## 🔍 Finding Documentation / 查找文档
 
-### 统一CLI入口
-```bash
-# 查看帮助
-python -m quant --help
+### By Topic / 按主题
 
-# 新闻分析
-python -m quant news analyze --targets nasdaq,gold --days 7
+- **Installation & Setup**: `usage/quick_start/GETTING_STARTED.md`
+- **Configuration**: `usage/configuration/CONFIGURATION.md`
+- **Trading Strategies**: `usage/guides/TRADING_GUIDE.md`
+- **Web Development**: `design/AI_ANALYST_RIGHT_PANEL_AGENT_DESIGN.md`
 
-# 交易策略分析
-python -m quant trading analyze --symbol 002594.SZ --strategy grid
+### By Type / 按类型
 
-# 配置验证
-python -m quant config validate
-```
+- **Quick Reference**: Start here for common commands and quick answers
+- **Detailed Guides**: Comprehensive feature documentation
+- **Design Docs**: Architecture decisions and technical specifications
 
-### 快速示例
-```bash
-# 运行新闻投资分析示例
-python demo/investment_news_analysis_demo.py
+## 🤝 Contributing to Documentation / 贡献文档
 
-# 运行交易策略回测示例
-python demo/grid_trading_demo.py
-```
+When adding or updating documentation:
 
-## 📁 项目结构
+1. ✅ Follow the language policy (English for usage, Chinese for design)
+2. ✅ Place files in appropriate directories (`usage/` or `design/`)
+3. ✅ Update this README.md with new document links
+4. ✅ Ensure all links are valid and use relative paths
+5. ✅ Provide code examples that can be executed
+6. ✅ Check spelling and formatting
 
-```
-quantitative_trading/
-├── quant/                          # 核心模块
-│   ├── core/                       # 核心功能
-│   │   ├── config_manager.py       # 配置管理
-│   │   ├── data_manager.py         # 数据管理
-│   │   └── report_generator.py     # 报告生成
-│   ├── trading/                    # 交易策略模块
-│   │   ├── strategies/             # 策略实现
-│   │   ├── backtesting/           # 回测引擎
-│   │   └── optimization/          # 参数优化
-│   ├── news/                       # 新闻分析模块
-│   │   ├── collectors/            # 新闻收集
-│   │   ├── analyzers/             # 新闻分析
-│   │   └── investment/            # 投资建议
-│   └── utils/                      # 工具模块
-├── config/                         # 配置文件
-│   ├── system_config.yaml         # 系统总配置
-│   ├── data_sources.yaml          # 数据源配置
-│   ├── investment_targets.yaml    # 投资品配置
-│   ├── trading.yaml               # 交易配置
-│   └── news_analysis_config.yaml  # 新闻分析配置
-├── demo/                           # 示例脚本
-├── data/                           # 数据目录
-├── cache/                          # 缓存目录
-├── reports/                        # 报告输出
-├── logs/                           # 日志文件
-└── docs/                           # 文档
-```
+See [AGENTS.md](../AGENTS.md) for detailed documentation standards.
 
-## 📊 系统架构
+## 📞 Need Help? / 需要帮助？
 
-系统采用模块化设计，主要包含以下组件：
-
-### 配置管理层
-- **ConfigManager**: 统一配置管理，支持多文件配置和环境变量替换
-- **环境变量管理**: 统一的环境变量配置和验证
-
-### 数据管理层
-- **DataManager**: 统一数据接口，支持多数据源
-- **缓存机制**: 智能缓存策略，减少API调用成本
-- **数据标准化**: 统一的数据格式和验证
-
-### 业务逻辑层
-- **交易策略模块**: 策略实现、回测、优化
-- **新闻分析模块**: 新闻收集、分析、投资建议
-- **报告生成**: 多格式报告输出
-
-### 工具支持层
-- **日志管理**: 分级日志和日志轮转
-- **错误处理**: 统一异常处理和重试机制
-- **性能监控**: 系统性能指标监控
-
-## 🔧 配置说明
-
-### 系统配置
-主要配置文件位于 `config/` 目录：
-
-1. **system_config.yaml**: 系统总配置
-2. **data_sources.yaml**: 数据源配置  
-3. **investment_targets.yaml**: 投资品配置
-4. **trading.yaml**: 交易策略配置
-5. **news_analysis_config.yaml**: 新闻分析配置
-
-### 投资品配置
-在 `config/investment_targets.yaml` 中配置关注的投资品：
-```yaml
-targets:
-  - name: "纳斯达克指数"
-    symbol: "NASDAQ"
-    keywords: ["NASDAQ", "纳斯达克", "科技股"]
-    weight: 0.3
-```
-
-### 新闻分析配置
-支持两阶段分析模式：
-- **阶段1**: 使用廉价模型进行粗分析
-- **阶段2**: 使用高质量模型进行精细分析
-
-## 📈 使用示例
-
-### 新闻投资分析
-```python
-from quant.core.config_manager import ConfigManager
-from quant.core.data_manager import DataManager
-from quant.news.analyzers.news_analyzer import NewsAnalyzer
-
-# 初始化管理器
-config_manager = ConfigManager()
-data_manager = DataManager(config_manager)
-
-# 获取新闻数据
-news_data = data_manager.get_news_data(days_back=7)
-
-# 分析新闻
-analyzer = NewsAnalyzer(config_manager)
-analysis_results = analyzer.analyze_news_batch(news_data)
-```
-
-### 交易策略回测
-```python
-from quant.trading.strategies.grid_strategy import GridStrategy
-from quant.trading.backtesting.backtest_engine import BacktestEngine
-
-# 创建策略
-strategy = GridStrategy(
-    grid_levels=10,
-    grid_spacing=0.02,
-    max_position=100000
-)
-
-# 运行回测
-engine = BacktestEngine()
-results = engine.run_backtest(
-    strategy=strategy,
-    symbol="002594.SZ",
-    start_date="2023-01-01",
-    end_date="2024-01-01"
-)
-```
-
-## 🔌 扩展开发
-
-### 添加新的交易策略
-1. 在 `quant/trading/strategies/` 下创建策略类
-2. 继承 `BaseStrategy` 基类
-3. 实现必要的接口方法
-
-### 添加新的数据源
-1. 在 `quant/data/` 下创建数据源适配器
-2. 实现统一的数据接口
-3. 在配置文件中添加数据源配置
-
-### 添加新的分析模块
-1. 在相应模块目录下创建分析器
-2. 实现标准的分析接口
-3. 集成到主分析流程中
-
-## 📝 开发指南
-
-### 代码规范
-- 使用驼峰命名法命名函数和变量
-- 注释、日志、异常信息使用英文
-- 遵循PEP 8编码规范
-
-### 测试
-```bash
-# 运行单元测试
-python -m pytest tests/
-
-# 运行集成测试
-python -m pytest tests/integration/
-```
-
-### 文档
-- API文档：`docs/API_REFERENCE.md`
-- 配置文档：`docs/CONFIGURATION.md`
-- 架构文档：`docs/ARCHITECTURE.md`
-
-## 🤝 贡献指南
-
-1. Fork 项目
-2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 打开 Pull Request
-
-## 📄 许可证
-
-本项目使用 MIT 许可证。详见 [LICENSE](LICENSE) 文件。
-
-## 📞 联系我们
-
-- 项目Issues: [GitHub Issues](https://github.com/your-username/quantitative_trading/issues)
-- 电子邮件: your-email@example.com
-
-## 🙏 致谢
-
-感谢以下开源项目和服务：
-- [Tushare](https://tushare.pro/) - 金融数据服务
-- [OpenAI](https://openai.com/) - 大语言模型服务
-- [Pandas](https://pandas.pydata.org/) - 数据分析库
-- [Plotly](https://plotly.com/) - 数据可视化
+- Check [Getting Started](usage/quick_start/GETTING_STARTED.md) first
+- Review [Troubleshooting](usage/quick_start/GETTING_STARTED.md#troubleshooting) section
+- Open an issue on GitHub
 
 ---
 
-**注意**: 本系统仅用于研究和教育目的，不构成投资建议。投资有风险，入市需谨慎。 
+**Last Updated**: 2026-01-15
+**Documentation Version**: 2.3.0

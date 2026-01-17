@@ -23,15 +23,19 @@ from web.data_service import (
 from web.components import plot_trend_chart, plot_technical_chart, render_stock_detail_card, render_period_selector
 from web.ui_theme import Colors, apply_custom_css
 
+# 导入 AI 面板组件
+from web.components_ai_panel import render_ai_right_panel, init_ai_panel_for_page, get_ai_panel_layout
+from web.page_registry import get_page_registry
+
 # 注意: page_config 只能在 Home.py 中设置一次，这里不再重复设置
 
 
 def main():
-    st.title("🏆 风向排行榜")
-    st.caption("对候选池标的进行多维度分析和排序")
-
     # 应用自定义样式
     apply_custom_css()
+    
+    # 初始化 AI 面板所需组件
+    init_ai_panel_for_page("Ranking", "pages/3_🏆_Ranking.py")
     
     # --- 侧边栏配置 ---
     st.sidebar.header("🎛️ 分析设置")
@@ -50,6 +54,10 @@ def main():
     
     # 2. 使用统一的时间选择组件
     start_str, end_str = render_period_selector(key_prefix="ranking")
+    
+    # 设置时间范围到 registry
+    registry = get_page_registry()
+    registry.set_date_range(start_str, end_str)
     
     # 3. 排序维度
     st.sidebar.subheader("📊 排序维度")
@@ -83,7 +91,8 @@ def main():
             st.sidebar.caption(
                 f"权重: 资金{weights.get('money_flow', 0):.0%} | "
                 f"技术{weights.get('technical', 0):.0%} | "
-                f"估值{weights.get('valuation', 0):.0%}"
+                f"估值{weights.get('valuation', 0):.0%} | "
+                f"趋势{weights.get('trend', 0):.0%}"
             )
     else:
         sort_dimension = st.sidebar.radio(
@@ -101,8 +110,13 @@ def main():
     st.sidebar.divider()
     st.sidebar.markdown(f"**标的数量**: {len(candidates_df)} 只")
     
-    # --- 主界面 ---
-    tab_stock, tab_industry = st.tabs(["📈 个股排行", "🏭 赛道排行"])
+    # --- 主界面：左右分栏布局 ---
+    main_col, ai_col = get_ai_panel_layout(main_ratio=7, panel_ratio=3)
+    
+    with main_col:
+        st.title("🏆 风向排行榜")
+        st.caption("对候选池标的进行多维度分析和排序")
+        tab_stock, tab_industry = st.tabs(["📈 个股排行", "🏭 赛道排行"])
     
     # ========== 个股排行 ==========
     with tab_stock:
@@ -128,10 +142,73 @@ def main():
                 df_ranked['name'] = df_ranked['symbol'].map(name_map)
                 df_ranked['industry'] = df_ranked['symbol'].map(industry_map)
 
-                # 显示排行榜 - 使用 data_editor 支持行选择
+                # 计算趋势强度（4条规则评分）
+                # 使用 st.status 替代原来的 st.info + st.progress，体验更平滑且会自动收起
+                with st.status("🔄 正在计算趋势强度...", expanded=True) as status:
+                    from web.data_service import get_trend_strength
+                    
+                    def get_trend_label(symbol):
+                        """获取趋势强度标签"""
+                        try:
+                            result = get_trend_strength(symbol, days=90)
+                            if 'error' not in result:
+                                score = result.get('score', 0)
+                                level_icon = result.get('level_icon', '')
+                                # 满分标记
+                                if score == 4:
+                                    return f"🔥 {score}/4"
+                                else:
+                                    return f"{level_icon} {score}/4"
+                            return "-"
+                        except:
+                            return "-"
+                    
+                    trend_labels = []
+                    # 批量计算
+                    for idx, symbol in enumerate(df_ranked['symbol']):
+                        label = get_trend_label(symbol)
+                        trend_labels.append(label)
+                        # 更新状态文本而非进度条
+                        if (idx + 1) % 5 == 0:
+                            status.update(label=f"🔄 正在计算趋势强度... ({idx+1}/{len(df_ranked)})")
+                    
+                    df_ranked['trend_label'] = trend_labels
+                    status.update(label="✅ 趋势强度计算完成", state="complete", expanded=False)
+
+                # ... (AI Context 注入代码保持不变) ...
+                
+                # --- 注入 AI Context: 个股排名 ---
+                registry.register_data(
+                    "ranking",
+                    "stock_ranking",
+                    df_ranked,
+                    summary_extractor=lambda df: {
+                        "profile": selected_profile,
+                        "description": profiles.get(selected_profile, {}).get('description', ''),
+                        "weights": profiles.get(selected_profile, {}).get('weights', {}),
+                        "total_count": len(df),
+                        "top_20_summary": df.head(20)[['rank', 'symbol', 'name', 'industry', 'composite_score', 'trend_score', 'trend_label', 'valuation_score']].to_dict('records'),
+                        "trend_perfect_count": len(df[df['trend_label'].str.contains('🔥', na=False)])
+                    }
+                )
+                
+                # 注册配置详情
+                registry.register_data(
+                    "ranking",
+                    "configuration",
+                    {
+                        "mode": ranking_mode,
+                        "profile": selected_profile,
+                        "profile_name": profile_labels.get(selected_profile, selected_profile),
+                        "weights": profiles.get(selected_profile, {}).get('weights', {}),
+                        "description": profiles.get(selected_profile, {}).get('description', '')
+                    }
+                )
+
+                # 显示排行榜
                 event = st.dataframe(
                     df_ranked[['rank', 'name', 'industry', 'composite_score',
-                               'money_flow_score', 'technical_score', 'valuation_score', 'status']],
+                               'money_flow_score', 'technical_score', 'valuation_score', 'trend_score', 'trend_label', 'status']],
                     column_config={
                         "rank": st.column_config.NumberColumn("排名", width="small"),
                         "name": "名称",
@@ -140,11 +217,13 @@ def main():
                             "综合评分",
                             min_value=0,
                             max_value=100,
-                            format="%.1f"  # 显示为数值而非百分比
+                            format="%.1f"
                         ),
                         "money_flow_score": st.column_config.NumberColumn("资金分", format="%.1f"),
                         "technical_score": st.column_config.NumberColumn("技术分", format="%.1f"),
                         "valuation_score": st.column_config.NumberColumn("估值分", format="%.1f"),
+                        "trend_score": st.column_config.NumberColumn("趋势分", format="%.1f"),
+                        "trend_label": "趋势强度",
                         "status": "状态"
                     },
                     use_container_width=True,
@@ -152,47 +231,86 @@ def main():
                     on_select="rerun",  # 支持行选择
                     selection_mode="single-row"
                 )
+                
+                # 显示趋势强度满分的股票统计
+                try:
+                    perfect_trend_count = len(df_ranked[df_ranked['trend_label'].str.contains('🔥', na=False)])
+                    if perfect_trend_count > 0:
+                        st.success(f"🔥 **{perfect_trend_count}** 只股票达到趋势强度满分（4/4），四条均线规则全部满足！")
+                    else:
+                        st.info("💡 当前没有股票达到趋势强度满分（4/4）")
+                except Exception:
+                    pass
 
-                # 可视化
+                # 可视化 (使用 Plotly 替代 Matplotlib 以防渲染崩溃)
                 st.divider()
                 col1, col2 = st.columns(2)
 
+                import plotly.express as px
+                
                 with col1:
                     st.markdown("#### 🎯 综合评分 Top 10")
-                    top_score = df_ranked.head(10)
-                    fig, ax = plt.subplots(figsize=(8, 5))
-                    colors = [Colors.PRIMARY if s == 'success' else Colors.NEUTRAL for s in top_score['status']]
-                    ax.barh(range(len(top_score)), top_score['composite_score'], color=colors, alpha=0.8)
-                    ax.set_yticks(range(len(top_score)))
-                    ax.set_yticklabels(top_score['name'].fillna(top_score['symbol']))
-                    ax.set_xlabel("综合评分")
-                    ax.set_xlim(0, 100)
-                    ax.invert_yaxis()
-                    ax.grid(axis='x', linestyle='--', alpha=0.3)
-                    st.pyplot(fig)
-                    plt.close(fig)
+                    try:
+                        top_score = df_ranked.head(10).copy()
+                        # 逆序以便 barh 从上到下显示
+                        top_score = top_score.iloc[::-1]
+                        
+                        fig = px.bar(
+                            top_score, 
+                            x='composite_score', 
+                            y='name',
+                            orientation='h',
+                            text='composite_score',
+                            color='status',
+                            color_discrete_map={'success': Colors.PRIMARY, 'normal': Colors.NEUTRAL, 'warning': Colors.WARNING},
+                            labels={'name': '股票名称', 'composite_score': '综合评分'}
+                        )
+                        fig.update_layout(
+                            showlegend=False,
+                            margin=dict(l=0, r=0, t=0, b=0),
+                            height=300,
+                            xaxis_range=[0, 100]
+                        )
+                        fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
+                        st.plotly_chart(fig, use_container_width=True)
+                    except Exception as e:
+                        st.error(f"图表渲染失败: {e}")
 
                 with col2:
-                    st.markdown("#### 📊 各因子得分分布")
-                    # 雷达图或柱状图显示 Top 5 的各因子得分
-                    top5 = df_ranked.head(5)
-                    fig, ax = plt.subplots(figsize=(8, 5))
-
-                    x = range(len(top5))
-                    width = 0.25
-                    ax.bar([i - width for i in x], top5['money_flow_score'], width, label='资金', color=Colors.INSTITUTIONAL, alpha=0.8)
-                    ax.bar(x, top5['technical_score'], width, label='技术', color=Colors.PRIMARY, alpha=0.8)
-                    ax.bar([i + width for i in x], top5['valuation_score'], width, label='估值', color=Colors.RETAIL, alpha=0.8)
-
-                    ax.set_xticks(x)
-                    ax.set_xticklabels(top5['name'].fillna(top5['symbol']), rotation=45, ha='right')
-                    ax.set_ylabel("得分")
-                    ax.set_ylim(0, 100)
-                    ax.legend()
-                    ax.grid(axis='y', linestyle='--', alpha=0.3)
-                    plt.tight_layout()
-                    st.pyplot(fig)
-                    plt.close(fig)
+                    st.markdown("#### 📊 Top 5 因子分布")
+                    try:
+                        top5 = df_ranked.head(5).copy()
+                        # 转换为长格式以便 Plotly 分组绘制
+                        top5_melted = top5.melt(
+                            id_vars=['name'], 
+                            value_vars=['money_flow_score', 'technical_score', 'valuation_score', 'trend_score'],
+                            var_name='Factor', 
+                            value_name='Score'
+                        )
+                        # 因子名称映射
+                        factor_map = {
+                            'money_flow_score': '资金', 'technical_score': '技术', 
+                            'valuation_score': '估值', 'trend_score': '趋势'
+                        }
+                        top5_melted['Factor'] = top5_melted['Factor'].map(factor_map)
+                        
+                        fig = px.bar(
+                            top5_melted,
+                            x='name',
+                            y='Score',
+                            color='Factor',
+                            barmode='group',
+                            labels={'name': '股票名称', 'Score': '得分', 'Factor': '因子'},
+                            color_discrete_map={'资金': Colors.INSTITUTIONAL, '技术': Colors.PRIMARY, '估值': Colors.RETAIL, '趋势': '#9333EA'}
+                        )
+                        fig.update_layout(
+                            margin=dict(l=0, r=0, t=0, b=0),
+                            height=300,
+                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+                    except Exception as e:
+                        st.error(f"图表渲染失败: {e}")
 
                 # 详细分析
                 st.divider()
@@ -219,7 +337,7 @@ def main():
 
                     with st.expander(f"📊 {selected_stock} ({symbol}) 详细分析", expanded=True):
                         # 显示得分详情
-                        score_col1, score_col2, score_col3, score_col4 = st.columns(4)
+                        score_col1, score_col2, score_col3, score_col4, score_col5 = st.columns(5)
                         with score_col1:
                             st.metric("综合评分", f"{stock_row['composite_score']:.1f}")
                         with score_col2:
@@ -228,6 +346,8 @@ def main():
                             st.metric("技术形态分", f"{stock_row['technical_score']:.1f}")
                         with score_col4:
                             st.metric("估值分", f"{stock_row['valuation_score']:.1f}")
+                        with score_col5:
+                            st.metric("趋势动量分", f"{stock_row['trend_score']:.1f}")
 
                         st.divider()
 
@@ -506,6 +626,18 @@ def main():
             df_ind_results.index = df_ind_results.index + 1
             df_ind_results.index.name = '排名'
             
+            # --- 注入 AI Context: 行业排名 ---
+            registry.register_data(
+                registry.CATEGORY_INDUSTRY,
+                "flow_ranking",
+                df_ind_results,
+                summary_extractor=lambda df: {
+                    "total_industries": len(df),
+                    "top_inflow": df.head(5)[['industry', 'net_amount_亿', 'stock_count']].to_dict('records'),
+                    "top_outflow": df.tail(5)[['industry', 'net_amount_亿', 'stock_count']].to_dict('records')
+                }
+            )
+
             st.dataframe(
                 df_ind_results[['industry', 'stock_count', 'net_amount_亿']],
                 column_config={
@@ -528,6 +660,10 @@ def main():
             ax.grid(axis='x', linestyle='--', alpha=0.3)
             st.pyplot(fig)
             plt.close(fig)
+    
+    # 渲染右侧 AI 面板
+    with ai_col:
+        render_ai_right_panel(session_id="ranking_ai")
 
 
 if __name__ == "__main__":

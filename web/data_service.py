@@ -42,7 +42,7 @@ def get_candidate_files() -> List[str]:
     return [f.stem for f in CANDIDATES_DIR.glob("*.txt")]
 
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=3600, show_spinner=False)
 def load_candidates(pool_name: str = "top_ashare_stocks") -> pd.DataFrame:
     """
     加载候选池数据
@@ -99,7 +99,7 @@ def get_candidate_industries(pool_name: str = "top_ashare_stocks") -> List[str]:
 
 # ==================== 交易日历 ====================
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=3600, show_spinner=False)
 def get_trading_days(start: str, end: str) -> List[str]:
     """获取交易日列表"""
     provider = get_provider()
@@ -122,7 +122,7 @@ def get_latest_trading_day() -> datetime:
 
 # ==================== 股票数据 ====================
 
-@st.cache_data(ttl=86400)
+@st.cache_data(ttl=86400, show_spinner=False)
 def get_stock_list() -> List[str]:
     """
     获取所有股票列表 (A股 + 港股)
@@ -148,14 +148,14 @@ def get_stock_list() -> List[str]:
     return result
 
 
-@st.cache_data(ttl=86400)  # 24小时缓存
+@st.cache_data(ttl=86400, show_spinner=False)  # 24小时缓存
 def get_stock_money_flow(symbol: str, start: str, end: str) -> Dict[str, Any]:
     """获取个股资金流向分析 (机构 vs 散户)"""
     provider = get_provider()
     return provider.analyze_institutional_vs_retail(symbol, start, end)
 
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=3600, show_spinner=False)
 def get_stock_price(symbol: str, start: str, end: str) -> pd.DataFrame:
     """获取个股价格数据"""
     provider = get_provider()
@@ -165,7 +165,7 @@ def get_stock_price(symbol: str, start: str, end: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=3600, show_spinner=False)
 def get_stock_technical_data(symbol: str, start: str, end: str) -> pd.DataFrame:
     """
     获取个股K线数据并计算技术指标
@@ -213,7 +213,7 @@ def get_stock_technical_data(symbol: str, start: str, end: str) -> pd.DataFrame:
     return df
 
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=3600, show_spinner=False)
 def get_stock_valuation(symbol: str, days: int = 250) -> Dict[str, Any]:
     """
     获取个股估值数据 (PE/PB/PS) 及历史分位
@@ -305,14 +305,14 @@ def get_stock_valuation(symbol: str, days: int = 250) -> Dict[str, Any]:
 
 # ==================== 行业数据 ====================
 
-@st.cache_data(ttl=86400)  # 24小时缓存，历史日数据不会变
+@st.cache_data(ttl=86400, show_spinner=False)  # 24小时缓存，历史日数据不会变
 def get_industry_flow_daily(date_str: str) -> pd.DataFrame:
     """获取单日行业资金流向 (缓存24小时)"""
     provider = get_provider()
     return provider.get_industry_money_flow_dc(trade_date=date_str)
 
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=3600, show_spinner=False)
 def get_industry_flow_aggregated(start_date: str, end_date: str) -> pd.DataFrame:
     """
     获取聚合的行业资金流向 (多日汇总)
@@ -351,7 +351,7 @@ def get_industry_flow_aggregated(start_date: str, end_date: str) -> pd.DataFrame
     return combined.groupby('name').agg(agg_rules).reset_index()
 
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=3600, show_spinner=False)
 def get_industry_flow_with_details(start: str, end: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     获取行业资金流向 (聚合 + 明细)
@@ -368,18 +368,25 @@ def get_industry_flow_with_details(start: str, end: str) -> Tuple[pd.DataFrame, 
             if not df.empty and 'net_amount' in df.columns:
                 df['net_amount'] = pd.to_numeric(df['net_amount'], errors='coerce')
                 
-                # 映射机构/散户字段 (东财数据)
-                if 'net_main_amount' in df.columns:
-                    df['institutional_net'] = pd.to_numeric(df['net_main_amount'], errors='coerce')
-                elif 'main_net_amount' in df.columns:
-                    df['institutional_net'] = pd.to_numeric(df['main_net_amount'], errors='coerce')
-                else:
-                    df['institutional_net'] = 0
+                # 映射机构/散户字段 (优先使用 Provider 处理好的字段)
+                # 映射机构/散户字段 (优先使用 Provider 处理好的字段)
+                # 修复逻辑：即使 Provider 已计算了 institutional_net，如果算出来全是 0 (可能是明细缺失)，
+                # 但存在 net_main_amount (主力净额)，则优先使用主力净额
+                has_valid_inst = 'institutional_net' in df.columns and (df['institutional_net'] != 0).any()
                 
-                if 'institutional_net' in df.columns:
-                    df['retail_net'] = df['net_amount'] - df['institutional_net']
-                else:
-                    df['retail_net'] = 0
+                if not has_valid_inst:
+                    if 'net_main_amount' in df.columns:
+                        df['institutional_net'] = pd.to_numeric(df['net_main_amount'], errors='coerce')
+                    elif 'main_net_amount' in df.columns:
+                        df['institutional_net'] = pd.to_numeric(df['main_net_amount'], errors='coerce')
+                    elif 'institutional_net' not in df.columns:
+                        df['institutional_net'] = 0
+                
+                if 'retail_net' not in df.columns:
+                    if 'institutional_net' in df.columns:
+                        df['retail_net'] = df['net_amount'] - df['institutional_net']
+                    else:
+                        df['retail_net'] = 0
                 
                 cols = ['trade_date', 'name', 'net_amount', 'pct_change', 'institutional_net', 'retail_net']
                 cols = [c for c in cols if c in df.columns]
@@ -399,7 +406,7 @@ def get_industry_flow_with_details(start: str, end: str) -> Tuple[pd.DataFrame, 
     return aggregated, combined
 
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=3600, show_spinner=False)
 def get_industry_list() -> List[str]:
     """获取所有行业名称列表"""
     today = get_latest_trading_day().strftime('%Y%m%d')
@@ -417,9 +424,52 @@ def get_industry_list() -> List[str]:
     return []
 
 
+@st.cache_data(ttl=86400, show_spinner=False)
+def get_industry_constituent_stocks(industry_name: str) -> pd.DataFrame:
+    """
+    获取某个行业/概念板块的成分股列表
+    
+    Args:
+        industry_name: 行业或概念板块名称
+        
+    Returns:
+        包含成分股信息的 DataFrame (ts_code, name, industry等)
+    """
+    try:
+        provider = get_provider()
+        
+        # 获取所有 A 股列表
+        stock_basic = provider.get_stock_basic()
+        
+        if stock_basic.empty:
+            return pd.DataFrame()
+        
+        # 按行业名称筛选
+        # 注意: Tushare 中行业字段可能是 industry 或 cnspell
+        result = pd.DataFrame()
+        
+        if 'industry' in stock_basic.columns:
+            result = stock_basic[stock_basic['industry'] == industry_name]
+        
+        # 如果没有找到匹配的行业，可能是概念板块
+        # Tushare 的概念板块需要单独调用 concept_detail 接口
+        # 由于概念板块数据可能不全，我们返回空 DataFrame 并提示用户
+        if result.empty:
+            logger.warning(f"未找到行业 {industry_name} 的成分股，可能是概念板块")
+            return pd.DataFrame()
+        
+        # 只返回需要的列
+        cols = ['ts_code', 'name', 'industry']
+        return result[[c for c in cols if c in result.columns]]
+        
+    except Exception as e:
+        logger.error(f"获取行业成分股失败: {e}")
+        return pd.DataFrame()
+
+
 # ==================== 市场概览 ====================
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=3600, show_spinner=False)
 def get_market_summary(date_str: str) -> Dict[str, Any]:
     """获取市场资金流向摘要"""
     provider = get_provider()
@@ -441,11 +491,11 @@ def get_ranking_profiles() -> Dict[str, Dict]:
 
     # 配置的中文名称和描述
     profile_info = {
-        'short_term': {'name': '短线交易', 'desc': '重视资金流向和技术信号'},
-        'balanced': {'name': '均衡配置', 'desc': '综合考虑各类因素'},
+        'short_term': {'name': '短线交易', 'desc': '重视资金流向和趋势动量'},
+        'balanced': {'name': '均衡配置', 'desc': '四因子均衡考虑'},
         'value': {'name': '价值投资', 'desc': '重视估值和基本面'},
-        'trend': {'name': '趋势跟踪', 'desc': '跟随市场趋势'},
-        'momentum': {'name': '资金驱动', 'desc': '跟随主力资金'},
+        'trend': {'name': '趋势跟踪', 'desc': '趋势因子占50%权重'},
+        'momentum': {'name': '资金驱动', 'desc': '资金流向+趋势动量'},
     }
 
     result = {}
@@ -477,3 +527,287 @@ def rank_stocks(symbols: List[str], profile: str = 'balanced', days: int = 60) -
     """
     ranker = get_stock_ranker()
     return ranker.rank(symbols, profile=profile, days=days)
+
+
+# ==================== AI 按需获取服务 ====================
+
+def resolve_stock_symbol(query: str) -> str:
+    """
+    将股票名称/简称解析为标准代码
+
+    Args:
+        query: 用户输入（可能是代码如 "002594.SZ" 或名称如 "比亚迪"）
+
+    Returns:
+        标准股票代码（如 "002594.SZ"），未找到则返回原值
+    """
+    query = query.strip()
+
+    # 已是标准代码格式
+    if '.' in query:
+        suffix = query.split('.')[-1].upper()
+        if suffix in ('SZ', 'SH', 'BJ', 'HK'):
+            return query.upper()
+
+    # 纯数字代码，补充后缀
+    if query.isdigit() and len(query) == 6:
+        if query.startswith('6'):
+            return f"{query}.SH"
+        elif query.startswith(('0', '3')):
+            return f"{query}.SZ"
+        elif query.startswith(('8', '4')):
+            return f"{query}.BJ"
+
+    # 从股票列表搜索名称
+    try:
+        stock_list = get_stock_list()  # ["000001.SZ 平安银行", ...]
+        for item in stock_list:
+            parts = item.split(' ', 1)
+            if len(parts) == 2:
+                code, name = parts
+                # 精确匹配名称
+                if query == name:
+                    return code
+        # 模糊匹配（名称包含查询词）
+        for item in stock_list:
+            parts = item.split(' ', 1)
+            if len(parts) == 2:
+                code, name = parts
+                if query in name:
+                    return code
+    except Exception:
+        pass
+
+    return query  # 未找到则原样返回
+
+
+def fetch_stock_full_analysis(symbol: str, days: int = 60) -> Dict[str, Any]:
+    """
+    一次性获取股票完整分析数据（资金流 + 技术 + 估值）
+    用于 AI 按需查询未在页面注册的股票
+
+    Args:
+        symbol: 股票代码（支持名称，会自动解析）
+        days: 分析数据天数
+
+    Returns:
+        包含 money_flow, technical, valuation 三个维度的分析数据
+    """
+    # 解析股票代码
+    resolved_symbol = resolve_stock_symbol(symbol)
+
+    result = {
+        "symbol": resolved_symbol,
+        "query": symbol,
+        "resolved": resolved_symbol != symbol,
+        "fetch_time": datetime.now().isoformat(),
+    }
+
+    # 计算日期范围
+    end = datetime.now().strftime('%Y%m%d')
+    start = (datetime.now() - timedelta(days=days)).strftime('%Y%m%d')
+
+    # 1. 资金流向
+    try:
+        flow = get_stock_money_flow(resolved_symbol, start, end)
+        if flow and 'error' not in flow:
+            result['money_flow'] = {
+                'inst_net_flow_yi': round(flow.get('total_institutional_net', 0) / 1e8, 2),
+                'retail_net_flow_yi': round(flow.get('total_retail_net', 0) / 1e8, 2),
+                'inst_inflow_days': flow.get('institutional_inflow_days', 0),
+                'total_days': flow.get('total_days', 0),
+                'sentiment': flow.get('sentiment', ''),
+                'sentiment_detail': flow.get('sentiment_detail', ''),
+            }
+    except Exception as e:
+        result['money_flow'] = {'error': str(e)}
+
+    # 2. 技术指标
+    try:
+        tech_df = get_stock_technical_data(resolved_symbol, start, end)
+        if tech_df is not None and not tech_df.empty:
+            latest = tech_df.iloc[-1]
+
+            # 判断均线趋势
+            ma_trend = "unknown"
+            if 'MA5' in latest and 'MA20' in latest and 'MA60' in latest:
+                if latest['MA5'] > latest['MA20'] > latest['MA60']:
+                    ma_trend = "多头排列"
+                elif latest['MA5'] < latest['MA20'] < latest['MA60']:
+                    ma_trend = "空头排列"
+                else:
+                    ma_trend = "震荡整理"
+
+            # 判断 MACD 信号
+            macd_signal = "unknown"
+            if 'MACD_DIF' in latest and 'MACD_DEA' in latest:
+                if latest['MACD_DIF'] > latest['MACD_DEA']:
+                    macd_signal = "金叉/多头"
+                else:
+                    macd_signal = "死叉/空头"
+
+            result['technical'] = {
+                'latest_close': round(float(latest.get('close', 0)), 2),
+                'ma5': round(float(latest.get('MA5', 0)), 2) if pd.notna(latest.get('MA5')) else None,
+                'ma20': round(float(latest.get('MA20', 0)), 2) if pd.notna(latest.get('MA20')) else None,
+                'ma60': round(float(latest.get('MA60', 0)), 2) if pd.notna(latest.get('MA60')) else None,
+                'ma_trend': ma_trend,
+                'macd_signal': macd_signal,
+                'rsi_value': round(float(latest.get('RSI', 50)), 1) if pd.notna(latest.get('RSI')) else None,
+                'boll_position': _calc_boll_position(latest) if 'BOLL_UP' in latest else None,
+            }
+    except Exception as e:
+        result['technical'] = {'error': str(e)}
+
+    # 3. 估值分析
+    try:
+        val = get_stock_valuation(resolved_symbol, days=250)
+        if val and 'error' not in val:
+            latest = val.get('latest', {})
+            percentile = val.get('percentile', {})
+            status = val.get('status', {})
+
+            result['valuation'] = {
+                'pe_ttm': round(float(latest.get('pe_ttm', 0)), 2) if latest.get('pe_ttm') else None,
+                'pb': round(float(latest.get('pb', 0)), 2) if latest.get('pb') else None,
+                'ps_ttm': round(float(latest.get('ps_ttm', 0)), 2) if latest.get('ps_ttm') else None,
+                'dv_ratio': round(float(latest.get('dv_ratio', 0)), 2) if latest.get('dv_ratio') else None,
+                'total_mv_yi': round(float(latest.get('total_mv', 0)) / 10000, 2) if latest.get('total_mv') else None,
+                'pe_percentile': percentile.get('pe_ttm'),
+                'pb_percentile': percentile.get('pb'),
+                'pe_status': status.get('pe_ttm', ''),
+                'pb_status': status.get('pb', ''),
+            }
+    except Exception as e:
+        result['valuation'] = {'error': str(e)}
+
+    # 检查是否有有效数据
+    has_valid_data = any(
+        key in result and 'error' not in result[key]
+        for key in ['money_flow', 'technical', 'valuation']
+    )
+
+    if not has_valid_data:
+        result['error'] = f"无法获取 {resolved_symbol} 的有效数据，请检查代码是否正确"
+
+    return result
+
+
+def _calc_boll_position(row) -> str:
+    """计算价格在布林带中的位置"""
+    try:
+        close = row.get('close', 0)
+        up = row.get('BOLL_UP', 0)
+        down = row.get('BOLL_DOWN', 0)
+        mid = row.get('BOLL_MID', 0)
+
+        if pd.isna(up) or pd.isna(down) or up == down:
+            return "unknown"
+
+        if close >= up:
+            return "上轨之上（超买）"
+        elif close <= down:
+            return "下轨之下（超卖）"
+        elif close > mid:
+            return "中轨之上"
+        else:
+            return "中轨之下"
+    except Exception:
+        return "unknown"
+
+
+# ==================== 趋势强度分析服务 ====================
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_trend_strength(symbol: str, days: int = 90) -> Dict[str, Any]:
+    """
+    获取个股趋势强度评分
+    
+    基于四条均线规则计算趋势强度 (0-4分):
+    1. 股价在20日均线上方 (+1分)
+    2. 20日均线上行 (+1分)
+    3. 60日均线上行 (+1分)
+    4. 20日均线在60日均线上方 (+1分)
+    
+    Args:
+        symbol: 股票代码
+        days: 分析天数
+    
+    Returns:
+        趋势强度分析结果
+    """
+    try:
+        from quant.analysis.indicators.trend_strength_analyzer import TrendStrengthAnalyzer
+        analyzer = TrendStrengthAnalyzer()
+        return analyzer.analyze(symbol, days)
+    except Exception as e:
+        logger.error(f"获取趋势强度失败: {e}")
+        return {'error': str(e)}
+
+
+def get_trend_strength_from_price_data(price_df: pd.DataFrame, symbol: str = "unknown") -> Dict[str, Any]:
+    """
+    从价格数据计算趋势强度（用于行业指数等没有股票代码的场景）
+    
+    Args:
+        price_df: 包含 close 列的价格数据
+        symbol: 标识符（可选）
+    
+    Returns:
+        趋势强度分析结果
+    """
+    try:
+        from quant.analysis.indicators.trend_strength_analyzer import TrendStrengthAnalyzer
+        analyzer = TrendStrengthAnalyzer()
+        return analyzer.analyze_from_dataframe(price_df, symbol)
+    except Exception as e:
+        logger.error(f"计算趋势强度失败: {e}")
+        return {'error': str(e)}
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_industry_trend_strength(industry_name: str, start: str, end: str) -> Dict[str, Any]:
+    """
+    获取行业趋势强度评分
+    
+    使用行业涨跌幅构建价格指数，然后计算趋势强度。
+    
+    Args:
+        industry_name: 行业名称
+        start: 开始日期 (YYYYMMDD)
+        end: 结束日期 (YYYYMMDD)
+    
+    Returns:
+        趋势强度分析结果
+    """
+    try:
+        # 获取行业趋势数据
+        _, trend_df = get_industry_flow_with_details(start, end)
+        
+        if trend_df.empty:
+            return {'error': '无法获取行业数据'}
+        
+        # 筛选该行业
+        industry_data = trend_df[trend_df['name'] == industry_name].copy()
+        
+        if industry_data.empty:
+            return {'error': f'未找到行业 {industry_name} 的数据'}
+        
+        # 排序
+        industry_data = industry_data.sort_values('trade_date')
+        
+        if len(industry_data) < 60:
+            return {'error': f'数据不足，需要至少60个交易日（当前:{len(industry_data)}）'}
+        
+        # 使用涨跌幅构建价格指数
+        if 'pct_change' in industry_data.columns:
+            industry_data['close'] = (1 + industry_data['pct_change']/100).cumprod() * 100
+        else:
+            return {'error': '缺少涨跌幅数据'}
+        
+        # 计算趋势强度
+        return get_trend_strength_from_price_data(industry_data, industry_name)
+        
+    except Exception as e:
+        logger.error(f"获取行业趋势强度失败: {e}")
+        return {'error': str(e)}

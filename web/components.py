@@ -22,7 +22,7 @@ setup_matplotlib_style()
 def render_period_selector(
     key_prefix: str = "",
     show_custom: bool = True,
-    default_period: str = "📅 本周"
+    default_period: str = "📅 近1月"
 ) -> Tuple[str, str]:
     """
     统一的时间周期选择器
@@ -49,16 +49,17 @@ def render_period_selector(
 
     # 选项列表
     if show_custom:
-        period_options = ["📅 单日", "📅 本周", "📅 本月", "🗓 自定义区间"]
+        period_options = ["📅 单日", "📅 本周", "📅 近1月", "📅 近3月", "🗓 自定义区间"]
     else:
-        period_options = ["📅 单日", "📅 本周", "📅 本月"]
+        period_options = ["📅 单日", "📅 本周", "📅 近1月", "📅 近3月"]
 
     # 获取保存的索引
     saved_period = st.session_state.get(period_key, default_period)
     if saved_period in period_options:
         default_index = period_options.index(saved_period)
     else:
-        default_index = period_options.index(default_period) if default_period in period_options else 1
+        # 如果保存的选项不在新列表中（例如旧的"本月"），回退到默认
+        default_index = period_options.index(default_period) if default_period in period_options else 2  # 默认"近1月"
 
     st.sidebar.subheader("📅 时间维度")
     period_type = st.sidebar.radio(
@@ -80,19 +81,32 @@ def render_period_selector(
     elif period_type == "📅 本周":
         s_date = today - timedelta(days=today.weekday())
         e_date = today
-    elif period_type == "📅 本月":
-        s_date = today.replace(day=1)
+    elif period_type == "📅 近1月":
+        s_date = today - timedelta(days=30)
+        e_date = today
+    elif period_type == "📅 近3月":
+        s_date = today - timedelta(days=90)
         e_date = today
     else:  # 自定义区间
         # 读取保存的自定义日期
         saved_start = st.session_state.get(custom_start_key, (today - timedelta(days=30)).strftime('%Y-%m-%d'))
         saved_end = st.session_state.get(custom_end_key, today.strftime('%Y-%m-%d'))
 
-        col1, col2 = st.sidebar.columns(2)
-        s_date = col1.date_input("开始", datetime.strptime(saved_start, '%Y-%m-%d'), key=f"{key_prefix}_start_input")
-        e_date = col2.date_input("结束", datetime.strptime(saved_end, '%Y-%m-%d'), key=f"{key_prefix}_end_input")
+        # 使用 Form 包裹避免频繁刷新
+        with st.sidebar.form(key=f"{key_prefix}_custom_date_form"):
+            col1, col2 = st.columns(2)
+            s_input = col1.date_input("开始", datetime.strptime(saved_start, '%Y-%m-%d'))
+            e_input = col2.date_input("结束", datetime.strptime(saved_end, '%Y-%m-%d'))
+            submit_btn = st.form_submit_button("🔄 更新区间")
+        
+        # 无论是否点击提交，Form 内的组件都会保持状态，但我们需要从 input 获取最新值
+        # 注意：在 Form 提交前，s_input/e_input 也会返回当前 UI 上的值（但在 rerun 前）
+        # Form 的机制是：直到点击 submit，整个脚本才会 rerun 且拿到新值。
+        
+        s_date = s_input
+        e_date = e_input
 
-        # 保存自定义日期
+        # 保存自定义日期 (这就会在下次 rerun 时生效)
         st.session_state[custom_start_key] = s_date.strftime('%Y-%m-%d')
         st.session_state[custom_end_key] = e_date.strftime('%Y-%m-%d')
 
@@ -529,6 +543,140 @@ def plot_interactive_trend(
     return fig
 
 
+# ==================== 趋势强度展示组件 ====================
+
+def render_trend_strength_card(trend_data: dict, key_prefix: str = ""):
+    """
+    渲染趋势强度评分卡片
+    
+    基于四条均线规则显示趋势强度评分:
+    1. 股价在20日均线上方
+    2. 20日均线上行
+    3. 60日均线上行
+    4. 20日均线在60日均线上方
+    
+    Args:
+        trend_data: 趋势强度分析结果 (来自 get_trend_strength)
+        key_prefix: Streamlit widget key 前缀
+    """
+    import streamlit as st
+    
+    if not trend_data or 'error' in trend_data:
+        error_msg = trend_data.get('error', '未知错误') if trend_data else '无数据'
+        st.warning(f"⚠️ 趋势强度计算失败: {error_msg}")
+        return
+    
+    score = trend_data.get('score', 0)
+    max_score = trend_data.get('max_score', 4)
+    level = trend_data.get('level', '未知')
+    level_icon = trend_data.get('level_icon', '❓')
+    recommendation = trend_data.get('recommendation', '')
+    details = trend_data.get('details', {})
+    
+    # 标题和总分
+    st.markdown("#### 📊 趋势强度评分")
+    
+    # 主要指标区域
+    col1, col2, col3 = st.columns([2, 3, 3])
+    
+    with col1:
+        # 大号评分显示
+        score_color = "#00cc66" if score >= 3 else ("#ffaa00" if score == 2 else "#ff4444")
+        st.markdown(f"""
+        <div style="text-align: center; padding: 10px;">
+            <div style="font-size: 48px; font-weight: bold; color: {score_color};">
+                {score}/{max_score}
+            </div>
+            <div style="font-size: 16px; color: #666; margin-top: 5px;">
+                {level_icon} {level}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        # 均线数据
+        st.markdown("**📈 均线状态**")
+        ma20 = trend_data.get('ma20', 'N/A')
+        ma60 = trend_data.get('ma60', 'N/A')
+        latest_price = trend_data.get('latest_price', 'N/A')
+        
+        st.caption(f"• 最新价: **¥{latest_price}**")
+        st.caption(f"• MA20: ¥{ma20}")
+        st.caption(f"• MA60: ¥{ma60}")
+    
+    with col3:
+        # 斜率信息
+        st.markdown("**📐 趋势斜率**")
+        ma20_slope = trend_data.get('ma20_slope', 0)
+        ma60_slope = trend_data.get('ma60_slope', 0)
+        
+        ma20_arrow = "↗️" if ma20_slope > 0 else "↘️"
+        ma60_arrow = "↗️" if ma60_slope > 0 else "↘️"
+        
+        st.caption(f"• MA20斜率: {ma20_arrow} {ma20_slope:.4f}")
+        st.caption(f"• MA60斜率: {ma60_arrow} {ma60_slope:.4f}")
+    
+    st.divider()
+    
+    # 四条规则检查结果
+    st.markdown("**🔍 四条规则检查**")
+    
+    rule_cols = st.columns(4)
+    
+    rule_order = ['price_above_ma20', 'ma20_trending_up', 'ma60_trending_up', 'ma20_above_ma60']
+    rule_labels = ['价格>MA20', 'MA20上行', 'MA60上行', 'MA20>MA60']
+    
+    for i, (rule_key, label) in enumerate(zip(rule_order, rule_labels)):
+        detail = details.get(rule_key, {})
+        passed = detail.get('passed', False)
+        icon = "✅" if passed else "❌"
+        color = "#00cc66" if passed else "#ff4444"
+        
+        with rule_cols[i]:
+            st.markdown(f"""
+            <div style="text-align: center; padding: 8px; border-radius: 8px; 
+                        background-color: {'rgba(0,204,102,0.1)' if passed else 'rgba(255,68,68,0.1)'};">
+                <div style="font-size: 24px;">{icon}</div>
+                <div style="font-size: 12px; color: {color}; font-weight: bold;">{label}</div>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    # 综合建议
+    if recommendation:
+        st.info(f"💡 **建议**: {recommendation}")
+
+
+def render_trend_strength_mini(trend_data: dict) -> tuple:
+    """
+    返回趋势强度的迷你展示数据（用于表格或概览）
+    
+    Args:
+        trend_data: 趋势强度分析结果
+    
+    Returns:
+        (score_text, level_text, color) 元组
+    """
+    if not trend_data or 'error' in trend_data:
+        return ("N/A", "未知", "#999999")
+    
+    score = trend_data.get('score', 0)
+    max_score = trend_data.get('max_score', 4)
+    level = trend_data.get('level', '未知')
+    level_icon = trend_data.get('level_icon', '❓')
+    
+    score_text = f"{score}/{max_score}"
+    level_text = f"{level_icon} {level}"
+    
+    if score >= 3:
+        color = "#00cc66"
+    elif score == 2:
+        color = "#ffaa00"
+    else:
+        color = "#ff4444"
+    
+    return (score_text, level_text, color)
+
+
 # ==================== 高级组合组件 ====================
 
 def render_stock_detail_card(
@@ -541,10 +689,13 @@ def render_stock_detail_card(
     """
     渲染个股详情分析卡片 (可复用组件)
     
-    包含三个维度 Tab:
+    包含四个维度 Tab:
     - 💸 资金流向: 机构/散户净流入、趋势图
     - 📉 技术形态: K线+均线、MACD、RSI、智能解读
-    - 💰 估值分析: (预留)
+    - 💰 估值分析: PE/PB/PS 分位、估值状态
+    - 🧠 AI投委会: 五维专家分析、压力测试、评级触发条件
+    
+    注意：AI 分析师已移至页面右侧独立面板（参见 components_ai_panel.py）
     
     Args:
         symbol: 股票代码 (如 600519.SH)
@@ -561,8 +712,13 @@ def render_stock_detail_card(
 
     # 检测是否为港股
     is_hk_stock = symbol.endswith('.HK')
+    
+    # 用于数据注册的变量
+    flow_data_for_registry = None
+    tech_analysis_for_registry = None
+    valuation_data_for_registry = None
 
-    dim_tabs = st.tabs(["💸 资金流向", "📉 技术形态", "💰 估值分析", "🤖 AI 分析师"])
+    dim_tabs = st.tabs(["💸 资金流向", "📉 技术形态", "💰 估值分析", "🧠 AI投委会"])
 
     # ---------- 资金流向维度 ----------
     with dim_tabs[0]:
@@ -571,6 +727,7 @@ def render_stock_detail_card(
             st.info("⚠️ **港股暂不支持资金流向分析**\n\nTushare 资金流向接口仅支持 A 股（沪深交易所）。")
         else:
             flow_res = get_stock_money_flow(symbol, start_str, end_str)
+            flow_data_for_registry = flow_res  # 用于注册
             if 'error' not in flow_res:
                 # Metrics
                 col1, col2, col3 = st.columns(3)
@@ -603,6 +760,13 @@ def render_stock_detail_card(
                             title=f"{name} 资金流向趋势"
                         )
                         st.plotly_chart(fig, use_container_width=True)
+                        
+                        # 在图表下方添加趋势强度展示，既补充信息也能优化布局
+                        if not price_df.empty:
+                            from web.data_service import get_trend_strength_from_price_data
+                            # 复用已有价格数据避免重复请求
+                            trend_data = get_trend_strength_from_price_data(price_df, symbol)
+                            render_trend_strength_card(trend_data, key_prefix=f"{key_prefix}flow_{symbol}_")
                         
                     except Exception as e:
                         # 降级回 Matplotlib
@@ -642,6 +806,7 @@ def render_stock_detail_card(
                 show_macd=True,
                 show_rsi=show_rsi
             )
+            tech_analysis_for_registry = analysis  # 用于注册
             
             if fig:
                 st.pyplot(fig)
@@ -682,6 +847,13 @@ def render_stock_detail_card(
                 st.markdown("#### 🤖 智能解读")
                 for interp in analysis['interpretations']:
                     st.markdown(f"- {interp}")
+            
+            # 显示趋势强度评分
+            st.divider()
+            from web.data_service import get_trend_strength
+            with st.spinner("正在计算趋势强度..."):
+                trend_data = get_trend_strength(symbol, days=90)
+            render_trend_strength_card(trend_data, key_prefix=f"{key_prefix}trend_{symbol}_")
         else:
             st.warning("暂无技术数据")
     
@@ -695,6 +867,7 @@ def render_stock_detail_card(
 
             with st.spinner("正在加载估值数据..."):
                 val_data = get_stock_valuation(symbol, days=250)
+            valuation_data_for_registry = val_data  # 用于注册
 
             if 'error' in val_data:
                 st.warning(f"暂无估值数据: {val_data['error']}")
@@ -844,10 +1017,39 @@ def render_stock_detail_card(
                             st.markdown(f"- {interp}")
                 else:
                     st.info("分位数据不足（需要至少10个交易日数据）")
-
-    # ---------- AI 分析师维度 ----------
+    
+    # ---------- AI投委会维度 ----------
     with dim_tabs[3]:
-        render_stock_chat(symbol, name, start_str, end_str, key_prefix)
+        if is_hk_stock:
+            st.info("⚠️ **港股暂不支持AI投委会分析**\n\n需要 A 股完整数据支持。")
+        else:
+            # 延迟导入 IC Report 组件
+            from web.components_ic_report import render_investment_committee_tab
+            
+            # 渲染投资决策委员会报告
+            render_investment_committee_tab(
+                symbol=symbol,
+                name=name,
+                flow_data=flow_data_for_registry,
+                tech_data=tech_analysis_for_registry,
+                valuation_data=valuation_data_for_registry,
+                key_prefix=f"{key_prefix}ic_{symbol}_"
+            )
+    
+    # ========== 数据注册（渲染即注册）==========
+    # 将本次渲染获取的数据注册到 PageDataRegistry，供 AI 分析师工具读取
+    try:
+        registry = st.session_state.get("page_registry")
+        if registry:
+            registry.register_stock(
+                symbol=symbol,
+                name=name,
+                money_flow=flow_data_for_registry,
+                technical=tech_analysis_for_registry,
+                valuation=valuation_data_for_registry
+            )
+    except Exception:
+        pass  # 注册失败不影响正常渲染
 
 
 def render_stock_chat(

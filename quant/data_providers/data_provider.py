@@ -2068,20 +2068,42 @@ class TushareDataProvider(BaseDataProvider):
             df = df.sort_values(['trade_date', 'net_amount'], ascending=[False, False])
         
         # Calculate additional metrics
-        if 'buy_elg_amount' in df.columns and 'sell_elg_amount' in df.columns:
-            df['xlarge_net'] = df['buy_elg_amount'] - df['sell_elg_amount']
-        if 'buy_lg_amount' in df.columns and 'sell_lg_amount' in df.columns:
-            df['large_net'] = df['buy_lg_amount'] - df['sell_lg_amount']
-        if 'buy_md_amount' in df.columns and 'sell_md_amount' in df.columns:
-            df['mid_net'] = df['buy_md_amount'] - df['sell_md_amount']
-        if 'buy_sm_amount' in df.columns and 'sell_sm_amount' in df.columns:
-            df['small_net'] = df['buy_sm_amount'] - df['sell_sm_amount']
+        # DC 数据中，buy_elg_amount 等通常已经是净流入金额（如果 sell 字段不存在）
+        if 'buy_elg_amount' in df.columns:
+            if 'sell_elg_amount' in df.columns:
+                df['xlarge_net'] = df['buy_elg_amount'] - df['sell_elg_amount']
+            else:
+                # 只有 buy 字段，说明该字段本身就是净额
+                df['xlarge_net'] = df['buy_elg_amount']
+                
+        if 'buy_lg_amount' in df.columns:
+            if 'sell_lg_amount' in df.columns:
+                df['large_net'] = df['buy_lg_amount'] - df['sell_lg_amount']
+            else:
+                df['large_net'] = df['buy_lg_amount']
+                
+        if 'buy_md_amount' in df.columns:
+            if 'sell_md_amount' in df.columns:
+                df['mid_net'] = df['buy_md_amount'] - df['sell_md_amount']
+            else:
+                df['mid_net'] = df['buy_md_amount']
+                
+        if 'buy_sm_amount' in df.columns:
+            if 'sell_sm_amount' in df.columns:
+                df['small_net'] = df['buy_sm_amount'] - df['sell_sm_amount']
+            else:
+                df['small_net'] = df['buy_sm_amount']
         
         # Calculate institutional vs retail
-        if 'xlarge_net' in df.columns and 'large_net' in df.columns:
-            df['institutional_net'] = df['xlarge_net'] + df['large_net']
-        if 'mid_net' in df.columns and 'small_net' in df.columns:
-            df['retail_net'] = df['mid_net'] + df['small_net']
+        if 'xlarge_net' in df.columns or 'large_net' in df.columns:
+            df['institutional_net'] = df.get('xlarge_net', 0) + df.get('large_net', 0)
+        if 'mid_net' in df.columns or 'small_net' in df.columns:
+            df['retail_net'] = df.get('mid_net', 0) + df.get('small_net', 0)
+            
+        # 如果存在 institutional_net 和 retail_net，重新计算真正的全市场净流入 (net_amount)
+        # 因为 Tushare raw 中的 net_amount 往往只是主力净流入 (xlarge+large)
+        if 'institutional_net' in df.columns and 'retail_net' in df.columns:
+            df['net_amount'] = df['institutional_net'] + df['retail_net']
         
         return df
     

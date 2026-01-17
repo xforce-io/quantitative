@@ -1,7 +1,13 @@
-
 import streamlit as st
 import sys
 from pathlib import Path
+
+# 添加项目根目录到 Python 路径
+# 这样我们就可以直接导入 quant 和 web 模块
+current_dir = Path(__file__).parent.absolute()
+project_root = current_dir.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
 # 设置页面配置
 st.set_page_config(
@@ -18,13 +24,6 @@ from web.ui_theme import setup_matplotlib_style, apply_plotly_theme, apply_custo
 setup_matplotlib_style()
 apply_plotly_theme()
 apply_custom_css()
-
-# 添加项目根目录到 Python 路径
-# 这样我们就可以直接导入 quant 模块
-current_dir = Path(__file__).parent.absolute()
-project_root = current_dir.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
 
 from quant.core.logging_config import get_logger
 
