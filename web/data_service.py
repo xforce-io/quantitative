@@ -17,6 +17,8 @@ if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
 from quant.data.implementations.tushare_provider import TushareProvider
+from quant.core.indicators import TechnicalIndicators
+from quant.core.symbol_resolver import SymbolResolver
 
 # 获取 logger
 logger = logging.getLogger(__name__)
@@ -42,7 +44,7 @@ def get_candidate_files() -> List[str]:
     return [f.stem for f in CANDIDATES_DIR.glob("*.txt")]
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=7200, show_spinner=False)  # 2小时缓存
 def load_candidates(pool_name: str = "top_ashare_stocks") -> pd.DataFrame:
     """
     加载候选池数据
@@ -69,19 +71,7 @@ def load_candidates(pool_name: str = "top_ashare_stocks") -> pd.DataFrame:
         )
         
         # 转换代码格式: 300033 -> 300033.SZ
-        def format_symbol(code: str) -> str:
-            code = str(code).strip()
-            if '.' in code:
-                return code
-            if code.startswith('6'):
-                return f"{code}.SH"
-            elif code.startswith('0') or code.startswith('3'):
-                return f"{code}.SZ"
-            elif code.startswith('8') or code.startswith('4'):
-                return f"{code}.BJ"
-            return code
-        
-        df['symbol'] = df['symbol'].apply(format_symbol)
+        df['symbol'] = df['symbol'].apply(SymbolResolver.format_symbol)
         df['display'] = df.apply(lambda x: f"{x['symbol']} {x['name']}", axis=1)
         
         return df
@@ -99,7 +89,7 @@ def get_candidate_industries(pool_name: str = "top_ashare_stocks") -> List[str]:
 
 # ==================== 交易日历 ====================
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=7200, show_spinner=False)  # 2小时缓存
 def get_trading_days(start: str, end: str) -> List[str]:
     """获取交易日列表"""
     provider = get_provider()
@@ -107,17 +97,8 @@ def get_trading_days(start: str, end: str) -> List[str]:
 
 
 def get_latest_trading_day() -> datetime:
-    """获取最近的交易日 (智能回溯)"""
-    today = datetime.now()
-    
-    # 周末自动回溯到周五
-    if today.weekday() >= 5:
-        today = today - timedelta(days=(today.weekday() - 4))
-    # 盘前/盘中看前一天
-    elif today.hour < 15:
-        today = today - timedelta(days=1)
-    
-    return today
+    """获取最近的交易日 (智能回溯，委托给 SymbolResolver)"""
+    return SymbolResolver.get_latest_trading_day()
 
 
 # ==================== 股票数据 ====================
@@ -155,7 +136,7 @@ def get_stock_money_flow(symbol: str, start: str, end: str) -> Dict[str, Any]:
     return provider.analyze_institutional_vs_retail(symbol, start, end)
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=7200, show_spinner=False)  # 2小时缓存
 def get_stock_price(symbol: str, start: str, end: str) -> pd.DataFrame:
     """获取个股价格数据"""
     provider = get_provider()
@@ -165,7 +146,7 @@ def get_stock_price(symbol: str, start: str, end: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=7200, show_spinner=False)  # 2小时缓存
 def get_stock_technical_data(symbol: str, start: str, end: str) -> pd.DataFrame:
     """
     获取个股K线数据并计算技术指标
@@ -177,43 +158,33 @@ def get_stock_technical_data(symbol: str, start: str, end: str) -> pd.DataFrame:
     except Exception:
         return pd.DataFrame()
     
-    if df.empty:
+    if df.empty or 'close' not in df.columns:
         return df
-    
-    # 确保有必要的列
-    if 'close' not in df.columns:
-        return df
-    
-    # 计算均线
-    df['MA5'] = df['close'].rolling(window=5).mean()
-    df['MA10'] = df['close'].rolling(window=10).mean()
-    df['MA20'] = df['close'].rolling(window=20).mean()
-    df['MA60'] = df['close'].rolling(window=60).mean()
-    
-    # 计算 MACD
-    exp12 = df['close'].ewm(span=12, adjust=False).mean()
-    exp26 = df['close'].ewm(span=26, adjust=False).mean()
-    df['MACD_DIF'] = exp12 - exp26
-    df['MACD_DEA'] = df['MACD_DIF'].ewm(span=9, adjust=False).mean()
-    df['MACD_HIST'] = (df['MACD_DIF'] - df['MACD_DEA']) * 2
-    
-    # 计算 RSI (14日)
-    delta = df['close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rs = gain / loss
-    df['RSI'] = 100 - (100 / (1 + rs))
-    
-    # 计算布林带
-    df['BOLL_MID'] = df['close'].rolling(window=20).mean()
-    df['BOLL_STD'] = df['close'].rolling(window=20).std()
-    df['BOLL_UP'] = df['BOLL_MID'] + 2 * df['BOLL_STD']
-    df['BOLL_DOWN'] = df['BOLL_MID'] - 2 * df['BOLL_STD']
-    
+
+    # 使用统一的技术指标计算
+    df = TechnicalIndicators.calculate_all_indicators(df)
+
+    # 列名别名：保持向后兼容
+    # MACD: TechnicalIndicators 输出 MACD/MACD_Signal/MACD_Histogram → 中国市场惯例 DIF/DEA/HIST
+    if 'MACD' in df.columns:
+        df['MACD_DIF'] = df['MACD']
+    if 'MACD_Signal' in df.columns:
+        df['MACD_DEA'] = df['MACD_Signal']
+    if 'MACD_DIF' in df.columns and 'MACD_DEA' in df.columns:
+        df['MACD_HIST'] = (df['MACD_DIF'] - df['MACD_DEA']) * 2  # 中国市场惯例
+
+    # 布林带: BB_Upper/BB_Middle/BB_Lower → BOLL_UP/BOLL_MID/BOLL_DOWN
+    if 'BB_Upper' in df.columns:
+        df['BOLL_UP'] = df['BB_Upper']
+    if 'BB_Middle' in df.columns:
+        df['BOLL_MID'] = df['BB_Middle']
+    if 'BB_Lower' in df.columns:
+        df['BOLL_DOWN'] = df['BB_Lower']
+
     return df
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=7200, show_spinner=False)  # 2小时缓存
 def get_stock_valuation(symbol: str, days: int = 250) -> Dict[str, Any]:
     """
     获取个股估值数据 (PE/PB/PS) 及历史分位
@@ -228,77 +199,20 @@ def get_stock_valuation(symbol: str, days: int = 250) -> Dict[str, Any]:
         - percentile: 历史分位数 (0-100, 越低越便宜)
         - history: 历史数据 DataFrame
     """
+    from quant.analysis.valuation.stock_valuation import StockValuationAnalyzer
     provider = get_provider()
 
     try:
         # 计算日期范围
-        from datetime import datetime, timedelta
         end_date = datetime.now().strftime('%Y%m%d')
-        start_date = (datetime.now() - timedelta(days=days*2)).strftime('%Y%m%d')  # 扩大范围确保有足够交易日
+        start_date = (datetime.now() - timedelta(days=days*2)).strftime('%Y%m%d')
 
         # 使用封装好的接口获取每日基本面指标
         df = provider.get_daily_basic(symbol, start_date, end_date)
-        
-        if df is None or df.empty:
-            return {'error': '无估值数据'}
-        
-        # 排序
-        df = df.sort_values('trade_date', ascending=True).reset_index(drop=True)
-        df['trade_date'] = pd.to_datetime(df['trade_date'])
-        
-        # 只取最近 N 个交易日
-        df = df.tail(days)
-        
-        if len(df) == 0:
-            return {'error': '数据不足'}
-        
-        # 最新数据
-        latest = df.iloc[-1].to_dict()
-        
-        # 计算历史分位数 (越低越便宜)
-        percentile = {}
-        for col in ['pe_ttm', 'pb', 'ps_ttm']:
-            if col in df.columns:
-                valid_data = df[col].dropna()
-                if len(valid_data) > 10:
-                    current = latest.get(col)
-                    if pd.notna(current):
-                        # 分位数: 当前值在历史中的位置 (0-100)
-                        percentile[col] = round((valid_data < current).sum() / len(valid_data) * 100, 1)
-        
-        # 计算估值区间
-        valuation_status = {}
-        for col, pct in percentile.items():
-            if pct < 20:
-                valuation_status[col] = '低估'
-            elif pct < 40:
-                valuation_status[col] = '偏低'
-            elif pct < 60:
-                valuation_status[col] = '中性'
-            elif pct < 80:
-                valuation_status[col] = '偏高'
-            else:
-                valuation_status[col] = '高估'
-        
-        return {
-            'latest': {
-                'pe': latest.get('pe'),
-                'pe_ttm': latest.get('pe_ttm'),
-                'pb': latest.get('pb'),
-                'ps': latest.get('ps'),
-                'ps_ttm': latest.get('ps_ttm'),
-                'dv_ratio': latest.get('dv_ratio'),  # 股息率
-                'total_mv': latest.get('total_mv'),  # 总市值 (万元)
-                'circ_mv': latest.get('circ_mv'),    # 流通市值 (万元)
-                'close': latest.get('close'),
-                'trade_date': latest.get('trade_date')
-            },
-            'percentile': percentile,
-            'status': valuation_status,
-            'history': df,
-            'data_days': len(df)
-        }
-        
+
+        # 委托给 StockValuationAnalyzer 计算分位数和状态
+        return StockValuationAnalyzer.compute_percentile_valuation(df, days)
+
     except Exception as e:
         return {'error': str(e)}
 
@@ -312,7 +226,7 @@ def get_industry_flow_daily(date_str: str) -> pd.DataFrame:
     return provider.get_industry_money_flow_dc(trade_date=date_str)
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=7200, show_spinner=False)  # 2小时缓存
 def get_industry_flow_aggregated(start_date: str, end_date: str) -> pd.DataFrame:
     """
     获取聚合的行业资金流向 (多日汇总)
@@ -351,7 +265,7 @@ def get_industry_flow_aggregated(start_date: str, end_date: str) -> pd.DataFrame
     return combined.groupby('name').agg(agg_rules).reset_index()
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=7200, show_spinner=False)  # 2小时缓存
 def get_industry_flow_with_details(start: str, end: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     获取行业资金流向 (聚合 + 明细)
@@ -367,27 +281,10 @@ def get_industry_flow_with_details(start: str, end: str) -> Tuple[pd.DataFrame, 
             df = get_industry_flow_daily(day)
             if not df.empty and 'net_amount' in df.columns:
                 df['net_amount'] = pd.to_numeric(df['net_amount'], errors='coerce')
-                
-                # 映射机构/散户字段 (优先使用 Provider 处理好的字段)
-                # 映射机构/散户字段 (优先使用 Provider 处理好的字段)
-                # 修复逻辑：即使 Provider 已计算了 institutional_net，如果算出来全是 0 (可能是明细缺失)，
-                # 但存在 net_main_amount (主力净额)，则优先使用主力净额
-                has_valid_inst = 'institutional_net' in df.columns and (df['institutional_net'] != 0).any()
-                
-                if not has_valid_inst:
-                    if 'net_main_amount' in df.columns:
-                        df['institutional_net'] = pd.to_numeric(df['net_main_amount'], errors='coerce')
-                    elif 'main_net_amount' in df.columns:
-                        df['institutional_net'] = pd.to_numeric(df['main_net_amount'], errors='coerce')
-                    elif 'institutional_net' not in df.columns:
-                        df['institutional_net'] = 0
-                
-                if 'retail_net' not in df.columns:
-                    if 'institutional_net' in df.columns:
-                        df['retail_net'] = df['net_amount'] - df['institutional_net']
-                    else:
-                        df['retail_net'] = 0
-                
+
+                # 归一化机构/散户字段
+                df = TushareProvider.normalize_flow_columns(df)
+
                 cols = ['trade_date', 'name', 'net_amount', 'pct_change', 'institutional_net', 'retail_net']
                 cols = [c for c in cols if c in df.columns]
                 all_dfs.append(df[cols])
@@ -406,7 +303,7 @@ def get_industry_flow_with_details(start: str, end: str) -> Tuple[pd.DataFrame, 
     return aggregated, combined
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=7200, show_spinner=False)  # 2小时缓存
 def get_industry_list() -> List[str]:
     """获取所有行业名称列表"""
     today = get_latest_trading_day().strftime('%Y%m%d')
@@ -469,7 +366,7 @@ def get_industry_constituent_stocks(industry_name: str) -> pd.DataFrame:
 
 # ==================== 市场概览 ====================
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=7200, show_spinner=False)  # 2小时缓存
 def get_market_summary(date_str: str) -> Dict[str, Any]:
     """获取市场资金流向摘要"""
     provider = get_provider()
@@ -533,7 +430,7 @@ def rank_stocks(symbols: List[str], profile: str = 'balanced', days: int = 60) -
 
 def resolve_stock_symbol(query: str) -> str:
     """
-    将股票名称/简称解析为标准代码
+    将股票名称/简称解析为标准代码 (委托给 SymbolResolver)
 
     Args:
         query: 用户输入（可能是代码如 "002594.SZ" 或名称如 "比亚迪"）
@@ -541,44 +438,11 @@ def resolve_stock_symbol(query: str) -> str:
     Returns:
         标准股票代码（如 "002594.SZ"），未找到则返回原值
     """
-    query = query.strip()
-
-    # 已是标准代码格式
-    if '.' in query:
-        suffix = query.split('.')[-1].upper()
-        if suffix in ('SZ', 'SH', 'BJ', 'HK'):
-            return query.upper()
-
-    # 纯数字代码，补充后缀
-    if query.isdigit() and len(query) == 6:
-        if query.startswith('6'):
-            return f"{query}.SH"
-        elif query.startswith(('0', '3')):
-            return f"{query}.SZ"
-        elif query.startswith(('8', '4')):
-            return f"{query}.BJ"
-
-    # 从股票列表搜索名称
     try:
-        stock_list = get_stock_list()  # ["000001.SZ 平安银行", ...]
-        for item in stock_list:
-            parts = item.split(' ', 1)
-            if len(parts) == 2:
-                code, name = parts
-                # 精确匹配名称
-                if query == name:
-                    return code
-        # 模糊匹配（名称包含查询词）
-        for item in stock_list:
-            parts = item.split(' ', 1)
-            if len(parts) == 2:
-                code, name = parts
-                if query in name:
-                    return code
+        stock_list = get_stock_list()
     except Exception:
-        pass
-
-    return query  # 未找到则原样返回
+        stock_list = None
+    return SymbolResolver.resolve(query, stock_list)
 
 
 def fetch_stock_full_analysis(symbol: str, days: int = 60) -> Dict[str, Any]:
@@ -624,38 +488,10 @@ def fetch_stock_full_analysis(symbol: str, days: int = 60) -> Dict[str, Any]:
 
     # 2. 技术指标
     try:
+        from quant.analysis.indicators.technical_analyzer import TechnicalAnalyzer
         tech_df = get_stock_technical_data(resolved_symbol, start, end)
         if tech_df is not None and not tech_df.empty:
-            latest = tech_df.iloc[-1]
-
-            # 判断均线趋势
-            ma_trend = "unknown"
-            if 'MA5' in latest and 'MA20' in latest and 'MA60' in latest:
-                if latest['MA5'] > latest['MA20'] > latest['MA60']:
-                    ma_trend = "多头排列"
-                elif latest['MA5'] < latest['MA20'] < latest['MA60']:
-                    ma_trend = "空头排列"
-                else:
-                    ma_trend = "震荡整理"
-
-            # 判断 MACD 信号
-            macd_signal = "unknown"
-            if 'MACD_DIF' in latest and 'MACD_DEA' in latest:
-                if latest['MACD_DIF'] > latest['MACD_DEA']:
-                    macd_signal = "金叉/多头"
-                else:
-                    macd_signal = "死叉/空头"
-
-            result['technical'] = {
-                'latest_close': round(float(latest.get('close', 0)), 2),
-                'ma5': round(float(latest.get('MA5', 0)), 2) if pd.notna(latest.get('MA5')) else None,
-                'ma20': round(float(latest.get('MA20', 0)), 2) if pd.notna(latest.get('MA20')) else None,
-                'ma60': round(float(latest.get('MA60', 0)), 2) if pd.notna(latest.get('MA60')) else None,
-                'ma_trend': ma_trend,
-                'macd_signal': macd_signal,
-                'rsi_value': round(float(latest.get('RSI', 50)), 1) if pd.notna(latest.get('RSI')) else None,
-                'boll_position': _calc_boll_position(latest) if 'BOLL_UP' in latest else None,
-            }
+            result['technical'] = TechnicalAnalyzer.interpret_latest_signals(tech_df)
     except Exception as e:
         result['technical'] = {'error': str(e)}
 
@@ -694,31 +530,14 @@ def fetch_stock_full_analysis(symbol: str, days: int = 60) -> Dict[str, Any]:
 
 
 def _calc_boll_position(row) -> str:
-    """计算价格在布林带中的位置"""
-    try:
-        close = row.get('close', 0)
-        up = row.get('BOLL_UP', 0)
-        down = row.get('BOLL_DOWN', 0)
-        mid = row.get('BOLL_MID', 0)
-
-        if pd.isna(up) or pd.isna(down) or up == down:
-            return "unknown"
-
-        if close >= up:
-            return "上轨之上（超买）"
-        elif close <= down:
-            return "下轨之下（超卖）"
-        elif close > mid:
-            return "中轨之上"
-        else:
-            return "中轨之下"
-    except Exception:
-        return "unknown"
+    """计算价格在布林带中的位置 (委托给 TechnicalAnalyzer)"""
+    from quant.analysis.indicators.technical_analyzer import TechnicalAnalyzer
+    return TechnicalAnalyzer.bollinger_position(row)
 
 
 # ==================== 趋势强度分析服务 ====================
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=7200, show_spinner=False)  # 2小时缓存
 def get_trend_strength(symbol: str, days: int = 90) -> Dict[str, Any]:
     """
     获取个股趋势强度评分
@@ -765,7 +584,85 @@ def get_trend_strength_from_price_data(price_df: pd.DataFrame, symbol: str = "un
         return {'error': str(e)}
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+# ==================== 箱体突破分析服务 ====================
+
+@st.cache_data(ttl=7200, show_spinner=False)  # 2小时缓存
+def get_box_breakout(symbol: str, period: int = 20, days: int = 120,
+                      volume_threshold: float = 1.5) -> Dict[str, Any]:
+    """
+    获取单个标的的箱体突破分析
+
+    Args:
+        symbol: 股票代码
+        period: 箱体计算周期（天）
+        days: 历史数据天数
+        volume_threshold: 放量确认倍数阈值
+
+    Returns:
+        箱体突破分析结果
+    """
+    try:
+        from quant.analysis.indicators.box_breakout_analyzer import BoxBreakoutAnalyzer
+        analyzer = BoxBreakoutAnalyzer()
+        return analyzer.analyze(symbol, period, days, volume_threshold)
+    except Exception as e:
+        logger.error(f"获取箱体突破分析失败: {e}")
+        return {'symbol': symbol, 'error': str(e)}
+
+
+@st.cache_data(ttl=3600, show_spinner=False)  # 1小时缓存
+def scan_box_breakouts(symbols: tuple, period: int = 20, days: int = 120,
+                        volume_threshold: float = 1.5,
+                        proximity_pct: float = 0.0,
+                        max_workers: int = 10) -> List[Dict[str, Any]]:
+    """
+    批量扫描箱体突破信号（支持并发）
+
+    Args:
+        symbols: 标的代码元组（tuple 以支持 st.cache_data 哈希）
+        period: 箱体计算周期
+        days: 历史数据天数
+        volume_threshold: 放量确认倍数阈值
+        proximity_pct: 接近突破阈值（%），0 表示不启用
+        max_workers: 并发线程数
+
+    Returns:
+        分析结果列表（按评分降序）
+    """
+    try:
+        from quant.analysis.indicators.box_breakout_analyzer import BoxBreakoutAnalyzer
+        analyzer = BoxBreakoutAnalyzer()
+        return analyzer.scan_breakouts(
+            list(symbols), period, days, volume_threshold,
+            proximity_pct=proximity_pct, max_workers=max_workers,
+        )
+    except Exception as e:
+        logger.error(f"批量扫描箱体突破失败: {e}")
+        return []
+
+
+@st.cache_data(ttl=86400, show_spinner=False)  # 24小时缓存
+def load_all_ashare_stocks() -> pd.DataFrame:
+    """
+    加载全部 A 股上市公司列表
+
+    Returns:
+        DataFrame with columns: [symbol, name, industry]
+    """
+    provider = get_provider()
+    df = provider.get_stock_basic()
+    if df.empty:
+        return pd.DataFrame(columns=['symbol', 'name', 'industry'])
+    # 统一列名
+    result = pd.DataFrame({
+        'symbol': df['ts_code'],
+        'name': df['name'],
+        'industry': df.get('industry', ''),
+    })
+    return result
+
+
+@st.cache_data(ttl=7200, show_spinner=False)  # 2小时缓存
 def get_industry_trend_strength(industry_name: str, start: str, end: str) -> Dict[str, Any]:
     """
     获取行业趋势强度评分
@@ -810,4 +707,90 @@ def get_industry_trend_strength(industry_name: str, start: str, end: str) -> Dic
         
     except Exception as e:
         logger.error(f"获取行业趋势强度失败: {e}")
+        return {'error': str(e)}
+
+
+# ==================== 美股价值投资分析服务 ====================
+
+@st.cache_data(ttl=86400, show_spinner=False)  # 24小时缓存，基本面变化慢
+def get_value_investing_analysis(symbol: str) -> Dict[str, Any]:
+    """
+    获取单只美股的价值投资分析
+
+    Args:
+        symbol: 美股代码 (e.g. 'AAPL')
+
+    Returns:
+        价值投资分析结果
+    """
+    try:
+        from quant.analysis.indicators.value_investing_analyzer import ValueInvestingAnalyzer
+        analyzer = ValueInvestingAnalyzer()
+        return analyzer.analyze(symbol)
+    except Exception as e:
+        logger.error(f"价值投资分析失败: {e}")
+        return {'symbol': symbol, 'error': str(e)}
+
+
+@st.cache_data(ttl=43200, show_spinner=False)  # 12小时缓存
+def scan_value_stocks(symbols: tuple) -> List[Dict[str, Any]]:
+    """
+    批量扫描美股价值投资评分
+
+    Args:
+        symbols: 美股代码元组（tuple 以支持 st.cache_data 哈希）
+
+    Returns:
+        分析结果列表（按评分降序）
+    """
+    try:
+        from quant.analysis.indicators.value_investing_analyzer import ValueInvestingAnalyzer
+        analyzer = ValueInvestingAnalyzer()
+        return analyzer.scan_value_stocks(list(symbols), max_workers=5)
+    except Exception as e:
+        logger.error(f"批量价值投资扫描失败: {e}")
+        return []
+
+
+# ==================== 宏观流动性分析服务 ====================
+
+@st.cache_data(ttl=3600, show_spinner=False)  # 1小时缓存
+def get_macro_liquidity(lookback_days: int = 365) -> Dict[str, Any]:
+    """
+    获取宏观流动性分析
+
+    Args:
+        lookback_days: 回溯天数
+
+    Returns:
+        宏观流动性分析结果
+    """
+    try:
+        from quant.analysis.indicators.macro_liquidity_analyzer import MacroLiquidityAnalyzer
+        analyzer = MacroLiquidityAnalyzer()
+        return analyzer.analyze(lookback_days)
+    except Exception as e:
+        logger.error(f"宏观流动性分析失败: {e}")
+        return {'error': str(e)}
+
+
+# ==================== A股/港股市场信号服务 ====================
+
+@st.cache_data(ttl=3600, show_spinner=False)  # 1小时缓存
+def get_china_market_signals(lookback_days: int = 60) -> Dict[str, Any]:
+    """
+    获取 A 股/港股市场信号分析
+
+    Args:
+        lookback_days: 回溯天数
+
+    Returns:
+        市场信号分析结果
+    """
+    try:
+        from quant.analysis.indicators.china_market_signal_analyzer import ChinaMarketSignalAnalyzer
+        analyzer = ChinaMarketSignalAnalyzer()
+        return analyzer.analyze(lookback_days)
+    except Exception as e:
+        logger.error(f"A股/港股市场信号分析失败: {e}")
         return {'error': str(e)}

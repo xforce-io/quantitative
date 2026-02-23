@@ -1528,6 +1528,11 @@ class TushareDataProvider(BaseDataProvider):
         # Sort by date
         df = df.sort_index()
 
+        # Ensure money columns are numeric (Tushare/CSV may return strings)
+        money_cols = [c for c in df.columns if c != 'trade_date']
+        for col in money_cols:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+
         # Calculate net flows if individual flows are available
         if 'hk2sh_buy' in df.columns and 'hk2sh_sell' in df.columns:
             df['hk2sh_net'] = df['hk2sh_buy'] - df['hk2sh_sell']

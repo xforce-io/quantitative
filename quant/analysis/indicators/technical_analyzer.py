@@ -199,6 +199,93 @@ class TechnicalAnalyzer:
         else:
             return 'hold'
 
+    @staticmethod
+    def interpret_latest_signals(df: pd.DataFrame) -> Dict[str, Any]:
+        """
+        解读最新一行的技术信号（MA 趋势、MACD 信号等）
+
+        Args:
+            df: 包含技术指标列的 DataFrame（至少含 MA5/MA20/MA60, MACD_DIF/MACD_DEA, RSI, BOLL_UP 等）
+
+        Returns:
+            Dict with: latest_close, ma5, ma20, ma60, ma_trend, macd_signal, rsi_value, boll_position
+        """
+        if df is None or df.empty:
+            return {}
+
+        latest = df.iloc[-1]
+        result: Dict[str, Any] = {
+            'latest_close': round(float(latest.get('close', 0)), 2),
+        }
+
+        # MA 值
+        for col in ['MA5', 'MA20', 'MA60']:
+            val = latest.get(col)
+            result[col.lower()] = round(float(val), 2) if pd.notna(val) else None
+
+        # 均线趋势
+        ma5 = latest.get('MA5')
+        ma20 = latest.get('MA20')
+        ma60 = latest.get('MA60')
+        if pd.notna(ma5) and pd.notna(ma20) and pd.notna(ma60):
+            if ma5 > ma20 > ma60:
+                result['ma_trend'] = "多头排列"
+            elif ma5 < ma20 < ma60:
+                result['ma_trend'] = "空头排列"
+            else:
+                result['ma_trend'] = "震荡整理"
+        else:
+            result['ma_trend'] = "unknown"
+
+        # MACD 信号 (支持两套列名)
+        dif = latest.get('MACD_DIF', latest.get('MACD'))
+        dea = latest.get('MACD_DEA', latest.get('MACD_Signal'))
+        if pd.notna(dif) and pd.notna(dea):
+            result['macd_signal'] = "金叉/多头" if dif > dea else "死叉/空头"
+        else:
+            result['macd_signal'] = "unknown"
+
+        # RSI
+        rsi = latest.get('RSI')
+        result['rsi_value'] = round(float(rsi), 1) if pd.notna(rsi) else None
+
+        # 布林带位置
+        if any(col in latest.index for col in ['BOLL_UP', 'BB_Upper']):
+            result['boll_position'] = TechnicalAnalyzer.bollinger_position(latest)
+
+        return result
+
+    @staticmethod
+    def bollinger_position(row) -> str:
+        """
+        计算价格在布林带中的位置
+
+        Args:
+            row: 包含 close, BOLL_UP/BB_Upper, BOLL_DOWN/BB_Lower, BOLL_MID/BB_Middle 的数据行
+
+        Returns:
+            位置描述字符串
+        """
+        try:
+            close = row.get('close', 0)
+            up = row.get('BOLL_UP', row.get('BB_Upper', 0))
+            down = row.get('BOLL_DOWN', row.get('BB_Lower', 0))
+            mid = row.get('BOLL_MID', row.get('BB_Middle', 0))
+
+            if pd.isna(up) or pd.isna(down) or up == down:
+                return "unknown"
+
+            if close >= up:
+                return "上轨之上（超买）"
+            elif close <= down:
+                return "下轨之下（超卖）"
+            elif close > mid:
+                return "中轨之上"
+            else:
+                return "中轨之下"
+        except Exception:
+            return "unknown"
+
     def batch_analyze(self, data_dict: Dict[str, pd.DataFrame]) -> Dict[str, Any]:
         """批量技术分析"""
         results = {}

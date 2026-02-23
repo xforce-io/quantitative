@@ -88,15 +88,17 @@ def apply_custom_css():
         padding-left: 2rem !important;
         padding-right: 2rem !important;
         padding-top: 2rem !important;
+        padding-bottom: 0rem !important; /* 压缩主容器底部间距 */
     }
 
-    /* 隐藏顶部的装饰条和默认 Header 以节省空间 */
+    /* 压缩顶部 Header 高度，但保留侧边栏切换按钮 */
     header[data-testid="stHeader"] {
-        display: none;
+        background: transparent;
+        height: 2.5rem;
     }
-    .stApp > header {
-        display: none;
-    }
+    
+    /* 隐藏底部样式 */
+    footer {visibility: hidden !important;}
 
     /* 技术信号区域的 metric 组件样式调整 */
     [data-testid="stMetric"] {

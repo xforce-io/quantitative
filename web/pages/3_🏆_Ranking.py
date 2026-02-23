@@ -242,18 +242,16 @@ def main():
                 except Exception:
                     pass
 
-                # 可视化 (使用 Plotly 替代 Matplotlib 以防渲染崩溃)
-                st.divider()
-                col1, col2 = st.columns(2)
-
-                import plotly.express as px
-                
-                with col1:
+                # 可视化区 (使用 container 包裹，且不使用嵌套列以防渲染异常)
+                with st.container():
+                    st.divider()
+                    import plotly.express as px
+                    
+                    # 1. 综合评分 Top 10
                     st.markdown("#### 🎯 综合评分 Top 10")
                     try:
                         top_score = df_ranked.head(10).copy()
-                        # 逆序以便 barh 从上到下显示
-                        top_score = top_score.iloc[::-1]
+                        top_score = top_score.iloc[::-1] # 逆序
                         
                         fig = px.bar(
                             top_score, 
@@ -267,27 +265,25 @@ def main():
                         )
                         fig.update_layout(
                             showlegend=False,
-                            margin=dict(l=0, r=0, t=0, b=0),
-                            height=300,
+                            margin=dict(l=10, r=10, t=10, b=10),
+                            height=400, # 稍微增加高度
                             xaxis_range=[0, 100]
                         )
                         fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
-                        st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig, use_container_width=True, key="ranking_top10_chart")
                     except Exception as e:
-                        st.error(f"图表渲染失败: {e}")
+                        st.error(f"Top 10 图表渲染失败: {e}")
 
-                with col2:
+                    # 2. 因子分布
                     st.markdown("#### 📊 Top 5 因子分布")
                     try:
                         top5 = df_ranked.head(5).copy()
-                        # 转换为长格式以便 Plotly 分组绘制
                         top5_melted = top5.melt(
                             id_vars=['name'], 
                             value_vars=['money_flow_score', 'technical_score', 'valuation_score', 'trend_score'],
                             var_name='Factor', 
                             value_name='Score'
                         )
-                        # 因子名称映射
                         factor_map = {
                             'money_flow_score': '资金', 'technical_score': '技术', 
                             'valuation_score': '估值', 'trend_score': '趋势'
@@ -304,13 +300,13 @@ def main():
                             color_discrete_map={'资金': Colors.INSTITUTIONAL, '技术': Colors.PRIMARY, '估值': Colors.RETAIL, '趋势': '#9333EA'}
                         )
                         fig.update_layout(
-                            margin=dict(l=0, r=0, t=0, b=0),
-                            height=300,
+                            margin=dict(l=10, r=10, t=30, b=10),
+                            height=400,
                             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
                         )
-                        st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig, use_container_width=True, key="ranking_factors_chart")
                     except Exception as e:
-                        st.error(f"图表渲染失败: {e}")
+                        st.error(f"因子分布图表渲染失败: {e}")
 
                 # 详细分析
                 st.divider()
@@ -436,30 +432,21 @@ def main():
                     # 单个股票出错不影响整体
                     pass
 
-                # 综合评分 (资金权重40% + 技术权重60%)
-                flow_score = min(max(result['inst_net_亿'] * 2, -10), 10)  # -10 ~ 10
-                tech_score = (result['ma_score'] + result['macd_score'] + result['rsi_score']) * 3  # -9 ~ 9
-                result['total_score'] = round(50 + flow_score * 2 + tech_score * 2, 1)  # 0 ~ 100
-
                 results.append(result)
                 progress_bar.progress((idx + 1) / len(candidates_df), text=f"正在分析: {name}")
 
             progress_bar.empty()
 
-            # 生成排行榜
-            df_results = pd.DataFrame(results)
-
-            # 根据维度排序
-            if sort_dimension == "💸 资金流向":
-                df_sorted = df_results.sort_values('inst_net_亿', ascending=False)
-            elif sort_dimension == "📉 技术形态":
-                df_sorted = df_results.sort_values(['ma_score', 'macd_score'], ascending=False)
-            else:
-                df_sorted = df_results.sort_values('total_score', ascending=False)
-
-            df_sorted = df_sorted.reset_index(drop=True)
-            df_sorted.index = df_sorted.index + 1  # 排名从1开始
-            df_sorted.index.name = '排名'
+            # 使用 StockRanker.simple_rank() 计算综合评分并排序
+            from quant.analysis.screener.ranker import StockRanker
+            sort_key_map = {
+                "💸 资金流向": 'inst_net_亿',
+                "📉 技术形态": 'ma_score',
+                "🎯 综合评分": 'total_score',
+            }
+            df_sorted = StockRanker.simple_rank(
+                results, sort_by=sort_key_map.get(sort_dimension, 'total_score')
+            )
 
             # 显示排行榜
             st.dataframe(
@@ -487,7 +474,7 @@ def main():
 
             with col1:
                 st.markdown("#### 💸 资金流向 Top 10")
-                top_flow = df_results.nlargest(10, 'inst_net_亿')
+                top_flow = df_sorted.nlargest(10, 'inst_net_亿')
                 fig, ax = plt.subplots(figsize=(8, 5))
                 colors = [Colors.RISE if x > 0 else Colors.FALL for x in top_flow['inst_net_亿']]
                 ax.barh(range(len(top_flow)), top_flow['inst_net_亿'], color=colors, alpha=0.8)
@@ -501,7 +488,7 @@ def main():
 
             with col2:
                 st.markdown("#### 🎯 综合评分 Top 10")
-                top_score = df_results.nlargest(10, 'total_score')
+                top_score = df_sorted.nlargest(10, 'total_score')
                 fig, ax = plt.subplots(figsize=(8, 5))
                 ax.barh(range(len(top_score)), top_score['total_score'], color=Colors.PRIMARY, alpha=0.8)
                 ax.set_yticks(range(len(top_score)))
@@ -553,53 +540,10 @@ def main():
         if df_ind_agg.empty:
             st.warning("暂无行业资金数据")
         else:
-            # 行业名称映射表：候选池行业 -> API 行业关键词列表
-            INDUSTRY_MAPPING = {
-                '交通运输': ['铁路公路', '航空机场', '物流行业', '船舶制造', '港口航运'],
-                '家电零售': ['家电行业', '零售'],
-                '计算机及软件': ['软件开发', '计算机设备', 'IT设备', '通信设备'],
-                '汽车相关': ['汽车零部件', '汽车整车', '汽车服务'],
-                '养殖农产品': ['养殖业', '农牧饲渔', '农业综合'],
-                '食品饮料': ['食品饮料', '酿酒行业'],
-                '医药': ['医药制造', '医疗器械', '中药', '生物制品', '化学制药'],
-                '金融': ['银行', '保险', '证券', '多元金融'],
-                '半导体': ['半导体', '电子元件'],
-                '房地产': ['房地产', '房地产服务', '房地产开发'],
-                '基建': ['工程建设', '建筑材料', '钢铁行业', '工程机械'],
-                '资源': ['贵金属', '小金属', '有色金属', '采掘行业', '煤炭行业'],
-                '能源': ['石油行业', '电力行业', '煤炭行业', '燃气'],
-                '化工': ['化学制品', '化工行业', '化肥行业'],
-                '军工': ['航天航空', '船舶制造', '国防军工'],
-                '消费电子': ['消费电子', '电子元件'],
-                '光伏': ['光伏设备', '电源设备'],
-                '通信': ['通信设备', '通信服务'],
-            }
-
-            def match_industry(ind_name: str, api_industries: pd.Series) -> pd.DataFrame:
-                """智能匹配行业名称"""
-                # 1. 先尝试直接包含匹配
-                matched = df_ind_agg[api_industries.str.contains(ind_name, na=False)]
-                if not matched.empty:
-                    return matched
-
-                # 2. 使用映射表匹配
-                keywords = INDUSTRY_MAPPING.get(ind_name, [])
-                for kw in keywords:
-                    matched = df_ind_agg[api_industries.str.contains(kw, na=False)]
-                    if not matched.empty:
-                        return matched
-
-                # 3. 尝试部分匹配（行业名称的前两个字）
-                if len(ind_name) >= 2:
-                    matched = df_ind_agg[api_industries.str.contains(ind_name[:2], na=False)]
-                    if not matched.empty:
-                        return matched
-
-                return pd.DataFrame()
+            from quant.core.symbol_resolver import IndustryMapper
 
             # 过滤候选池中的行业
             ind_results = []
-            api_names = df_ind_agg['name']
 
             for ind in industries:
                 # 统计该行业的股票数量
@@ -607,7 +551,7 @@ def main():
                 stock_count = len(ind_stocks)
 
                 # 从行业资金数据中智能匹配
-                matched = match_industry(ind, api_names)
+                matched = IndustryMapper.match_industry(ind, df_ind_agg)
                 if not matched.empty:
                     net_amount = matched['net_amount'].sum()
                 else:

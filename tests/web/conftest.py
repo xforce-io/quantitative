@@ -134,22 +134,22 @@ class StreamlitHelper:
     
     def is_ai_panel_visible(self) -> bool:
         """检查 AI 面板是否可见"""
-        return self.page.locator('.ai-panel-scope').is_visible()
-    
+        return self.page.get_by_text("AI 分析师").count() > 0
+
     def expand_ai_panel(self):
         """展开 AI 面板"""
-        # 找到第一个可见的展开按钮
-        expand_btns = self.page.locator('button:has-text("⬅️")').all()
+        # 实际按钮文本: "✦ 展开"
+        expand_btns = self.page.locator('button:has-text("展开")').all()
         for btn in expand_btns:
             if btn.is_visible():
                 btn.click()
                 self.page.wait_for_timeout(500)
                 return
-    
+
     def collapse_ai_panel(self):
         """折叠 AI 面板"""
-        # 找到第一个可见的折叠按钮
-        collapse_btns = self.page.locator('button:has-text("🗝️")').all()
+        # 实际按钮文本: "✕ 收起"
+        collapse_btns = self.page.locator('button:has-text("收起")').all()
         for btn in collapse_btns:
             if btn.is_visible():
                 btn.click()
@@ -190,19 +190,24 @@ class StreamlitHelper:
     
     def clear_ai_history(self):
         """清空 AI 对话历史"""
-        # 找到第一个可见的清空按钮
-        clear_btns = self.page.locator('button:has-text("🗑️")').all()
+        # 实际按钮文本: "🗑 清空"
+        clear_btns = self.page.locator('button:has-text("清空")').all()
         for btn in clear_btns:
             if btn.is_visible():
                 btn.click()
                 self.page.wait_for_timeout(500)
                 return
-    
-    def click_interpret_page_button(self):
-        """点击"解读页面数据"按钮"""
-        btn = self.page.locator('button:has-text("🚀 解读页面数据")')
-        if btn.is_visible():
-            btn.click()
+
+    def click_quick_action_button(self):
+        """点击快捷操作按钮（行情解读或主力动向）"""
+        # 实际按钮: "📈 行情解读" 或 "💰 主力动向"
+        btn = self.page.locator('button:has-text("行情解读")')
+        if btn.count() > 0 and btn.first.is_visible():
+            btn.first.click()
+            return
+        btn = self.page.locator('button:has-text("主力动向")')
+        if btn.count() > 0 and btn.first.is_visible():
+            btn.first.click()
 
 
 @pytest.fixture

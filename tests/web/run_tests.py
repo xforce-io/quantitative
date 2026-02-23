@@ -4,19 +4,19 @@ AI 分析师 E2E 测试运行脚本
 
 使用方法:
     # 无头模式运行所有测试
-    python tests/e2e/run_tests.py
-    
+    python tests/web/run_tests.py
+
     # 有头模式（可视化）运行
-    python tests/e2e/run_tests.py --headed
-    
+    python tests/web/run_tests.py --headed
+
     # 只运行 UI 测试
-    python tests/e2e/run_tests.py --ui-only
-    
+    python tests/web/run_tests.py --ui-only
+
     # 运行多轮对话测试（较慢）
-    python tests/e2e/run_tests.py --multi-turn
-    
+    python tests/web/run_tests.py --multi-turn
+
     # 生成测试报告
-    python tests/e2e/run_tests.py --report
+    python tests/web/run_tests.py --report
 """
 
 import argparse
@@ -51,7 +51,7 @@ def run_tests(args):
     
     cmd = [
         sys.executable, "-m", "pytest",
-        str(PROJECT_ROOT / "tests" / "e2e" / "test_ai_panel.py"),
+        str(PROJECT_ROOT / "tests" / "web"),
         "-v",
     ]
     
@@ -75,7 +75,7 @@ def run_tests(args):
     
     # 生成 HTML 报告
     if args.report:
-        cmd.extend(["--html=tests/e2e/report.html", "--self-contained-html"])
+        cmd.extend(["--html=tests/web/report.html", "--self-contained-html"])
     
     # 失败时截图
     cmd.append("--screenshot=only-on-failure")

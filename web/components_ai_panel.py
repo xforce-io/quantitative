@@ -48,10 +48,14 @@ def _inject_panel_css():
         /* 让面板列里的元素更紧凑一点（不改全局 block-container） */
         div[class*="st-key-aiToggle_"],
         div[class*="st-key-aiClear_"],
-        div[class*="st-key-aiQa"],
-        div[class*="st-key-aiInput_"] {
+        div[class*="st-key-aiQa"] {
             margin-top: 0 !important;
             margin-bottom: 0.25rem !important;
+        }
+
+        /* AI 面板列需要足够的底部空间 */
+        [data-testid="stVerticalBlock"]:has(div[class*="st-key-aiToggle_"]) {
+            padding-bottom: 24px !important;
         }
 
         .ai-panel-header {
@@ -160,16 +164,103 @@ def _inject_panel_css():
             box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05) !important;
         }
 
-        /* -------- Chat input: clean focus ring -------- */
+        /* -------- Chat input: Premium glassmorphism style -------- */
+        [data-testid="stChatInput"] {
+            padding: 8px 0 20px 0 !important;  /* 底部留足空间 */
+        }
+
+        [data-testid="stChatInput"] > div {
+            background: linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(248,250,252,0.98) 100%) !important;
+            border-radius: 20px !important;
+            border: 1.5px solid transparent !important;
+            background-clip: padding-box !important;
+            box-shadow: 
+                0 4px 20px rgba(99, 102, 241, 0.08),
+                0 8px 32px rgba(15, 23, 42, 0.06),
+                inset 0 1px 0 rgba(255, 255, 255, 0.9) !important;
+            position: relative !important;
+            overflow: hidden !important;
+        }
+
+        /* 渐变边框效果（伪元素实现） */
+        [data-testid="stChatInput"] > div::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 20px;
+            padding: 1.5px;
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.35), rgba(168, 85, 247, 0.25), rgba(99, 102, 241, 0.15));
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            pointer-events: none;
+        }
+        
         [data-testid="stChatInput"] textarea {
-            border-radius: 14px !important;
-            border: 1px solid rgba(99, 102, 241, 0.25) !important;
+            border-radius: 16px !important;
+            border: none !important;
+            background: transparent !important;
+            font-size: 0.95rem !important;
+            padding: 14px 16px !important;
+            color: var(--ai-text) !important;
+            resize: none !important;
+        }
+
+        [data-testid="stChatInput"] textarea::placeholder {
+            color: rgba(100, 116, 139, 0.7) !important;
+            font-weight: 500 !important;
         }
 
         [data-testid="stChatInput"] textarea:focus {
             outline: none !important;
-            border-color: rgba(99, 102, 241, 0.55) !important;
-            box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.12) !important;
+            box-shadow: none !important;
+        }
+
+        /* Focus 状态 - 整体容器发光 */
+        [data-testid="stChatInput"] > div:focus-within {
+            box-shadow: 
+                0 0 0 3px rgba(99, 102, 241, 0.15),
+                0 8px 28px rgba(99, 102, 241, 0.12),
+                0 12px 40px rgba(15, 23, 42, 0.08),
+                inset 0 1px 0 rgba(255, 255, 255, 0.9) !important;
+        }
+
+        [data-testid="stChatInput"] > div:focus-within::before {
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.6), rgba(168, 85, 247, 0.45), rgba(99, 102, 241, 0.3));
+        }
+
+        /* 发送按钮美化 */
+        [data-testid="stChatInput"] button {
+            background: linear-gradient(135deg, var(--ai-primary), var(--ai-primary-2)) !important;
+            border: none !important;
+            border-radius: 12px !important;
+            color: white !important;
+            width: 40px !important;
+            height: 40px !important;
+            margin: 6px !important;
+            transition: transform 0.15s ease, box-shadow 0.15s ease !important;
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.35) !important;
+        }
+
+        [data-testid="stChatInput"] button:hover {
+            transform: scale(1.08) !important;
+            box-shadow: 0 6px 20px rgba(99, 102, 241, 0.45) !important;
+        }
+
+        [data-testid="stChatInput"] button:active {
+            transform: scale(0.96) !important;
+        }
+
+        [data-testid="stChatInput"] button svg {
+            fill: white !important;
+            stroke: white !important;
+        }
+
+        /* -------- 面板整体底部间距 -------- */
+        div[class*="st-key-aiInput_"] {
+            margin-bottom: 16px !important;
+            padding-bottom: 8px !important;
         }
         </style>
         """,

@@ -336,6 +336,45 @@ class StockRanker:
 
         return round(composite, 2)
 
+    @staticmethod
+    def simple_rank(results: list, sort_by: str = 'total_score') -> pd.DataFrame:
+        """
+        传统简单排名：基于资金流向和技术信号的轻量评分
+
+        每个 result dict 需包含: inst_net_亿, ma_score, macd_score, rsi_score
+        本方法计算 flow_score, tech_score, total_score 并排序。
+
+        Args:
+            results: 包含各项原始评分的字典列表
+            sort_by: 排序字段，可选 'total_score', 'inst_net_亿', 'ma_score'
+
+        Returns:
+            排序后的 DataFrame
+        """
+        for r in results:
+            flow_score = min(max(r.get('inst_net_亿', 0) * 2, -10), 10)  # -10 ~ 10
+            tech_score = (
+                r.get('ma_score', 0) + r.get('macd_score', 0) + r.get('rsi_score', 0)
+            ) * 3  # -9 ~ 9
+            r['total_score'] = round(50 + flow_score * 2 + tech_score * 2, 1)
+
+        df = pd.DataFrame(results)
+
+        sort_map = {
+            'total_score': ['total_score'],
+            'inst_net_亿': ['inst_net_亿'],
+            'ma_score': ['ma_score', 'macd_score'],
+        }
+        sort_cols = sort_map.get(sort_by, ['total_score'])
+        sort_cols = [c for c in sort_cols if c in df.columns]
+        if sort_cols:
+            df = df.sort_values(sort_cols, ascending=False)
+
+        df = df.reset_index(drop=True)
+        df.index = df.index + 1
+        df.index.name = '排名'
+        return df
+
     def rank_from_config(
         self,
         screen_name: str,

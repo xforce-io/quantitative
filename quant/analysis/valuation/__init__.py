@@ -29,6 +29,9 @@ from .peg_valuation import PEGValuationAnalyzer, ConsensusDataProvider
 # Regression analysis (from bin/regression_analyzer.py)
 from .regression_analyzer import RegressionAnalyzer
 
+# Stock valuation (percentile-based for A-share individual stocks)
+from .stock_valuation import StockValuationAnalyzer
+
 # Systemic undervaluation detection (if exists)
 try:
     from .systemic_undervalue import SystemicUndervalueAnalyzer, ValuationScore, UndervalueResult
@@ -43,6 +46,8 @@ __all__ = [
     'RegressionAnalyzer',
     'ConsensusDataProvider',
     
+    'StockValuationAnalyzer',
+
     # Backward compatibility aliases (original names)
     'ETFValuationAnalyzer',
     'ETFFundamentalAnalyzer',

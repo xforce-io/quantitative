@@ -20,4 +20,28 @@ try:
 except ImportError:
     MomentumAnalyzer = None
 
-__all__ = ['TechnicalAnalyzer', 'CapitalFlowAnalyzer', 'MomentumAnalyzer']
+try:
+    from .box_breakout_analyzer import BoxBreakoutAnalyzer
+except ImportError:
+    BoxBreakoutAnalyzer = None
+
+try:
+    from .value_investing_analyzer import ValueInvestingAnalyzer
+except ImportError:
+    ValueInvestingAnalyzer = None
+
+try:
+    from .macro_liquidity_analyzer import MacroLiquidityAnalyzer
+except ImportError:
+    MacroLiquidityAnalyzer = None
+
+try:
+    from .china_market_signal_analyzer import ChinaMarketSignalAnalyzer
+except ImportError:
+    ChinaMarketSignalAnalyzer = None
+
+__all__ = [
+    'TechnicalAnalyzer', 'CapitalFlowAnalyzer', 'MomentumAnalyzer',
+    'BoxBreakoutAnalyzer', 'ValueInvestingAnalyzer', 'MacroLiquidityAnalyzer',
+    'ChinaMarketSignalAnalyzer',
+]
