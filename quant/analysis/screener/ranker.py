@@ -195,13 +195,16 @@ class StockRanker:
                 scores = self._calculate_scores(symbol, days)
                 composite_score = self._calculate_composite_score(scores, weights)
 
+                def _display_score(val):
+                    return round(val, 1) if val is not None else None
+
                 results.append({
                     'symbol': symbol,
                     'composite_score': composite_score,
-                    'money_flow_score': scores.get('money_flow', 0),
-                    'technical_score': scores.get('technical', 0),
-                    'valuation_score': scores.get('valuation', 0),
-                    'trend_score': scores.get('trend', 0),
+                    'money_flow_score': _display_score(scores.get('money_flow')),
+                    'technical_score': _display_score(scores.get('technical')),
+                    'valuation_score': _display_score(scores.get('valuation')),
+                    'trend_score': _display_score(scores.get('trend')),
                     'status': 'success'
                 })
             except Exception as e:
@@ -265,7 +268,7 @@ class StockRanker:
             scores['money_flow'] = self.capital_flow_analyzer.score(symbol, days)
         except Exception as e:
             logger.debug(f"{symbol} 资金流向分析失败: {e}")
-            scores['money_flow'] = 50.0
+            scores['money_flow'] = None
 
         # 2. 获取价格数据用于技术和估值分析
         try:
@@ -281,40 +284,43 @@ class StockRanker:
             scores['technical'] = self.technical_analyzer.score(symbol, price_data)
         except Exception as e:
             logger.debug(f"{symbol} 技术分析失败: {e}")
-            scores['technical'] = 50.0
+            scores['technical'] = None
 
         # 4. 估值分数
         try:
             scores['valuation'] = self.valuation_analyzer.score(symbol, price_data)
         except Exception as e:
             logger.debug(f"{symbol} 估值分析失败: {e}")
-            scores['valuation'] = 50.0
+            scores['valuation'] = None
 
         # 5. 趋势分数 (使用 ShortTermMomentumAnalyzer 的高级模式)
         try:
             momentum_result = self.momentum_analyzer.analyze_symbol(symbol, days=days)
             if 'error' not in momentum_result:
-                # momentum_score 范围是 0-100，直接使用
-                scores['trend'] = float(momentum_result.get('momentum_score', 50))
+                score_val = momentum_result.get('momentum_score')
+                scores['trend'] = float(score_val) if score_val is not None else None
             else:
-                scores['trend'] = 50.0
+                scores['trend'] = None
         except Exception as e:
             logger.debug(f"{symbol} 趋势分析失败: {e}")
-            scores['trend'] = 50.0
+            scores['trend'] = None
 
-        # 存入内存缓存
-        _score_cache[cache_key] = scores
-        # _save_cache(_score_cache)  # 移除：改为在 rank 方法结束时统一保存，避免频繁IO
-        logger.debug(f"{symbol} 分数已计算并存入内存缓存")
+        # 仅当至少有一个因子成功计算时才缓存
+        has_real_score = any(v is not None for v in scores.values())
+        if has_real_score:
+            _score_cache[cache_key] = scores
+            logger.debug(f"{symbol} 分数已计算并存入内存缓存")
+        else:
+            logger.warning(f"{symbol} 所有因子均无数据，跳过缓存")
 
         return scores
 
-    def _calculate_composite_score(self, scores: Dict[str, float], weights: Dict[str, float]) -> float:
+    def _calculate_composite_score(self, scores: Dict[str, Optional[float]], weights: Dict[str, float]) -> float:
         """
-        计算加权综合分数
+        计算加权综合分数，跳过 None 值的因子
 
         Args:
-            scores: 各因子分数 (每个因子分数范围 0-100)
+            scores: 各因子分数 (0-100 或 None 表示无数据)
             weights: 权重配置 (权重之和应为 1.0)
 
         Returns:
@@ -324,15 +330,16 @@ class StockRanker:
         total_weight = 0.0
 
         for factor, weight in weights.items():
-            if factor in scores:
-                composite += scores[factor] * weight
+            score_val = scores.get(factor)
+            if score_val is not None:
+                composite += score_val * weight
                 total_weight += weight
 
-        # 归一化：如果部分因子缺失，按实际权重比例计算
-        # 例如：如果只有 money_flow(0.33) 和 technical(0.33) 有值，
-        # 则 total_weight=0.66，需要将结果放大到完整范围
+        # 归一化：按有效因子的权重比例计算
         if total_weight > 0:
             composite = composite / total_weight
+        else:
+            return 0.0
 
         return round(composite, 2)
 
@@ -469,15 +476,18 @@ class StockRanker:
             "-" * 90
         ]
 
+        def _fmt(val):
+            return f"{val:<10.1f}" if val is not None else f"{'-':<10}"
+
         for _, row in df.iterrows():
             status = '✓' if row['status'] == 'success' else '✗'
             lines.append(
                 f"{row['rank']:<6}{row['symbol']:<12}"
                 f"{row['composite_score']:<10.1f}"
-                f"{row['money_flow_score']:<10.1f}"
-                f"{row['technical_score']:<10.1f}"
-                f"{row['valuation_score']:<10.1f}"
-                f"{row['trend_score']:<10.1f}"
+                f"{_fmt(row['money_flow_score'])}"
+                f"{_fmt(row['technical_score'])}"
+                f"{_fmt(row['valuation_score'])}"
+                f"{_fmt(row['trend_score'])}"
                 f"{status:<10}"
             )
 

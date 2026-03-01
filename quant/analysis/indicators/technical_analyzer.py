@@ -8,6 +8,7 @@ Technical Analyzer - Based on New Architecture
 集成各种技术指标分析功能
 """
 
+import math
 import pandas as pd
 import numpy as np
 from typing import Dict, Any, Optional
@@ -33,28 +34,78 @@ class TechnicalAnalyzer:
         'strong_sell': 0
     }
 
-    def score(self, symbol: str, data: pd.DataFrame = None) -> float:
+    def score(self, symbol: str, data: pd.DataFrame = None) -> Optional[float]:
         """
-        计算技术形态评分 (0-100)
+        计算技术形态评分 (0-100)，连续值
+
+        基于三个维度打分:
+        - 趋势分 (0-40): MA 排列 + 价格偏离 MA20 幅度
+        - RSI 分 (0-30): RSI 值的连续映射
+        - 成交量分 (0-30): volume_ratio 的对数映射
 
         Args:
             symbol: 股票代码
-            data: 股票数据 (如果为None则需要外部提供)
+            data: 股票数据
 
         Returns:
-            0-100 的标准化分数，技术形态越好分数越高
+            0-100 的连续分数，None 表示无法计算
         """
         if data is None or data.empty:
-            return 50.0  # 无数据时返回中性分数
+            return None
 
         result = self.analyze_stock(data, symbol)
 
         if not result.get('success', False):
-            return 50.0
+            return None
 
-        # 从综合信号获取分数
-        overall_signal = result.get('signals', {}).get('overall', 'hold')
-        return self.SIGNAL_SCORES.get(overall_signal, 50.0)
+        indicators = result.get('technical_indicators', {})
+        signals = result.get('signals', {})
+
+        # --- 趋势分 (0-40) ---
+        trend = signals.get('trend', 'sideways')
+        trend_base = {
+            'strong_uptrend': 40,
+            'uptrend': 30,
+            'sideways': 20,
+            'downtrend': 10,
+            'strong_downtrend': 0,
+            'insufficient_data': 20,
+        }.get(trend, 20)
+
+        # MA20 偏离度微调 ±5
+        ma20 = indicators.get('ma20')
+        current_price = result.get('current_price')
+        if ma20 and current_price and ma20 > 0:
+            ma_deviation = (current_price - ma20) / ma20
+            ma_bonus = max(-5, min(5, ma_deviation * 50))
+            trend_score = max(0, min(40, trend_base + ma_bonus))
+        else:
+            trend_score = trend_base
+
+        # --- RSI 分 (0-30) ---
+        rsi = indicators.get('rsi')
+        if rsi is not None:
+            if rsi <= 50:
+                # 超卖区是买入机会: RSI 30→25, RSI 50→20
+                rsi_score = 15 + (50 - rsi) / 50 * 10
+            else:
+                # 偏多但超买扣分: RSI 50→20, RSI 70→10, RSI 100→0
+                rsi_score = 20 - (rsi - 50) / 50 * 20
+            rsi_score = max(0, min(30, rsi_score))
+        else:
+            rsi_score = 15
+
+        # --- 成交量分 (0-30) ---
+        volume_ratio = indicators.get('volume_ratio', 1.0)
+        if volume_ratio and volume_ratio > 0:
+            log_ratio = math.log(volume_ratio)
+            volume_score = 15 + log_ratio * 21.7
+            volume_score = max(0, min(30, volume_score))
+        else:
+            volume_score = 0
+
+        total = trend_score + rsi_score + volume_score
+        return round(max(0, min(100, total)), 1)
 
     def __init__(self):
         self.indicators = TechnicalIndicators()
@@ -85,20 +136,28 @@ class TechnicalAnalyzer:
             # 波动率分析
             volatility = data['close'].pct_change().std() * np.sqrt(252) * 100
 
-            # 趋势分析
-            ma5 = indicators.get('ma5', pd.Series()).iloc[-1] if 'ma5' in indicators else None
-            ma20 = indicators.get('ma20', pd.Series()).iloc[-1] if 'ma20' in indicators else None
-            ma60 = indicators.get('ma60', pd.Series()).iloc[-1] if 'ma60' in indicators else None
+            # 趋势分析（支持大小写列名）
+            def _get_col(df, *names):
+                for n in names:
+                    if n in df.columns:
+                        val = df[n].iloc[-1]
+                        return val if pd.notna(val) else None
+                return None
+
+            ma5 = _get_col(indicators, 'MA5', 'ma5')
+            ma20 = _get_col(indicators, 'MA20', 'ma20')
+            ma60 = _get_col(indicators, 'MA60', 'ma60')
 
             trend_signal = self._analyze_trend(current_price, ma5, ma20, ma60)
 
-            # RSI分析
-            rsi = indicators.get('rsi', pd.Series()).iloc[-1] if 'rsi' in indicators else None
+            # RSI分析（支持大小写列名）
+            rsi = _get_col(indicators, 'RSI', 'rsi')
             rsi_signal = self._analyze_rsi(rsi) if rsi else 'unknown'
 
-            # 成交量分析
-            volume_ma = data['volume'].rolling(20).mean().iloc[-1]
-            current_volume = data['volume'].iloc[-1]
+            # 成交量分析（支持 volume/vol 列名）
+            vol_col = 'volume' if 'volume' in data.columns else 'vol'
+            volume_ma = data[vol_col].rolling(20).mean().iloc[-1]
+            current_volume = data[vol_col].iloc[-1]
             volume_ratio = current_volume / volume_ma if volume_ma > 0 else 1
             volume_signal = self._analyze_volume(volume_ratio)
 

@@ -1,0 +1,298 @@
+#!/usr/bin/env bash
+# Unified service management for quantitative trading platform
+# Usage: bin/quant {start|stop|restart|status|logs} [options]
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
+
+# Activate virtual environment if it exists
+if [[ -f "${PROJECT_ROOT}/.venv/bin/activate" ]]; then
+  source "${PROJECT_ROOT}/.venv/bin/activate"
+fi
+
+# --- Runtime directories & files ---
+RUNTIME_DIR="${PROJECT_ROOT}/logs"
+WEB_PID_FILE="${RUNTIME_DIR}/web.pid"
+API_PID_FILE="${RUNTIME_DIR}/api.pid"
+WEB_LOG="${RUNTIME_DIR}/web.log"
+API_LOG="${RUNTIME_DIR}/api.log"
+
+WEB_PORT_DEFAULT="8501"
+API_HOST_DEFAULT="0.0.0.0"
+API_PORT_DEFAULT="8000"
+
+ensure_dirs() {
+  mkdir -p "${RUNTIME_DIR}"
+}
+
+# --- PID utilities ---
+read_pid_file() {
+  local path="$1"
+  if [[ ! -f "${path}" ]]; then
+    echo ""
+    return 0
+  fi
+  tr -d ' \n\r\t' < "${path}" || true
+}
+
+is_running() {
+  local pid="$1"
+  if [[ -z "${pid}" ]]; then
+    return 1
+  fi
+  kill -0 "${pid}" >/dev/null 2>&1
+}
+
+wait_for_exit() {
+  local pid="$1"
+  local seconds="${2:-10}"
+  local i=0
+  while is_running "${pid}"; do
+    i=$((i + 1))
+    if (( i >= seconds * 10 )); then
+      return 1
+    fi
+    sleep 0.1
+  done
+  return 0
+}
+
+stop_pid_file() {
+  local path="$1"
+  local name="$2"
+  local timeout="${3:-10}"
+  local pid
+  pid="$(read_pid_file "${path}")"
+  if ! is_running "${pid}"; then
+    rm -f "${path}" || true
+    return 0
+  fi
+  kill "${pid}" || true
+  if wait_for_exit "${pid}" "${timeout}"; then
+    rm -f "${path}" || true
+    echo "${name} stopped (pid=${pid})."
+    return 0
+  fi
+  echo "${name} did not stop within ${timeout}s, sending SIGKILL." >&2
+  kill -9 "${pid}" 2>/dev/null || true
+  rm -f "${path}" || true
+}
+
+# --- Start ---
+do_start() {
+  ensure_dirs
+  local background=1
+  local no_web=0
+  local no_api=0
+  local api_host="${API_HOST_DEFAULT}"
+  local api_port="${API_PORT_DEFAULT}"
+  local api_reload=""
+
+  while (($#)); do
+    case "$1" in
+      --foreground|--fg) background=0; shift ;;
+      --no-web)          no_web=1; shift ;;
+      --no-api)          no_api=1; shift ;;
+      --api-host)        api_host="$2"; shift 2 ;;
+      --api-port)        api_port="$2"; shift 2 ;;
+      --reload)          api_reload="--reload"; shift ;;
+      *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+  done
+
+  if (( background == 0 )); then
+    # Foreground mode: run both processes, kill all on exit
+    local web_pid="" api_pid=""
+
+    if (( no_web == 0 )); then
+      streamlit run "${PROJECT_ROOT}/web/Home.py" --server.headless=true &
+      web_pid="$!"
+      echo "Web started in foreground (pid=${web_pid}, url=http://localhost:${WEB_PORT_DEFAULT})"
+    fi
+
+    if (( no_api == 0 )); then
+      python -m web.server --host "${api_host}" --port "${api_port}" ${api_reload} &
+      api_pid="$!"
+      echo "API started in foreground (pid=${api_pid}, url=http://${api_host}:${api_port})"
+    fi
+
+    trap '[[ -n "${web_pid}" ]] && kill "${web_pid}" 2>/dev/null || true; [[ -n "${api_pid}" ]] && kill "${api_pid}" 2>/dev/null || true' INT TERM
+    wait || true
+    exit 0
+  fi
+
+  # Background mode
+  if (( no_web == 0 )); then
+    local existing
+    existing="$(read_pid_file "${WEB_PID_FILE}")"
+    if is_running "${existing}"; then
+      echo "Web already running (pid=${existing})."
+    else
+      nohup streamlit run "${PROJECT_ROOT}/web/Home.py" --server.headless=true > "${WEB_LOG}" 2>&1 &
+      local wpid="$!"
+      sleep 1
+      if is_running "${wpid}"; then
+        echo "${wpid}" > "${WEB_PID_FILE}"
+        echo "Web started (pid=${wpid}, url=http://localhost:${WEB_PORT_DEFAULT})."
+      else
+        echo "Web failed to start. Check logs: ${WEB_LOG}" >&2
+      fi
+    fi
+  fi
+
+  if (( no_api == 0 )); then
+    local existing
+    existing="$(read_pid_file "${API_PID_FILE}")"
+    if is_running "${existing}"; then
+      echo "API already running (pid=${existing})."
+    else
+      nohup python -m web.server --host "${api_host}" --port "${api_port}" ${api_reload} > "${API_LOG}" 2>&1 &
+      local apid="$!"
+      sleep 1
+      if is_running "${apid}"; then
+        echo "${apid}" > "${API_PID_FILE}"
+        echo "API started (pid=${apid}, url=http://${api_host}:${api_port}, docs=http://localhost:${api_port}/docs)."
+      else
+        echo "API failed to start. Check logs: ${API_LOG}" >&2
+      fi
+    fi
+  fi
+}
+
+# --- Stop ---
+do_stop() {
+  ensure_dirs
+  local timeout=10
+
+  while (($#)); do
+    case "$1" in
+      --timeout) timeout="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+
+  # Stop API first (prevents serving stale data)
+  stop_pid_file "${API_PID_FILE}" "API" "${timeout}" || true
+
+  # Stop Web
+  stop_pid_file "${WEB_PID_FILE}" "Web" "${timeout}" || true
+
+  # Clean up orphan processes
+  local orphan_count=0
+
+  local api_orphans
+  api_orphans="$(pgrep -f 'python -m web\.server' 2>/dev/null || true)"
+  for opid in ${api_orphans}; do
+    kill "${opid}" 2>/dev/null || true
+    echo "Killed orphan API process (pid=${opid})."
+    orphan_count=$((orphan_count + 1))
+  done
+
+  local web_orphans
+  web_orphans="$(pgrep -f 'streamlit run.*web/Home' 2>/dev/null || true)"
+  for opid in ${web_orphans}; do
+    kill "${opid}" 2>/dev/null || true
+    echo "Killed orphan Web process (pid=${opid})."
+    orphan_count=$((orphan_count + 1))
+  done
+
+  # Clean up legacy PID file
+  rm -f "${PROJECT_ROOT}/.web.pid" 2>/dev/null || true
+
+  local api_was="$(read_pid_file "${API_PID_FILE}")"
+  local web_was="$(read_pid_file "${WEB_PID_FILE}")"
+  if [[ -z "${api_was}" && -z "${web_was}" ]] && (( orphan_count == 0 )); then
+    echo "No services running."
+  elif (( orphan_count > 0 )); then
+    echo "Cleaned up ${orphan_count} orphan process(es)."
+  fi
+}
+
+# --- Status ---
+do_status() {
+  ensure_dirs
+  local web_pid api_pid
+
+  web_pid="$(read_pid_file "${WEB_PID_FILE}")"
+  if is_running "${web_pid}"; then
+    echo "Web:  running (pid=${web_pid}, url=http://localhost:${WEB_PORT_DEFAULT})"
+  else
+    echo "Web:  not running"
+    [[ -f "${WEB_PID_FILE}" ]] && rm -f "${WEB_PID_FILE}"
+  fi
+
+  api_pid="$(read_pid_file "${API_PID_FILE}")"
+  if is_running "${api_pid}"; then
+    echo "API:  running (pid=${api_pid}, url=http://localhost:${API_PORT_DEFAULT})"
+  else
+    echo "API:  not running"
+    [[ -f "${API_PID_FILE}" ]] && rm -f "${API_PID_FILE}"
+  fi
+}
+
+# --- Logs ---
+do_logs() {
+  local service="${1:-all}"
+  case "${service}" in
+    web)
+      [[ -f "${WEB_LOG}" ]] && tail -f "${WEB_LOG}" || echo "No web log found."
+      ;;
+    api)
+      [[ -f "${API_LOG}" ]] && tail -f "${API_LOG}" || echo "No API log found."
+      ;;
+    all|*)
+      tail -f "${WEB_LOG}" "${API_LOG}" 2>/dev/null || echo "No log files found."
+      ;;
+  esac
+}
+
+# --- Main ---
+cmd="${1:-help}"
+shift || true
+
+case "${cmd}" in
+  start)   do_start "$@" ;;
+  stop)    do_stop "$@" ;;
+  restart)
+    do_stop "$@" || true
+    sleep 1
+    do_start "$@"
+    ;;
+  status)  do_status ;;
+  logs)    do_logs "$@" ;;
+  *)
+    cat <<'EOF'
+Usage: bin/quant <command> [options]
+
+Commands:
+  start     Start services in background
+  stop      Stop all services
+  restart   Restart all services
+  status    Show running status
+  logs      Tail log files (web|api|all)
+
+Start options:
+  --foreground, --fg    Run in foreground (for debugging)
+  --no-web              Skip Streamlit web UI
+  --no-api              Skip FastAPI server
+  --api-host HOST       API host (default: 0.0.0.0)
+  --api-port PORT       API port (default: 8000)
+  --reload              API auto-reload (development)
+
+Stop options:
+  --timeout N           Graceful timeout seconds (default: 10)
+
+Examples:
+  bin/quant start                    # Start both web + API
+  bin/quant start --no-web           # API only
+  bin/quant start --fg --reload      # Foreground dev mode
+  bin/quant restart                  # Stop then start
+  bin/quant logs api                 # Tail API logs
+  bin/quant status                   # Check what's running
+EOF
+    exit 2
+    ;;
+esac

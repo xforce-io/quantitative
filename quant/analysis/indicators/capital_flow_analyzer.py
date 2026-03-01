@@ -37,7 +37,7 @@ logger = get_logger(__name__)
 class CapitalFlowAnalyzer:
     """资金流向分析器"""
 
-    def score(self, symbol: str, days: int = 30) -> float:
+    def score(self, symbol: str, days: int = 30) -> Optional[float]:
         """
         计算资金流向评分 (0-100)
 
@@ -46,10 +46,12 @@ class CapitalFlowAnalyzer:
             days: 分析天数
 
         Returns:
-            0-100 的标准化分数，资金流入越强分数越高
+            0-100 的标准化分数，资金流入越强分数越高；None 表示无法计算
         """
         result = self.analyze_stock_money_flow(symbol, days)
-        return result.get('comprehensive_score', 0.0)
+        if 'error' in result:
+            return None
+        return result.get('comprehensive_score')
 
     def __init__(self, data_provider_name: str = 'tushare', use_cache: bool = True):
         """
@@ -407,18 +409,11 @@ class CapitalFlowAnalyzer:
         """计算综合资金流评分"""
         score = 0
 
-        # 主力资金流入权重 40%
+        # 主力资金流入权重 40% - 线性插值
+        # ratio: -0.05→0分, 0→20分, +0.05→40分
         main_ratio = main_analysis['avg_ratio']
-        if main_ratio > 0.05:
-            score += 40
-        elif main_ratio > 0.02:
-            score += 30
-        elif main_ratio > 0:
-            score += 20
-        elif main_ratio > -0.02:
-            score += 10
-        else:
-            score += 0
+        main_score = 20 + (main_ratio / 0.05) * 20
+        score += max(0, min(40, main_score))
 
         # 大单趋势权重 25%
         if large_analysis['trend_direction'] == 'bullish':

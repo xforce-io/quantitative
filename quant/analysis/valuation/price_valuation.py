@@ -27,7 +27,7 @@ logger = get_logger(__name__)
 class ETFValuationAnalyzer:
     """ETF估值分析器"""
 
-    def score(self, symbol: str, data: pd.DataFrame = None) -> float:
+    def score(self, symbol: str, data: pd.DataFrame = None) -> Optional[float]:
         """
         计算估值评分 (0-100)
 
@@ -36,15 +36,15 @@ class ETFValuationAnalyzer:
             data: 价格数据 (如果为None则需要外部提供)
 
         Returns:
-            0-100 的标准化分数，低估=高分，高估=低分
+            0-100 的标准化分数，低估=高分，高估=低分；None 表示无法计算
         """
         if data is None or data.empty:
-            return 50.0  # 无数据时返回中性分数
+            return None
 
         report = self.generate_comprehensive_valuation_report(data, symbol=symbol)
 
         if 'error' in report:
-            return 50.0
+            return None
 
         # 获取估值得分 (-3 到 +3)
         valuation_score = report.get('comprehensive_assessment', {}).get('valuation_score', 0)
