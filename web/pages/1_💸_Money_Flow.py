@@ -158,9 +158,29 @@ def main():
                 else:
                     df = get_industry_flow_daily(start_date_str)
                     metric_label = "净流入"
-                
+
+            # 若当前日期无数据（如非交易日），回溯查找最近10天内有数据的交易日
             if df.empty:
-                st.warning("未找到该区间的行业数据。")
+                from web.data_service import get_trading_days
+                end_dt = datetime.strptime(end_date_str, '%Y%m%d')
+                start_dt = end_dt - timedelta(days=14)
+                recent_days = get_trading_days(start_dt.strftime('%Y%m%d'), end_date_str)
+                for td in reversed(recent_days):
+                    df = get_industry_flow_daily(td)
+                    if not df.empty:
+                        start_date_str = end_date_str = td
+                        is_range = False
+                        metric_label = "净流入"
+                        date_display = td
+                        st.header(f"🏭 A股行业板块资金流向 ({date_display})")
+                        break
+
+            if df.empty:
+                st.warning("未找到近期行业数据，请尝试其他日期。")
+                st.info("💡 可能原因：\n- 当前选择的日期是非交易日（周末/节假日）\n- 数据尚未更新（盘中或盘后延迟）")
+                tab1, tab2, tab3 = st.tabs(["🔥 净流入 Top 30", "🥶 资金流出 Top 30", "📋 完整数据"])
+                with tab3:
+                    st.dataframe(pd.DataFrame(), use_container_width=True)
                 return
             
             registry.register_industry_data(df, is_aggregated=is_range)
