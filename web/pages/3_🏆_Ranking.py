@@ -146,34 +146,38 @@ def main():
                 # 使用 st.status 替代原来的 st.info + st.progress，体验更平滑且会自动收起
                 with st.status("🔄 正在计算趋势强度...", expanded=True) as status:
                     from web.data_service import get_trend_strength
-                    
-                    def get_trend_label(symbol):
-                        """获取趋势强度标签"""
-                        try:
-                            result = get_trend_strength(symbol, days=90)
-                            if 'error' not in result:
-                                score = result.get('score', 0)
-                                level_icon = result.get('level_icon', '')
-                                # 满分标记
-                                if score == 4:
-                                    return f"🔥 {score}/4"
+
+                    @st.cache_data(ttl=300, show_spinner=False)
+                    def compute_trend_labels(symbols: tuple, days: int = 90) -> list:
+                        """批量计算趋势强度标签（缓存5分钟避免 rerun 重复计算）"""
+                        import logging
+                        labels = []
+                        for symbol in symbols:
+                            try:
+                                result = get_trend_strength(symbol, days=days)
+                                if 'error' not in result:
+                                    score = result.get('score', 0)
+                                    level_icon = result.get('level_icon', '')
+                                    if score == 4:
+                                        labels.append(f"🔥 {score}/4")
+                                    else:
+                                        labels.append(f"{level_icon} {score}/4")
                                 else:
-                                    return f"{level_icon} {score}/4"
-                            return "-"
-                        except:
-                            return "-"
-                    
-                    trend_labels = []
-                    # 批量计算
-                    for idx, symbol in enumerate(df_ranked['symbol']):
-                        label = get_trend_label(symbol)
-                        trend_labels.append(label)
-                        # 更新状态文本而非进度条
-                        if (idx + 1) % 5 == 0:
-                            status.update(label=f"🔄 正在计算趋势强度... ({idx+1}/{len(df_ranked)})")
-                    
+                                    labels.append("-")
+                            except Exception as e:
+                                logging.warning(f"趋势强度计算失败 {symbol}: {e}")
+                                labels.append("-")
+                        return labels
+
+                    symbols_tuple = tuple(df_ranked['symbol'].tolist())
+                    trend_labels = compute_trend_labels(symbols_tuple, days=90)
+
                     df_ranked['trend_label'] = trend_labels
-                    status.update(label="✅ 趋势强度计算完成", state="complete", expanded=False)
+                    valid_count = sum(1 for l in trend_labels if l != "-")
+                    if valid_count == 0:
+                        status.update(label="⚠️ 趋势强度数据为空，请检查数据源", state="error", expanded=False)
+                    else:
+                        status.update(label=f"✅ 趋势强度计算完成（{valid_count}/{len(trend_labels)} 有效）", state="complete", expanded=False)
 
                 # ... (AI Context 注入代码保持不变) ...
                 
