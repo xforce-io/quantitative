@@ -18,6 +18,9 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from web.dolphin_compat import apply_dolphin_web_compat
+from web.dolphin_runtime import get_dolphin_runtime_async
+
 # 配置日志
 logger = logging.getLogger("analyst_api")
 logger.setLevel(logging.INFO)
@@ -28,7 +31,6 @@ if not logger.handlers:
 
 # 项目路径
 PROJECT_ROOT = Path(__file__).parent.parent.parent
-DOLPHIN_CONFIG_PATH = PROJECT_ROOT / "config" / "dolphin.yaml"
 AGENT_DPH_PATH = PROJECT_ROOT / "data" / "agents" / "stock_analyst" / "agent.dph"
 
 router = APIRouter(prefix="/api/analyst", tags=["analyst"])
@@ -67,63 +69,6 @@ class AgentSession:
 
 
 _sessions: Dict[str, AgentSession] = {}
-_dolphin_runtime = None
-
-
-async def _init_dolphin_runtime():
-    """初始化 Dolphin 运行时（懒加载）"""
-    global _dolphin_runtime
-    
-    if _dolphin_runtime is not None:
-        return _dolphin_runtime
-    
-    try:
-        from dolphin.core.config.global_config import GlobalConfig
-        from dolphin.sdk.skill.global_skills import GlobalSkills
-        from dolphin.core import flags
-        
-        # 禁用 EXPLORE_BLOCK_V2
-        flags.set_flag(flags.EXPLORE_BLOCK_V2, False)
-        logger.info("Disabled EXPLORE_BLOCK_V2 for continue_chat support")
-        
-    except ImportError as e:
-        logger.error(f"Failed to import Dolphin SDK: {e}")
-        raise RuntimeError(f"Dolphin SDK not available: {e}") from e
-    
-    try:
-        if DOLPHIN_CONFIG_PATH.exists():
-            global_config = GlobalConfig.from_yaml(str(DOLPHIN_CONFIG_PATH))
-            logger.info(f"Loaded Dolphin config from {DOLPHIN_CONFIG_PATH}")
-        else:
-            global_config = GlobalConfig.from_dict({})
-            logger.warning("Dolphin config not found, using empty config")
-        
-        global_skills = GlobalSkills(global_config)
-        
-        # 注册 PageDataSkillkit
-        try:
-            from web.skillkits.page_data_skillkit import PageDataSkillkit
-            page_data_skillkit = PageDataSkillkit()
-            page_data_skillkit.setGlobalConfig(global_config)
-            global_skills.installedSkillset.addSkillkit(page_data_skillkit)
-            if hasattr(global_skills, "_syncAllSkills"):
-                global_skills._syncAllSkills()
-            logger.info("Registered PageDataSkillkit")
-        except Exception as e:
-            logger.warning(f"Could not register PageDataSkillkit: {e}")
-        
-        _dolphin_runtime = {
-            "global_config": global_config,
-            "global_skills": global_skills,
-        }
-        
-        return _dolphin_runtime
-        
-    except Exception as e:
-        logger.error(f"Failed to initialize Dolphin runtime: {e}", exc_info=True)
-        raise RuntimeError(f"Dolphin runtime initialization failed: {e}") from e
-
-
 def get_or_create_session(session_id: Optional[str]) -> AgentSession:
     """获取或创建会话"""
     if not session_id:
@@ -158,12 +103,10 @@ async def _run_agent_stream(
     真正的 async generator，无需 Queue 桥接
     """
     from dolphin.sdk.agent.dolphin_agent import DolphinAgent
-    from dolphin.core import flags
-    
-    # 确保 flag 设置
-    flags.set_flag(flags.EXPLORE_BLOCK_V2, False)
-    
-    runtime = await _init_dolphin_runtime()
+
+    apply_dolphin_web_compat()
+
+    runtime = await get_dolphin_runtime_async()
     global_config = runtime["global_config"]
     global_skills = runtime["global_skills"]
     

@@ -63,6 +63,7 @@ docs/
 - [AI Analyst Design](design/AI_ANALYST_RIGHT_PANEL_AGENT_DESIGN.md) - AI analyst architecture
 - [CANSLIM Enhancement](design/WILLIAM_ONEIL_CANSLIM_ENHANCEMENT.md) - CANSLIM strategy design
 - [Portfolio Valuation Feature](design/PORTFOLIO_VALUATION_FEATURE.md) - Valuation module design
+- [News Event Investment Probability Graph](design/NEWS_EVENT_INVESTMENT_PROBABILITY_GRAPH_DESIGN.md) - Event-driven investment inference design
 
 ## 📖 Essential Documentation / 核心文档
 
@@ -92,6 +93,7 @@ Important updates and migrations:
 Technical design and architecture (Chinese):
 - [AI Analyst Design](design/AI_ANALYST_RIGHT_PANEL_AGENT_DESIGN.md)
 - [AI Panel Technical Review](design/AI_PANEL_TECHNICAL_REVIEW.md)
+- [News Event Investment Probability Graph](design/NEWS_EVENT_INVESTMENT_PROBABILITY_GRAPH_DESIGN.md)
 
 ## 🛠️ Web Application / Web 应用
 

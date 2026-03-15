@@ -128,9 +128,13 @@ def main():
     # --- 主界面 ---
     registry = get_page_registry()
     registry.set_date_range(start_str, end_str)
-    
+
     main_col, ai_col = get_ai_panel_layout(main_ratio=7, panel_ratio=3)
-    
+
+    # 先渲染 AI 面板（在耗时的 tab 内容计算前），确保面板及时出现
+    with ai_col:
+        render_ai_right_panel(session_id="watchlist_ai")
+
     with main_col:
         st.title("👀 自选监控驾驶舱")
         tab_stock, tab_ind = st.tabs(["📈 个股监控", "🏭 赛道监控"])
@@ -297,10 +301,5 @@ def main():
                                     else:
                                         st.warning("数据不足，无法生成技术图表")
     
-    # 渲染右侧 AI 面板
-    with ai_col:
-        render_ai_right_panel(session_id="watchlist_ai")
-
-
 if __name__ == "__main__":
     main()
