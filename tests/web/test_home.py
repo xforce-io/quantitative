@@ -56,6 +56,14 @@ class TestHomeNavigationCards:
         card = page.get_by_text("风向排行榜")
         expect(card.first).to_be_attached()
 
+    def test_event_graph_card_visible(self, page: Page, app_url: str, streamlit_helper):
+        """Event Graph navigation card should be visible."""
+        page.goto(app_url)
+        streamlit_helper.wait_for_app_loaded()
+
+        card = page.get_by_text("新闻事件概率图")
+        expect(card.first).to_be_attached()
+
 
 class TestHomeSidebar:
     """Sidebar system status display."""

@@ -20,6 +20,7 @@ class TestCrossPageNavigation:
             "/Watchlist",
             "/Ranking",
             "/Signal_Scanner",
+            "/Event_Graph",
         ]
 
         for path in pages:
@@ -51,7 +52,7 @@ class TestCrossPageNavigation:
 
     def test_sidebar_visible_on_all_pages(self, page: Page, app_url: str, streamlit_helper):
         """Every page should have a visible sidebar."""
-        pages = ["/", "/Money_Flow", "/Watchlist", "/Ranking", "/Signal_Scanner"]
+        pages = ["/", "/Money_Flow", "/Watchlist", "/Ranking", "/Signal_Scanner", "/Event_Graph"]
 
         for path in pages:
             page.goto(f"{app_url}{path}")

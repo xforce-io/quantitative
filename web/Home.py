@@ -41,7 +41,7 @@ st.divider()
 
 st.markdown("### 🚀 快速入口")
 
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     st.markdown("""
@@ -73,6 +73,16 @@ with col3:
     st.caption("多因子智能排名，多种策略配置，发现投资机会")
     st.page_link("pages/3_🏆_Ranking.py", label="进入应用 →", icon="🏆")
 
+with col4:
+    st.markdown("""
+    <div style="text-align: center; padding: 20px; background: linear-gradient(135deg, #ffb347 0%, #ff6b6b 100%); border-radius: 15px; margin-bottom: 10px;">
+        <span style="font-size: 48px;">📰</span>
+    </div>
+    """, unsafe_allow_html=True)
+    st.markdown("#### 新闻事件概率图")
+    st.caption("从新闻反推事件因果链、Bull/Base/Bear 概率与受益受损方向")
+    st.page_link("pages/5_📰_Event_Graph.py", label="进入应用 →", icon="📰")
+
 st.divider()
 
 # ==================== 功能详情 ====================
@@ -96,6 +106,13 @@ with st.expander("📖 功能详情", expanded=False):
     - **智能排名**：资金流向 + 技术形态 + 估值的多因子加权评分
     - **多种策略**：短线交易、均衡配置、价值投资、趋势跟踪、资金驱动
     - **赛道排行**：行业板块资金流向对比
+
+    #### 4. 📰 新闻事件概率图 (Event Graph)
+    将新闻事件转换为可解释投资推理：
+    - **事件结构化**：识别事件类型、实体、方向、强度与证据
+    - **因果路径**：展示事件如何传导到行业、主题和资产
+    - **情景概率**：输出 Bull / Base / Bear 三情景概率分布
+    - **资产映射**：生成受益、受损和观察名单
     """)
 
 # 系统状态检查

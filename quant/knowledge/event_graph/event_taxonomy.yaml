@@ -1,0 +1,189 @@
+event_types:
+  policy_export_control:
+    aliases:
+      - export_control
+      - chip_export_restriction
+    keywords:
+      - 出口限制
+      - 出口管制
+      - 出口禁令
+      - 限制对华
+      - AI芯片
+      - 高端芯片
+    direction: mixed
+    default_sectors:
+      - semiconductors
+      - servers
+      - advanced_packaging
+    default_time_horizon: short_term_to_medium_term
+  policy_subsidy:
+    aliases:
+      - subsidy_support
+    keywords:
+      - 补贴
+      - 财政支持
+      - 税收优惠
+      - 支持政策
+      - 鼓励发展
+    direction: positive
+    default_sectors:
+      - clean_energy
+      - advanced_manufacturing
+    default_time_horizon: medium_term
+  industry_price_increase:
+    aliases:
+      - price_hike
+    keywords:
+      - 提价
+      - 涨价
+      - 价格上调
+      - 报价上调
+    direction: positive
+    default_sectors:
+      - chemicals
+      - materials
+    default_time_horizon: short_term
+  industry_capacity_cut:
+    aliases:
+      - capacity_reduction
+    keywords:
+      - 限产
+      - 减产
+      - 停产
+      - 供给收缩
+    direction: positive
+    default_sectors:
+      - industrial_metals
+      - energy
+    default_time_horizon: short_term_to_medium_term
+  company_large_order:
+    aliases:
+      - major_contract
+    keywords:
+      - 大单
+      - 中标
+      - 签订合同
+      - 获得订单
+      - 战略合作
+    direction: positive
+    default_sectors:
+      - equipment
+      - software
+    default_time_horizon: short_term_to_medium_term
+  company_accident:
+    aliases:
+      - production_accident
+    keywords:
+      - 事故
+      - 停工
+      - 安全事件
+      - 调查
+      - 处罚
+    direction: negative
+    default_sectors:
+      - industrials
+    default_time_horizon: short_term
+  geopolitical_conflict:
+    aliases:
+      - war_escalation
+      - geopolitical_tension
+    keywords:
+      - 伊朗
+      - 中东
+      - 空袭
+      - 军事打击
+      - 导弹
+      - 冲突升级
+      - 霍尔木兹
+      - 战争
+      - 开战
+      - 攻击伊朗
+    direction: mixed
+    default_sectors:
+      - energy
+      - precious_metals
+      - defense
+      - global_risk_assets
+    default_time_horizon: short_term_to_medium_term
+  generic_market_event:
+    aliases: []
+    keywords: []
+    direction: neutral
+    default_sectors:
+      - broad_market
+    default_time_horizon: short_term
+
+entity_aliases:
+  US:
+    - 美国
+    - 美方
+    - U.S.
+    - United States
+  China:
+    - 中国
+    - 国内
+    - 大陆
+  Iran:
+    - 伊朗
+  Middle_East:
+    - 中东
+  Oil:
+    - 原油
+    - 石油
+    - 油价
+  Gold:
+    - 黄金
+  NVIDIA:
+    - 英伟达
+    - NVDA
+    - nvidia
+  AI_chip:
+    - AI芯片
+    - 算力芯片
+    - GPU
+    - 高端芯片
+  Advanced_Semiconductor_Equipment:
+    - 先进制程设备
+    - 半导体设备
+  EV:
+    - 新能源车
+    - 电动车
+    - EV
+  Solar:
+    - 光伏
+    - 太阳能
+  Battery:
+    - 电池
+    - 动力电池
+
+action_aliases:
+  constraint_up:
+    - 收紧
+    - 限制
+    - 禁止
+    - 管制升级
+    - 扩大限制范围
+  subsidy_up:
+    - 补贴
+    - 支持
+    - 鼓励
+    - 资助
+  capacity_down:
+    - 限产
+    - 减产
+    - 停产
+  demand_up:
+    - 提升需求
+    - 扩产
+    - 拉动需求
+  order_up:
+    - 中标
+    - 签单
+    - 获得订单
+  conflict_up:
+    - 攻击
+    - 空袭
+    - 冲突升级
+    - 开战
+    - 军事打击
+    - 导弹袭击

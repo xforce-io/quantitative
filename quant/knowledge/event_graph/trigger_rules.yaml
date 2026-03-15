@@ -1,0 +1,7 @@
+rules:
+  - name: high_confidence_requires_evidence
+    description: High-confidence outputs should be backed by event evidence or graph support.
+  - name: positive_output_requires_risk_note
+    description: Positive mapping must include at least one explicit risk note.
+  - name: direct_vs_indirect_separation
+    description: Asset mapping should separate direct and indirect transmission.

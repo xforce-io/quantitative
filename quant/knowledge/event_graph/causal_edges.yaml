@@ -1,0 +1,125 @@
+policy_export_control:
+  - direction: positive
+    strength: 0.82
+    reliability: 0.82
+    lag: short_term_to_medium_term
+    condition: Domestic substitution narrative continues to strengthen
+    nodes:
+      - 高端算力供给受限
+      - 国产替代预期提升
+      - 国产GPU与先进封装链受益
+  - direction: negative
+    strength: 0.68
+    reliability: 0.78
+    lag: short_term
+    condition: Downstream projects remain dependent on imported high-end chips
+    nodes:
+      - 进口高端算力交付承压
+      - 短期资本开支与部署节奏调整
+      - 依赖进口芯片的AI基础设施标的承压
+  - direction: watch
+    strength: 0.55
+    reliability: 0.66
+    lag: medium_term
+    condition: Peripheral demand expands after compute localization
+    nodes:
+      - 算力需求重塑基础设施配置
+      - 液冷与电力配套成为瓶颈
+      - 数据中心配套生态进入观察区
+policy_subsidy:
+  - direction: positive
+    strength: 0.78
+    reliability: 0.8
+    lag: medium_term
+    condition: Subsidy implementation remains on schedule
+    nodes:
+      - 资本开支负担下降
+      - 扩产与需求能见度提升
+      - 政策补贴受益板块与龙头
+industry_price_increase:
+  - direction: positive
+    strength: 0.74
+    reliability: 0.76
+    lag: short_term
+    condition: Price increase lands without visible demand destruction
+    nodes:
+      - 毛利率预期改善
+      - 盈利预测上修
+      - 提价受益行业龙头
+industry_capacity_cut:
+  - direction: positive
+    strength: 0.72
+    reliability: 0.74
+    lag: short_term_to_medium_term
+    condition: Supply discipline remains stronger than demand weakness
+    nodes:
+      - 有效供给收缩
+      - 价格企稳与库存修复
+      - 限产受益标的
+company_large_order:
+  - direction: positive
+    strength: 0.84
+    reliability: 0.85
+    lag: short_term_to_medium_term
+    condition: Order execution and cash collection stay healthy
+    nodes:
+      - 收入确定性提升
+      - 产能利用率抬升
+      - 中标公司与核心供应商受益
+company_accident:
+  - direction: negative
+    strength: 0.83
+    reliability: 0.84
+    lag: short_term
+    condition: Production interruption extends beyond initial disclosure
+    nodes:
+      - 经营活动受扰动
+      - 盈利与合规压力上升
+      - 事故相关标的承压
+geopolitical_conflict:
+  - direction: positive
+    strength: 0.76
+    reliability: 0.8
+    lag: short_term
+    condition: Supply disruption risk keeps oil prices elevated
+    nodes:
+      - 中东供应扰动预期升温
+      - 油气价格风险溢价抬升
+      - 原油与油服链受益
+  - direction: positive
+    strength: 0.68
+    reliability: 0.74
+    lag: short_term
+    condition: Risk aversion continues to dominate cross-asset flows
+    nodes:
+      - 避险情绪快速升温
+      - 黄金与高股息防御资产获增配
+      - 黄金链与防御资产受益
+  - direction: negative
+    strength: 0.73
+    reliability: 0.78
+    lag: short_term
+    condition: Global risk appetite keeps deteriorating
+    nodes:
+      - 全球风险偏好回落
+      - 成长与高估值资产承压
+      - 宽基成长与出行链承压
+  - direction: watch
+    strength: 0.58
+    reliability: 0.67
+    lag: short_term_to_medium_term
+    condition: Defense spending expectations convert into actual orders
+    nodes:
+      - 地缘安全预算预期上升
+      - 军工订单预期改善
+      - 军工观察链进入跟踪
+generic_market_event:
+  - direction: mixed
+    strength: 0.5
+    reliability: 0.6
+    lag: short_term
+    condition: Market needs additional confirmation
+    nodes:
+      - 事件传导链尚不清晰
+      - 板块轮动可能主导走势
+      - 宽基市场观察池

@@ -1,0 +1,193 @@
+policy_export_control:
+  positive:
+    - name: 国产GPU
+      type: theme
+      sector: semiconductors
+      score_boost: 0.08
+      confidence: 1.0
+      reason_chain: Export control -> domestic substitution -> local GPU
+      risk_note: Watch for valuation crowding after sharp narrative re-rating
+    - name: 先进封装
+      type: sector
+      sector: semiconductors
+      score_boost: 0.04
+      confidence: 0.96
+      reason_chain: Export control -> packaging localization demand
+      risk_note: Capacity digestion may lag market expectations
+    - name: 服务器国产链
+      type: basket
+      sector: servers
+      score_boost: 0.03
+      confidence: 0.92
+      reason_chain: Supply replacement -> local server chain demand
+      risk_note: Demand conversion depends on end-customer procurement cycles
+  negative:
+    - name: 高端进口芯片依赖标的
+      type: basket
+      sector: ai_infrastructure
+      score_boost: 0.05
+      confidence: 0.9
+      reason_chain: Export control -> imported chip delivery risk
+      risk_note: Substitute product ramp may offset the downside
+  watchlist:
+    - name: 液冷
+      type: sector
+      sector: data_center_support
+      score_boost: 0.03
+      confidence: 0.88
+      reason_chain: Compute reshaping -> supporting infrastructure demand
+      risk_note: Theme rotation may front-run actual orders
+    - name: 电力设备
+      type: sector
+      sector: utilities
+      score_boost: 0.02
+      confidence: 0.84
+      reason_chain: AI infrastructure expansion -> power system bottleneck
+      risk_note: Project timing remains uncertain
+policy_subsidy:
+  positive:
+    - name: 政策受益主线
+      type: basket
+      sector: policy_beneficiaries
+      score_boost: 0.06
+      confidence: 0.92
+      reason_chain: Subsidy support -> demand and margin improvement
+      risk_note: Implementation pace may be slower than the headline suggests
+  negative: []
+  watchlist:
+    - name: 上游设备链
+      type: basket
+      sector: advanced_manufacturing
+      score_boost: 0.02
+      confidence: 0.8
+      reason_chain: Subsidized expansion -> equipment demand
+      risk_note: Order conversion may lag policy release
+industry_price_increase:
+  positive:
+    - name: 提价龙头
+      type: basket
+      sector: materials
+      score_boost: 0.05
+      confidence: 0.9
+      reason_chain: Price hike -> margin improvement
+      risk_note: Downstream demand elasticity is a key variable
+  negative: []
+  watchlist:
+    - name: 下游成本承压链
+      type: basket
+      sector: downstream_manufacturing
+      score_boost: 0.02
+      confidence: 0.82
+      reason_chain: Price hike -> downstream cost pressure
+      risk_note: Cost pass-through may reduce the impact
+industry_capacity_cut:
+  positive:
+    - name: 供给收缩受益板块
+      type: sector
+      sector: cyclical
+      score_boost: 0.05
+      confidence: 0.9
+      reason_chain: Capacity cut -> supply repair -> price stabilization
+      risk_note: Weak demand can offset supply discipline
+  negative: []
+  watchlist:
+    - name: 库存修复观察池
+      type: basket
+      sector: cyclical
+      score_boost: 0.02
+      confidence: 0.82
+      reason_chain: Capacity cut -> inventory cycle inflection
+      risk_note: Industry inventory data may lag
+company_large_order:
+  positive:
+    - name: 订单中标公司
+      type: symbol
+      sector: equipment
+      score_boost: 0.08
+      confidence: 0.94
+      reason_chain: Large order -> revenue visibility improves
+      risk_note: Execution risk and receivable pressure remain
+    - name: 核心供应商
+      type: basket
+      sector: equipment_supply_chain
+      score_boost: 0.04
+      confidence: 0.86
+      reason_chain: Large order -> supplier utilization rises
+      risk_note: Supply chain benefit is indirect
+  negative: []
+  watchlist:
+    - name: 同业竞对
+      type: basket
+      sector: equipment
+      score_boost: 0.01
+      confidence: 0.76
+      reason_chain: Order winner emerges -> competitive landscape shifts
+      risk_note: Competitive impact may be temporary
+company_accident:
+  positive: []
+  negative:
+    - name: 事故相关公司
+      type: symbol
+      sector: industrials
+      score_boost: 0.08
+      confidence: 0.92
+      reason_chain: Accident -> production disruption -> earnings pressure
+      risk_note: Resumption timeline can quickly change sentiment
+  watchlist:
+    - name: 替代供给方
+      type: basket
+      sector: industrials
+      score_boost: 0.03
+      confidence: 0.8
+      reason_chain: Accident -> supply gap -> alternative suppliers benefit
+      risk_note: Substitution benefit may be short-lived
+geopolitical_conflict:
+  positive:
+    - name: 原油
+      type: commodity
+      sector: energy
+      score_boost: 0.08
+      confidence: 0.92
+      reason_chain: 地缘冲突 -> 供应扰动预期 -> 油价风险溢价抬升
+      risk_note: 冲突快速降级会导致油价回吐
+    - name: 黄金
+      type: commodity
+      sector: precious_metals
+      score_boost: 0.06
+      confidence: 0.9
+      reason_chain: 地缘冲突 -> 避险情绪升温 -> 黄金受益
+      risk_note: 美债收益率反弹会压制黄金表现
+  negative:
+    - name: 宽基成长
+      type: basket
+      sector: global_risk_assets
+      score_boost: 0.05
+      confidence: 0.88
+      reason_chain: 地缘冲突 -> 风险偏好回落 -> 成长资产承压
+      risk_note: 若市场迅速忽略事件，压制将明显减弱
+    - name: 航空出行链
+      type: basket
+      sector: travel
+      score_boost: 0.04
+      confidence: 0.82
+      reason_chain: 油价上行与风险偏好下降 -> 航空出行链承压
+      risk_note: 票价传导和政策支持可能对冲成本压力
+  watchlist:
+    - name: 军工
+      type: sector
+      sector: defense
+      score_boost: 0.04
+      confidence: 0.84
+      reason_chain: 地缘安全预期上升 -> 军工订单预期改善
+      risk_note: 情绪交易可能领先基本面兑现
+generic_market_event:
+  positive: []
+  negative: []
+  watchlist:
+    - name: 宽基指数
+      type: etf
+      sector: broad_market
+      score_boost: 0.0
+      confidence: 0.7
+      reason_chain: Generic event -> wait for sector confirmation
+      risk_note: Signal quality is low without follow-up evidence

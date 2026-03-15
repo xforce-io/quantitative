@@ -4,6 +4,7 @@
 PROJECT_ROOT="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )"
 PID_FILE="${PROJECT_ROOT}/.web.pid"
 LOG_FILE="${PROJECT_ROOT}/logs/web.log"
+PORT=8501
 
 # 添加项目根目录到 PYTHONPATH
 export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
@@ -19,6 +20,13 @@ get_pid() {
             echo "$pid"
             return 0
         fi
+    fi
+    local port_pid
+    port_pid=$(lsof -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | head -n 1)
+    if [ -n "$port_pid" ]; then
+        echo "$port_pid" > "$PID_FILE"
+        echo "$port_pid"
+        return 0
     fi
     echo ""
     return 1
@@ -43,12 +51,21 @@ start() {
 
     # 后台运行 streamlit (禁用自动打开浏览器)
     nohup streamlit run "${PROJECT_ROOT}/web/Home.py" --server.headless=true > "$LOG_FILE" 2>&1 &
-    local new_pid=$!
-    echo "$new_pid" > "$PID_FILE"
 
-    # 等待一小会确认启动成功
-    sleep 2
-    if ps -p "$new_pid" > /dev/null 2>&1; then
+    # 等待端口监听并回填真实 PID
+    local count=0
+    local new_pid=""
+    while [ $count -lt 20 ]; do
+        sleep 1
+        new_pid=$(lsof -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | head -n 1)
+        if [ -n "$new_pid" ]; then
+            echo "$new_pid" > "$PID_FILE"
+            break
+        fi
+        count=$((count + 1))
+    done
+
+    if [ -n "$new_pid" ] && ps -p "$new_pid" > /dev/null 2>&1; then
         echo "✅ Web platform started (PID: $new_pid)"
         echo "📝 Log file: $LOG_FILE"
         echo "🌐 Access at: http://localhost:8501"
@@ -80,6 +97,16 @@ stop() {
     if ps -p "$pid" > /dev/null 2>&1; then
         echo "⚠️  Force killing..."
         kill -9 "$pid" 2>/dev/null
+    fi
+
+    local port_pid
+    port_pid=$(lsof -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | head -n 1)
+    if [ -n "$port_pid" ]; then
+        kill "$port_pid" 2>/dev/null
+        sleep 1
+        if ps -p "$port_pid" > /dev/null 2>&1; then
+            kill -9 "$port_pid" 2>/dev/null
+        fi
     fi
 
     rm -f "$PID_FILE"
