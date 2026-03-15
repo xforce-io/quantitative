@@ -18,7 +18,9 @@ from web.data_service import (
     get_industry_flow_with_details,
     get_latest_trading_day,
     get_ranking_profiles,
-    rank_stocks
+    rank_stocks,
+    get_etf_pool,
+    rank_etfs,
 )
 from web.components import plot_trend_chart, plot_technical_chart, render_stock_detail_card, render_period_selector
 from web.ui_theme import Colors, apply_custom_css
@@ -112,12 +114,16 @@ def main():
     
     # --- 主界面：左右分栏布局 ---
     main_col, ai_col = get_ai_panel_layout(main_ratio=7, panel_ratio=3)
-    
+
+    # 先渲染 AI 面板（在耗时的 tab 内容计算前），确保面板及时出现
+    with ai_col:
+        render_ai_right_panel(session_id="ranking_ai")
+
     with main_col:
         st.title("🏆 风向排行榜")
         st.caption("对候选池标的进行多维度分析和排序")
-        tab_stock, tab_industry = st.tabs(["📈 个股排行", "🏭 赛道排行"])
-    
+        tab_stock, tab_industry, tab_etf = st.tabs(["📈 个股排行", "🏭 赛道排行", "🏛️ ETF排行"])
+
     # ========== 个股排行 ==========
     with tab_stock:
         st.markdown(f"### 📈 {selected_pool} 个股排行 ({len(candidates_df)}只)")
@@ -609,10 +615,161 @@ def main():
             st.pyplot(fig)
             plt.close(fig)
     
-    # 渲染右侧 AI 面板
-    with ai_col:
-        render_ai_right_panel(session_id="ranking_ai")
+    # ========== ETF 排行 ==========
+    with tab_etf:
+        st.markdown("### 🏛️ ETF 趋势排行")
 
+        # 控制栏
+        etf_col1, etf_col2 = st.columns([1, 1])
+        with etf_col1:
+            etf_source = st.radio(
+                "ETF 池", ["精选池 (25只)", "Tushare 热门"],
+                horizontal=True, key="etf_source"
+            )
+        with etf_col2:
+            etf_sort = st.selectbox(
+                "排序维度",
+                ["🎯 综合得分", "📈 20日涨幅", "📊 60日涨幅"],
+                key="etf_sort"
+            )
+
+        source_key = "default" if "精选" in etf_source else "tushare"
+
+        with st.status("🔄 正在计算 ETF 轮动排名...", expanded=True) as etf_status:
+            df_etf = rank_etfs(etf_pool=source_key, top_n=50)
+
+            if df_etf.empty:
+                etf_status.update(label="⚠️ ETF 排名数据为空", state="error", expanded=False)
+                st.warning("未能获取 ETF 排名数据，请检查数据源")
+            else:
+                etf_status.update(
+                    label=f"✅ 已完成 {len(df_etf)} 只 ETF 排名",
+                    state="complete", expanded=False
+                )
+
+        if not df_etf.empty:
+            # 排序
+            sort_col_map = {
+                "🎯 综合得分": "score",
+                "📈 20日涨幅": "ret_20d",
+                "📊 60日涨幅": "ret_60d",
+            }
+            sort_col = sort_col_map.get(etf_sort, "score")
+            df_etf = df_etf.sort_values(sort_col, ascending=False).reset_index(drop=True)
+            df_etf.index = df_etf.index + 1
+            df_etf.index.name = '排名'
+
+            # 信号图标映射
+            signal_icons = {
+                "长短期共振向上": "🟢",
+                "短期转负中期为正": "🟡",
+                "排名持续下滑": "🔴",
+                "得分回升但短期仍负": "🟠",
+                "滞胀预警": "⚠️",
+                "无明显信号": "⚪",
+            }
+            df_etf['signal_icon'] = df_etf['signal'].map(
+                lambda s: signal_icons.get(s, "⚪") + " " + s
+            )
+
+            # 显示排行表格
+            display_cols = {
+                'name': '名称',
+                'ts_code': '代码',
+                'category': '分类',
+                'score': '综合得分',
+                'ret_20d_pct': '20日涨幅',
+                'ret_60d_pct': '60日涨幅',
+                'tier': '分层',
+                'signal_icon': '信号',
+            }
+            df_display = df_etf[[c for c in display_cols if c in df_etf.columns]].rename(
+                columns=display_cols
+            )
+
+            st.dataframe(
+                df_display,
+                use_container_width=True,
+                height=min(600, 40 + len(df_display) * 35),
+                column_config={
+                    '综合得分': st.column_config.NumberColumn(format="%.4f"),
+                }
+            )
+
+            # 可视化
+            with st.container():
+                st.divider()
+                import plotly.express as px
+
+                # 1. Top 10 综合得分
+                st.markdown("#### 🎯 综合得分 Top 10")
+                try:
+                    top10 = df_etf.head(10).copy().iloc[::-1]
+                    fig = px.bar(
+                        top10, y='name', x='score',
+                        orientation='h',
+                        text=top10['score'].round(4),
+                        color='tier',
+                        color_discrete_map={
+                            '强势主线': Colors.RISE,
+                            '震荡观望': Colors.PRIMARY,
+                            '弱势回避': Colors.FALL,
+                        }
+                    )
+                    fig.update_layout(
+                        showlegend=True,
+                        margin=dict(l=10, r=10, t=10, b=10),
+                        height=400,
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                    )
+                    fig.update_traces(texttemplate='%{text:.4f}', textposition='outside')
+                    st.plotly_chart(fig, use_container_width=True, key="etf_top10_chart")
+                except Exception as e:
+                    st.error(f"Top 10 图表渲染失败: {e}")
+
+                # 2. 板块动量热力图
+                st.markdown("#### 📊 板块动量概览")
+                try:
+                    df_cat = df_etf.groupby('category').agg(
+                        avg_ret_20d=('ret_20d', 'mean'),
+                        avg_ret_60d=('ret_60d', 'mean'),
+                        avg_score=('score', 'mean'),
+                        count=('ts_code', 'count'),
+                    ).reset_index()
+                    df_cat = df_cat.sort_values('avg_score', ascending=False)
+                    df_cat['avg_ret_20d_pct'] = (df_cat['avg_ret_20d'] * 100).round(2)
+                    df_cat['avg_ret_60d_pct'] = (df_cat['avg_ret_60d'] * 100).round(2)
+
+                    fig = px.bar(
+                        df_cat, x='category', y=['avg_ret_20d_pct', 'avg_ret_60d_pct'],
+                        barmode='group',
+                        labels={'value': '平均涨幅(%)', 'category': '板块', 'variable': ''},
+                        color_discrete_map={
+                            'avg_ret_20d_pct': Colors.PRIMARY,
+                            'avg_ret_60d_pct': Colors.INSTITUTIONAL,
+                        }
+                    )
+                    # 重命名图例
+                    fig.for_each_trace(lambda t: t.update(
+                        name='20日均涨幅' if '20' in t.name else '60日均涨幅'
+                    ))
+                    fig.update_layout(
+                        margin=dict(l=10, r=10, t=10, b=10),
+                        height=350,
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                    )
+                    st.plotly_chart(fig, use_container_width=True, key="etf_sector_chart")
+                except Exception as e:
+                    st.error(f"板块概览图表渲染失败: {e}")
+
+            # 分层汇总
+            st.divider()
+            st.markdown("#### 📋 分层汇总")
+            for tier_name, tier_icon in [("强势主线", "🟢"), ("震荡观望", "🟡"), ("弱势回避", "🔴")]:
+                sub = df_etf[df_etf['tier'] == tier_name]
+                if not sub.empty:
+                    names = "、".join(sub['name'].tolist())
+                    st.markdown(f"**{tier_icon} {tier_name}** ({len(sub)}只): {names}")
 
 if __name__ == "__main__":
     main()

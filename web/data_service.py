@@ -794,3 +794,133 @@ def get_china_market_signals(lookback_days: int = 60) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"A股/港股市场信号分析失败: {e}")
         return {'error': str(e)}
+
+
+# ==================== ETF 排行服务 ====================
+
+# ETF 分类映射（基于 ts_code 前缀 / 名称关键词）
+_ETF_CATEGORY_KEYWORDS = {
+    '宽基': ['沪深300', '中证500', '中证1000', '上证50', '创业板', '科创50', 'A50', '中证100', '红利'],
+    '科技': ['芯片', '半导体', '5G', '通信', '人工智能', 'AI', '科技', '信息', '计算机', '软件', '传媒', '大数据', '云计算', '机器人'],
+    '新能源': ['新能源', '光伏', '锂电', '电力', '电池', '风电', '储能', '电网', '碳中和'],
+    '资源': ['黄金', '有色', '煤炭', '钢铁', '石油', '油气', '铜', '豆粕', '能源化工', '稀土'],
+    '军工制造': ['军工', '航天', '航空', '国防', '船舶', '工业母机', '机械', '高端装备'],
+    '消费医药': ['消费', '食品', '饮料', '白酒', '医药', '医疗', '生物', '创新药', '中药', '家电', '农业', '养殖'],
+    '金融地产': ['银行', '证券', '保险', '金融', '房地产', '地产', '基建'],
+    '海外': ['纳斯达克', '纳指', '标普', '恒生', '港股', '中概', '日经', '德国', '美国', '香港'],
+}
+
+
+def _classify_etf(name: str) -> str:
+    """根据 ETF 名称推断分类"""
+    for category, keywords in _ETF_CATEGORY_KEYWORDS.items():
+        for kw in keywords:
+            if kw in name:
+                return category
+    return '其他'
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def get_etf_pool(source: str = "default", top_n: int = 50) -> pd.DataFrame:
+    """
+    获取 ETF 池
+
+    Args:
+        source: "default" 使用精选池(25只), "tushare" 从 Tushare 拉取热门 ETF
+        top_n: Tushare 模式下取成交额 Top N
+
+    Returns:
+        DataFrame(columns=['ts_code', 'name', 'category'])
+    """
+    if source == "default":
+        from quant.strategies.etf_rotation_strategy import DEFAULT_ETF_POOL
+        rows = [
+            {'ts_code': code, 'name': name, 'category': _classify_etf(name)}
+            for code, name in DEFAULT_ETF_POOL.items()
+        ]
+        return pd.DataFrame(rows)
+
+    # Tushare 模式：拉取全量 ETF 并按成交额过滤
+    try:
+        provider = get_provider()
+        df_basic = provider.get_fund_basic(market='E', status='L')
+        if df_basic is None or df_basic.empty:
+            logger.warning("Tushare fund_basic 返回空数据，回退到默认池")
+            return get_etf_pool(source="default")
+
+        # 只取股票型 ETF（被动指数型 + 增强指数型）
+        df_equity = df_basic[df_basic['fund_type'] == '股票型'].copy()
+        if df_equity.empty:
+            return get_etf_pool(source="default")
+
+        # 获取最近交易日的成交额来筛选活跃 ETF
+        from datetime import datetime, timedelta
+        end = datetime.now().strftime('%Y%m%d')
+        start = (datetime.now() - timedelta(days=10)).strftime('%Y%m%d')
+
+        vol_records = []
+        # 批量抽样检查成交额（取前 200 只按上市日期排序的）
+        candidates = df_equity.sort_values('list_date').tail(500)  # 取最近上市的500只
+        # 也要保留上市时间长的大基金
+        old_funds = df_equity.sort_values('list_date').head(200)
+        candidates = pd.concat([old_funds, candidates]).drop_duplicates(subset='ts_code')
+
+        for ts_code in candidates['ts_code'].tolist():
+            try:
+                fund_df = provider.get_fund_data(ts_code, start, end)
+                if fund_df is not None and not fund_df.empty and 'amount' in fund_df.columns:
+                    avg_amount = fund_df['amount'].mean()
+                    vol_records.append({'ts_code': ts_code, 'avg_amount': avg_amount})
+            except Exception:
+                continue
+
+        if not vol_records:
+            return get_etf_pool(source="default")
+
+        df_vol = pd.DataFrame(vol_records).sort_values('avg_amount', ascending=False).head(top_n)
+
+        # 合并名称
+        df_result = df_vol.merge(df_equity[['ts_code', 'name']], on='ts_code', how='left')
+        df_result['category'] = df_result['name'].apply(_classify_etf)
+        return df_result[['ts_code', 'name', 'category']].reset_index(drop=True)
+
+    except Exception as e:
+        logger.error(f"Tushare ETF 池加载失败: {e}")
+        return get_etf_pool(source="default")
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def rank_etfs(etf_pool: str = "default", top_n: int = 50) -> pd.DataFrame:
+    """
+    对 ETF 池进行轮动排名，返回带评分和信号的 DataFrame。
+
+    Args:
+        etf_pool: "default" 或 "tushare"
+        top_n: Tushare 模式下的池大小
+
+    Returns:
+        DataFrame with columns: ts_code, name, category, ret_20d, ret_60d,
+                                score, tier, signal, ret_20d_pct, ret_60d_pct
+    """
+    pool_df = get_etf_pool(source=etf_pool, top_n=top_n)
+    if pool_df.empty:
+        return pd.DataFrame()
+
+    # 构建 etf_pool dict
+    etf_dict = dict(zip(pool_df['ts_code'], pool_df['name']))
+    category_map = dict(zip(pool_df['ts_code'], pool_df['category']))
+
+    # 使用 ETFRotationStrategy 计算排名和信号
+    from quant.strategies.etf_rotation_strategy import ETFRotationStrategy
+    provider = get_provider()
+    strategy = ETFRotationStrategy(provider, etf_pool=etf_dict, request_sleep=0.1)
+    result = strategy.run()
+
+    if result.ranking.empty:
+        return pd.DataFrame()
+
+    df = result.ranking.copy()
+    df['category'] = df['ts_code'].map(category_map).fillna('其他')
+    df['signal'] = df['ts_code'].map(result.signals).fillna('无明显信号')
+
+    return df

@@ -33,7 +33,8 @@ class TestAIPanelUI:
     def _wait_for_ai_panel(page, timeout=15000):
         """等待 AI 面板 fragment 渲染完成"""
         try:
-            page.wait_for_selector('text="AI 分析师"', timeout=timeout)
+            # 使用部分匹配（不加引号）避免因实际文本含 "✦" 前缀而匹配失败
+            page.wait_for_selector("text=AI 分析师", timeout=timeout)
         except Exception:
             pass
         page.wait_for_timeout(1000)
