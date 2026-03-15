@@ -2,7 +2,38 @@
 
 **🎉 新架构重构完成！统一、清晰、易维护的量化交易系统**
 
-基于多数据源的量化交易策略回测和投资分析系统，采用全新统一架构，整合交易策略、投资分析、新闻分析于一体。
+基于多数据源的量化交易策略回测和投资分析系统，采用全新统一架构，整合交易策略、投资分析、新闻事件概率图于一体。
+
+![Demo](docs/assets/demo-preview.gif)
+
+> [点击查看完整演示视频](docs/assets/demo.mp4)
+
+## 🖥️ Web 可视化平台
+
+系统提供基于 Streamlit 的 Web 可视化平台，5 个功能页面覆盖日常投研全流程：
+
+| 页面 | 功能 |
+|------|------|
+| 💰 资金流向 | 行业 / 个股主力资金实时分析，多维度热力图与评分 |
+| 📋 自选股 | 持仓监控、个股技术面与资金面快速对比 |
+| 🏆 风向排行榜 | 多因子智能排名，支持短线 / 价值 / 趋势等多种策略 |
+| 🔍 信号扫描 | 宏观流动性、箱体突破、价值挖掘等多模式信号扫描 |
+| 📰 新闻事件概率图 | 输入新闻 → 结构化事件 → 因果路径 → Bull/Base/Bear 概率 → 受益受损资产 |
+
+### 启动 Web 平台
+
+```bash
+# 启动（后台运行）
+./scripts/run_web.sh start
+
+# 查看状态
+./scripts/run_web.sh status
+
+# 停止
+./scripts/run_web.sh stop
+```
+
+启动后访问 http://localhost:8501
 
 ## 🆕 新架构特性
 
@@ -17,6 +48,8 @@
 - **Data Layer**: 数据处理 (`quant/data/`)
 - **Strategy Layer**: 策略实现 (`quant/strategies/`)
 - **Analysis Layer**: 分析工具 (`quant/analysis/`)
+- **Knowledge Layer**: 事件知识图谱 (`quant/knowledge/`)
+- **Web Layer**: Streamlit 可视化平台 (`web/`)
 - **CLI Layer**: 命令行接口 (`quant/cli/` + `quant/__main__.py`)
 
 ### 📦 统一导入体验
@@ -321,6 +354,33 @@ python -m quant system version
 - 分析缓存：ETF筛选、组合分析等结果缓存
 - 报告文件：生成的Markdown、CSV报告
 - 日志文件：系统运行日志
+
+---
+
+### 6️⃣ 新闻事件概率图模块 (`event_investment`)
+
+**核心功能**：
+- 新闻解析：将自由文本新闻结构化为事件类型、实体、方向、强度与证据
+- 因果推演：基于知识图谱沿因果边传播，输出受影响的行业和主题
+- 情景概率：综合基础概率与市场证据，输出 Bull / Base / Bear 三情景分布
+- 资产映射：按方向生成受益、受损、观察三类资产名单
+
+**事件类型**：政策出口管制、政策补贴支持、行业提价、行业限产减产、公司重大订单、地缘冲突升级等
+
+**Python API**：
+```python
+from quant.analysis.event_investment import EventProbabilityService
+
+svc = EventProbabilityService()
+result = svc.analyze(news_text="美国扩大 AI 芯片出口限制，涵盖先进封装和服务器链条")
+
+print(result.event_type)          # policy_export_control
+print(result.scenario_probs)      # {"Bull": 0.25, "Base": 0.45, "Bear": 0.30}
+print(result.beneficiary_assets)  # ["国产GPU", "先进封装", ...]
+print(result.hurt_assets)         # ["进口芯片依赖股", ...]
+```
+
+**Web 入口**：在 Web 平台的 **📰 新闻事件概率图** 页面直接粘贴新闻即可使用，内置示例新闻一键体验。
 
 ---
 
