@@ -1,0 +1,97 @@
+[project]
+name = "quantitative-trading"
+version = "1.0.0"
+description = "Comprehensive quantitative trading system with trading strategies, investment analysis, and backtesting capabilities"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "xupeng"}
+]
+keywords = ["quantitative", "trading", "investment", "analysis", "backtest"]
+
+dependencies = [
+    # Core libraries for quantitative trading
+    "tushare>=1.2.89",
+    "pandas>=1.5.0",
+    "numpy>=1.21.0",
+    "matplotlib>=3.5.0",
+    "plotly>=5.0.0",
+    "yfinance>=0.2.18",
+    "python-dotenv>=0.19.0",
+    "openpyxl>=3.0.0",
+    "PyYAML>=6.0.1",
+    "jieba>=0.42.1",
+    
+    # Investment analysis & LLM integration
+    "requests>=2.28.0",
+    "schedule>=1.2.0",
+    "openai>=1.0.0",
+    
+    # Dolphin Language SDK (for AI Agent)
+    "dolphin",
+    
+    # Data processing
+    "glob2>=0.7",
+    
+    # Scientific computing (for regression analysis)
+    "scipy>=1.9.0",
+
+    # Macro data (FRED API)
+    "fredapi>=0.5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+]
+ml = [
+    "scikit-learn>=1.1.0",
+    "ta-lib>=0.4.24",
+]
+jupyter = [
+    "jupyter>=1.0.0",
+    "seaborn>=0.11.0",
+]
+
+[project.scripts]
+# CLI entry points
+quant = "bin.run:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["quant"]
+
+[tool.uv]
+# UV specific configuration
+dev-dependencies = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "playwright>=1.40.0",
+    "pytest-playwright>=0.4.0",
+]
+
+[tool.uv.sources]
+# Dolphin SDK 路径配置（与 alfred 项目共享）
+dolphin = { path = "/Users/xupeng/dev/github/dolphin", editable = true }
+
+[tool.black]
+line-length = 100
+target-version = ['py310']
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --tb=short"

@@ -17,6 +17,9 @@ from typing import Dict, Any, Optional, List, Generator, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from web.dolphin_compat import apply_dolphin_web_compat
+from web.dolphin_runtime import get_dolphin_runtime
+
 # Configure logging
 _logger = logging.getLogger("agent_manager")
 _logger.setLevel(logging.INFO)
@@ -28,7 +31,6 @@ if not _logger.handlers:
 
 # Project root
 PROJECT_ROOT = Path(__file__).parent.parent
-DOLPHIN_CONFIG_PATH = PROJECT_ROOT / "config" / "dolphin.yaml"
 AGENT_DPH_PATH = PROJECT_ROOT / "data" / "agents" / "stock_analyst" / "agent.dph"
 
 
@@ -44,66 +46,14 @@ class AgentExecutionError(Exception):
     pass
 
 
-# ==================== Dolphin SDK Initialization ====================
-
-_agent_runtime = None
-_agent_runtime_lock = threading.Lock()
-
-
 def _init_dolphin_runtime():
-    """Initialize Dolphin Agent Runtime (lazy loading)"""
-    global _agent_runtime
-    
-    if _agent_runtime is not None:
-        return _agent_runtime
-    
-    with _agent_runtime_lock:
-        if _agent_runtime is not None:
-            return _agent_runtime
-        
-        try:
-            from dolphin.core.config.global_config import GlobalConfig
-            from dolphin.sdk.skill.global_skills import GlobalSkills
-            from dolphin.core import flags
-            
-            # Disable EXPLORE_BLOCK_V2 for continue_chat support
-            flags.set_flag(flags.EXPLORE_BLOCK_V2, False)
-            _logger.info("Disabled EXPLORE_BLOCK_V2 for continue_chat support")
-            
-        except ImportError as e:
-            _logger.error(f"Failed to import Dolphin SDK: {e}")
-            raise AgentConfigurationError(f"Dolphin SDK not available: {e}") from e
-        
-        try:
-            if DOLPHIN_CONFIG_PATH.exists():
-                global_config = GlobalConfig.from_yaml(str(DOLPHIN_CONFIG_PATH))
-                _logger.info(f"Loaded Dolphin config from {DOLPHIN_CONFIG_PATH}")
-            else:
-                global_config = GlobalConfig.from_dict({})
-                _logger.warning("Dolphin config not found, using empty config")
-            
-            global_skills = GlobalSkills(global_config)
-            
-            # Register PageDataSkillkit
-            from web.skillkits.page_data_skillkit import PageDataSkillkit
-            page_data_skillkit = PageDataSkillkit()
-            page_data_skillkit.setGlobalConfig(global_config)
-            global_skills.installedSkillset.addSkillkit(page_data_skillkit)
-            if hasattr(global_skills, "_syncAllSkills"):
-                global_skills._syncAllSkills()
-            
-            _logger.info(f"Registered PageDataSkillkit")
-            
-            _agent_runtime = {
-                "global_config": global_config,
-                "global_skills": global_skills,
-            }
-            
-            return _agent_runtime
-            
-        except Exception as e:
-            _logger.error(f"Failed to initialize Dolphin runtime: {e}", exc_info=True)
-            raise AgentExecutionError(f"Dolphin runtime initialization failed: {e}") from e
+    """Initialize Dolphin Agent Runtime (lazy loading)."""
+    try:
+        return get_dolphin_runtime()
+    except RuntimeError as e:
+        if "not available" in str(e):
+            raise AgentConfigurationError(str(e)) from e
+        raise AgentExecutionError(f"Dolphin runtime initialization failed: {e}") from e
 
 
 # ==================== Session Management ====================
@@ -154,10 +104,8 @@ def _run_agent_in_thread(
     """
     async def _run():
         from dolphin.sdk.agent.dolphin_agent import DolphinAgent
-        from dolphin.core import flags
-        
-        # Ensure EXPLORE_BLOCK_V2 is disabled
-        flags.set_flag(flags.EXPLORE_BLOCK_V2, False)
+
+        apply_dolphin_web_compat()
         
         runtime = _init_dolphin_runtime()
         session = get_or_create_session(session_id)
