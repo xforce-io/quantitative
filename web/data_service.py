@@ -755,6 +755,19 @@ def scan_value_stocks(symbols: tuple) -> List[Dict[str, Any]]:
 # ==================== 宏观流动性分析服务 ====================
 
 @st.cache_data(ttl=3600, show_spinner=False)  # 1小时缓存
+def _get_macro_liquidity_cached(lookback_days: int = 365) -> Dict[str, Any]:
+    """缓存版宏观流动性分析（仅缓存全部成功的结果）"""
+    from quant.analysis.indicators.macro_liquidity_analyzer import MacroLiquidityAnalyzer
+    analyzer = MacroLiquidityAnalyzer()
+    result = analyzer.analyze(lookback_days)
+    # 有维度失败时抛异常，避免 st.cache_data 缓存错误结果
+    dims = result.get('dimensions', {})
+    failed = [k for k, v in dims.items() if isinstance(v, dict) and 'error' in v]
+    if failed:
+        raise RuntimeError(f"部分维度失败: {failed}", result)
+    return result
+
+
 def get_macro_liquidity(lookback_days: int = 365) -> Dict[str, Any]:
     """
     获取宏观流动性分析
@@ -766,9 +779,12 @@ def get_macro_liquidity(lookback_days: int = 365) -> Dict[str, Any]:
         宏观流动性分析结果
     """
     try:
-        from quant.analysis.indicators.macro_liquidity_analyzer import MacroLiquidityAnalyzer
-        analyzer = MacroLiquidityAnalyzer()
-        return analyzer.analyze(lookback_days)
+        return _get_macro_liquidity_cached(lookback_days)
+    except RuntimeError as e:
+        # 部分维度失败，返回带部分错误的结果（不缓存）
+        if e.args and len(e.args) > 1 and isinstance(e.args[1], dict):
+            return e.args[1]
+        return {'error': str(e)}
     except Exception as e:
         logger.error(f"宏观流动性分析失败: {e}")
         return {'error': str(e)}
