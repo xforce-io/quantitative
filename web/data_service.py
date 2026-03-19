@@ -990,3 +990,79 @@ def rank_etfs(etf_pool: str = "default", top_n: int = 50) -> pd.DataFrame:
     df['signal'] = df['ts_code'].map(result.signals).fillna('无明显信号')
 
     return df
+
+
+# ==================== LLM 宏观流动性总结 ====================
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_macro_liquidity_summary(
+    status_cn: str,
+    risk_score: float,
+    signals_text: str,
+    dimension_scores_text: str,
+) -> str:
+    """调用 LLM 生成宏观流动性一句话总结（带建议和预测）"""
+    import httpx
+    import yaml
+    import os
+    import re
+
+    # Load config
+    config_path = Path(__file__).parent.parent / "config" / "dolphin.yaml"
+    if not config_path.exists():
+        return ""
+
+    with open(config_path, "r", encoding="utf-8") as f:
+        config = yaml.safe_load(f)
+
+    default_model_key = config.get("default", "qwen-plus")
+    llms = config.get("llms", {})
+    clouds = config.get("clouds", {})
+    model_config = llms.get(default_model_key, {})
+    cloud_name = model_config.get("cloud", "aliyun")
+    cloud_config = clouds.get(cloud_name, {})
+
+    def expand_env(val):
+        if not isinstance(val, str):
+            return val
+        return re.sub(r'\$\{(\w+)\}', lambda m: os.getenv(m.group(1), ""), val)
+
+    api_base = expand_env(cloud_config.get("api", ""))
+    api_key = expand_env(cloud_config.get("api_key", ""))
+    model_name = model_config.get("model_name", default_model_key)
+
+    if not api_key:
+        return ""
+
+    prompt = (
+        f"你是专业的宏观投资顾问。基于以下宏观流动性监控数据，给出一段简洁的市场总结（2-3句话），必须包含：\n"
+        f"1. 当前市场状态的核心判断\n"
+        f"2. 具体的仓位建议（如\"建议降低权益仓位至6成\"）\n"
+        f"3. 未来1-2周的预测和需要关注的风险点\n\n"
+        f"当前状态: {status_cn}（风险评分 {risk_score}/100）\n"
+        f"维度评分: {dimension_scores_text}\n"
+        f"触发信号: {signals_text}\n\n"
+        f"直接给出总结，不要分点，不要标题，不要客套。语气果断专业。"
+    )
+
+    try:
+        with httpx.Client(timeout=30) as client:
+            resp = client.post(
+                f"{api_base}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model_name,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 300,
+                    "temperature": 0.7,
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return data["choices"][0]["message"]["content"].strip()
+    except Exception as e:
+        logger.warning(f"LLM summary generation failed: {e}")
+        return ""

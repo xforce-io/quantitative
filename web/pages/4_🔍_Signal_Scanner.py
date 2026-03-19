@@ -864,6 +864,35 @@ def _render_macro_liquidity_mode(main_col, registry):
             unsafe_allow_html=True,
         )
 
+        # LLM 总结
+        from web.data_service import get_macro_liquidity_summary
+
+        _signals_for_llm = result.get('signals', [])
+        _dim_scores_for_llm = result.get('dimension_scores', {})
+
+        signals_text = "; ".join(_signals_for_llm) if _signals_for_llm else "无触发信号"
+        dim_scores_text = ", ".join(
+            f"{k}: {v:.0f}" for k, v in _dim_scores_for_llm.items()
+        )
+
+        summary = get_macro_liquidity_summary(
+            status_cn=status_cn,
+            risk_score=risk_score,
+            signals_text=signals_text,
+            dimension_scores_text=dim_scores_text,
+        )
+
+        if summary:
+            st.markdown(
+                f'<div style="padding:12px 16px;border-radius:8px;'
+                f'background:linear-gradient(135deg,#1a1a2e,#16213e);'
+                f'border-left:4px solid {color};margin:12px 0;">'
+                f'<span style="color:#8892b0;font-size:0.85rem;">🤖 AI 研判</span><br/>'
+                f'<span style="color:#e6e6e6;font-size:0.95rem;">{summary}</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
         # 触发信号
         signals = result.get('signals', [])
         if signals:
