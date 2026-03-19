@@ -803,7 +803,7 @@ def _render_macro_liquidity_mode(main_col, registry):
 
     with main_col:
         st.title("🔍 信号扫描器")
-        st.caption("宏观流动性模式 — 监控净流动性、SOFR、MOVE指数、日元套利交易")
+        st.caption("宏观流动性模式 — 监控净流动性、SOFR、MOVE指数、日元套利交易、黄金异动")
 
         with st.status("🔄 正在获取宏观流动性数据...", expanded=True) as status:
             result = get_macro_liquidity(lookback_days=lookback)
@@ -866,7 +866,7 @@ def _render_macro_liquidity_mode(main_col, registry):
         move = dimensions.get('move', {})
         yen = dimensions.get('yen_carry', {})
 
-        sc1, sc2, sc3, sc4 = st.columns(4)
+        sc1, sc2, sc3, sc4, sc5 = st.columns(5)
         sc1.metric("净流动性",
                    f"${nl.get('current', 0):.2f}T" if 'current' in nl else "N/A",
                    delta=f"{nl.get('weekly_change_pct', 0):+.1f}% 周变化" if 'weekly_change_pct' in nl else None,
@@ -876,6 +876,11 @@ def _render_macro_liquidity_mode(main_col, registry):
         sc4.metric("USD/JPY",
                    f"{yen.get('current_usdjpy', 0):.1f}" if 'current_usdjpy' in yen else "N/A",
                    delta=f"{yen.get('jpy_weekly_change', 0):+.1f}% 周变化" if 'jpy_weekly_change' in yen else None)
+        gold = dimensions.get('gold', {})
+        sc5.metric("黄金",
+                   f"${gold.get('current_price', 0):.0f}" if 'current_price' in gold else "N/A",
+                   delta=f"{gold.get('weekly_change_pct', 0):+.1f}% 周变化" if 'weekly_change_pct' in gold else None,
+                   delta_color="normal")
 
         st.divider()
 
@@ -883,7 +888,7 @@ def _render_macro_liquidity_mode(main_col, registry):
         row1_col1, row1_col2 = st.columns(2)
 
         with row1_col1:
-            st.markdown(f"#### 净流动性 (40%) — 风险 {dim_scores.get('net_liquidity', 0):.0f}")
+            st.markdown(f"#### 净流动性 (35%) — 风险 {dim_scores.get('net_liquidity', 0):.0f}")
             nl_series = nl.get('series')
             if isinstance(nl_series, pd.DataFrame) and not nl_series.empty and 'net_liquidity' in nl_series.columns:
                 max_val = nl_series['net_liquidity'].max()
@@ -902,7 +907,7 @@ def _render_macro_liquidity_mode(main_col, registry):
                 st.info(f"净流动性数据不可用{': ' + nl['error'] if 'error' in nl else ''}")
 
         with row1_col2:
-            st.markdown(f"#### SOFR (25%) — 风险 {dim_scores.get('sofr', 0):.0f}")
+            st.markdown(f"#### SOFR (20%) — 风险 {dim_scores.get('sofr', 0):.0f}")
             sofr_series = sofr.get('series')
             if isinstance(sofr_series, pd.DataFrame) and not sofr_series.empty:
                 _render_trend_chart(
@@ -917,7 +922,7 @@ def _render_macro_liquidity_mode(main_col, registry):
         row2_col1, row2_col2 = st.columns(2)
 
         with row2_col1:
-            st.markdown(f"#### MOVE指数 (20%) — 风险 {dim_scores.get('move', 0):.0f}")
+            st.markdown(f"#### MOVE指数 (15%) — 风险 {dim_scores.get('move', 0):.0f}")
             move_series = move.get('series')
             if isinstance(move_series, pd.DataFrame) and not move_series.empty:
                 _render_trend_chart(
@@ -946,6 +951,68 @@ def _render_macro_liquidity_mode(main_col, registry):
             else:
                 st.info(f"日元套利数据不可用{': ' + yen['error'] if 'error' in yen else ''}")
 
+        # Row 3: Gold
+        row3_col1, row3_col2 = st.columns(2)
+
+        with row3_col1:
+            st.markdown(f"#### 黄金异动 (15%) — 风险 {dim_scores.get('gold', 0):.0f}")
+            gold_series = gold.get('series')
+            if isinstance(gold_series, pd.DataFrame) and not gold_series.empty and 'gold_price' in gold_series.columns:
+                # Gold price with MA20
+                fig_gold = go.Figure()
+                gp = gold_series['gold_price'].dropna()
+                fig_gold.add_trace(go.Scatter(
+                    x=gp.index, y=gp.values,
+                    mode='lines', name='黄金期货',
+                    line=dict(color='#f1c40f', width=2),
+                ))
+                if 'gold_ma20' in gold_series.columns:
+                    gma = gold_series['gold_ma20'].dropna()
+                    fig_gold.add_trace(go.Scatter(
+                        x=gma.index, y=gma.values,
+                        mode='lines', name='MA20',
+                        line=dict(color='#e74c3c', width=1.5, dash='dash'),
+                    ))
+                fig_gold.update_layout(
+                    title='黄金期货价格 + MA20', height=300,
+                    margin=dict(l=10, r=10, t=40, b=10),
+                    yaxis_title='USD', showlegend=True, hovermode='x unified',
+                    legend=dict(x=0, y=1.15, orientation='h'),
+                )
+                st.plotly_chart(fig_gold, use_container_width=True, key="macro_gold_price")
+
+                # Early warning / confirmation details
+                ew = gold.get('early_warning', {})
+                cf = gold.get('confirmation', {})
+                e1, e2 = st.columns(2)
+                e1.metric("前兆分", f"{ew.get('score', 0)}/40")
+                e2.metric("确认分", f"{cf.get('score', 0)}/60")
+            else:
+                st.info(f"黄金数据不可用{': ' + gold['error'] if 'error' in gold else ''}")
+
+        with row3_col2:
+            st.markdown("#### 金价-美元对比")
+            gold_series = gold.get('series')
+            if isinstance(gold_series, pd.DataFrame) and not gold_series.empty:
+                has_gold = 'gold_price' in gold_series.columns
+                has_usd = 'usd_index' in gold_series.columns
+                if has_gold and has_usd:
+                    _render_dual_axis_chart(
+                        gold_series, col1='gold_price', col2='usd_index',
+                        label1='黄金期货(USD)', label2='美元指数',
+                        title='黄金 vs 美元指数',
+                        color1='#f1c40f', color2='#3498db', key='gold_usd',
+                    )
+                elif has_gold:
+                    _render_trend_chart(
+                        gold_series, 'gold_price', '黄金期货价格',
+                        y_title='USD', color='#f1c40f', key='gold_only',
+                    )
+                else:
+                    st.info("黄金/美元数据不可用")
+            else:
+                st.info("黄金图表数据不可用")
+
         # AI Context 注入
         registry.register_data(
             "scanner", "liquidity_status", result,
@@ -959,6 +1026,7 @@ def _render_macro_liquidity_mode(main_col, registry):
                 "sofr": {k: v for k, v in data.get('dimensions', {}).get('sofr', {}).items() if k != 'series'},
                 "move": {k: v for k, v in data.get('dimensions', {}).get('move', {}).items() if k != 'series'},
                 "yen_carry": {k: v for k, v in data.get('dimensions', {}).get('yen_carry', {}).items() if k != 'series'},
+                "gold": {k: v for k, v in data.get('dimensions', {}).get('gold', {}).items() if k != 'series'},
             }
         )
 
