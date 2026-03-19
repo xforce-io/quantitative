@@ -38,6 +38,30 @@ from web.components_ai_panel import render_ai_right_panel, init_ai_panel_for_pag
 from web.page_registry import get_page_registry
 
 
+def _render_dimension_cache_status(dim_data: dict, dim_name: str, dim_label: str):
+    """Show cache status indicator and retry button for a dimension."""
+    if not isinstance(dim_data, dict):
+        return False
+
+    if dim_data.get('from_cache'):
+        st.caption(f"📦 使用缓存数据")
+        return False
+
+    if 'error' in dim_data:
+        col_err, col_btn = st.columns([3, 1])
+        with col_err:
+            st.info(f"{dim_label}数据不可用{': ' + dim_data['error'] if 'error' in dim_data else ''}")
+        with col_btn:
+            if st.button("🔄 重试", key=f"retry_{dim_name}"):
+                from quant.data.cache_manager import get_cache_manager
+                cache = get_cache_manager()
+                cache.invalidate('macro_liquidity', 'dimension', dim_name)
+                st.rerun()
+        return True  # indicates error was rendered
+
+    return False
+
+
 def _render_box_chart(symbol: str, name: str, box_high: float, box_low: float,
                        days: int = 120, key_prefix: str = ""):
     """渲染K线图 + 箱体区域叠加"""
@@ -889,8 +913,10 @@ def _render_macro_liquidity_mode(main_col, registry):
 
         with row1_col1:
             st.markdown(f"#### 净流动性 (35%) — 风险 {dim_scores.get('net_liquidity', 0):.0f}")
-            nl_series = nl.get('series')
-            if isinstance(nl_series, pd.DataFrame) and not nl_series.empty and 'net_liquidity' in nl_series.columns:
+            if _render_dimension_cache_status(nl, 'net_liquidity', '净流动性'):
+                pass  # error was rendered by helper
+            elif isinstance(nl.get('series'), pd.DataFrame) and not nl['series'].empty and 'net_liquidity' in nl['series'].columns:
+                nl_series = nl['series']
                 max_val = nl_series['net_liquidity'].max()
                 _render_trend_chart(
                     nl_series, 'net_liquidity', '联储净流动性 (百万美元)',
@@ -904,42 +930,45 @@ def _render_macro_liquidity_mode(main_col, registry):
                     c2.metric("TGA", f"${components.get('tga', 0):.2f}T")
                     c3.metric("逆回购", f"${components.get('rrp', 0):.2f}T")
             else:
-                st.info(f"净流动性数据不可用{': ' + nl['error'] if 'error' in nl else ''}")
+                st.info("净流动性数据不可用")
 
         with row1_col2:
             st.markdown(f"#### SOFR (20%) — 风险 {dim_scores.get('sofr', 0):.0f}")
-            sofr_series = sofr.get('series')
-            if isinstance(sofr_series, pd.DataFrame) and not sofr_series.empty:
+            if _render_dimension_cache_status(sofr, 'sofr', 'SOFR'):
+                pass  # error was rendered by helper
+            elif isinstance(sofr.get('series'), pd.DataFrame) and not sofr['series'].empty:
                 _render_trend_chart(
-                    sofr_series, 'sofr', 'SOFR 利率',
+                    sofr['series'], 'sofr', 'SOFR 利率',
                     threshold=thresholds.get('sofr_high', 5.5),
                     threshold_label=f"预警线 {thresholds.get('sofr_high', 5.5)}%",
                     y_title='%', color='#e67e22', key='sofr',
                 )
             else:
-                st.info(f"SOFR 数据不可用{': ' + sofr['error'] if 'error' in sofr else ''}")
+                st.info("SOFR 数据不可用")
 
         row2_col1, row2_col2 = st.columns(2)
 
         with row2_col1:
             st.markdown(f"#### MOVE指数 (15%) — 风险 {dim_scores.get('move', 0):.0f}")
-            move_series = move.get('series')
-            if isinstance(move_series, pd.DataFrame) and not move_series.empty:
+            if _render_dimension_cache_status(move, 'move', 'MOVE指数'):
+                pass  # error was rendered by helper
+            elif isinstance(move.get('series'), pd.DataFrame) and not move['series'].empty:
                 _render_trend_chart(
-                    move_series, 'move', 'MOVE 债市波动率指数',
+                    move['series'], 'move', 'MOVE 债市波动率指数',
                     threshold=thresholds.get('move_high', 130),
                     threshold_label=f"预警线 {thresholds.get('move_high', 130)}",
                     y_title='Index', color='#9b59b6', key='move',
                 )
             else:
-                st.info(f"MOVE 数据不可用{': ' + move['error'] if 'error' in move else ''}")
+                st.info("MOVE 数据不可用")
 
         with row2_col2:
             st.markdown(f"#### 日元套利 (15%) — 风险 {dim_scores.get('yen_carry', 0):.0f}")
-            yen_series = yen.get('series')
-            if isinstance(yen_series, pd.DataFrame) and not yen_series.empty:
+            if _render_dimension_cache_status(yen, 'yen_carry', '日元套利'):
+                pass  # error was rendered by helper
+            elif isinstance(yen.get('series'), pd.DataFrame) and not yen['series'].empty:
                 _render_dual_axis_chart(
-                    yen_series, col1='usdjpy', col2='yield_spread',
+                    yen['series'], col1='usdjpy', col2='yield_spread',
                     label1='USD/JPY', label2='美日利差(%)',
                     title='USD/JPY 汇率 + 美日利差',
                     color1='#2ecc71', color2='#e74c3c', key='yen_carry',
@@ -949,15 +978,17 @@ def _render_macro_liquidity_mode(main_col, registry):
                     y1.metric("美日利差", f"{yen['yield_spread']:.2f}%")
                     y2.metric("美国2Y", f"{yen.get('us_2y', 0):.2f}%")
             else:
-                st.info(f"日元套利数据不可用{': ' + yen['error'] if 'error' in yen else ''}")
+                st.info("日元套利数据不可用")
 
         # Row 3: Gold
         row3_col1, row3_col2 = st.columns(2)
 
         with row3_col1:
             st.markdown(f"#### 黄金异动 (15%) — 风险 {dim_scores.get('gold', 0):.0f}")
-            gold_series = gold.get('series')
-            if isinstance(gold_series, pd.DataFrame) and not gold_series.empty and 'gold_price' in gold_series.columns:
+            if _render_dimension_cache_status(gold, 'gold', '黄金'):
+                pass  # error was rendered by helper
+            elif isinstance(gold.get('series'), pd.DataFrame) and not gold['series'].empty and 'gold_price' in gold['series'].columns:
+                gold_series = gold['series']
                 # Gold price with MA20
                 fig_gold = go.Figure()
                 gp = gold_series['gold_price'].dropna()
@@ -988,7 +1019,7 @@ def _render_macro_liquidity_mode(main_col, registry):
                 e1.metric("前兆分", f"{ew.get('score', 0)}/40")
                 e2.metric("确认分", f"{cf.get('score', 0)}/60")
             else:
-                st.info(f"黄金数据不可用{': ' + gold['error'] if 'error' in gold else ''}")
+                st.info("黄金数据不可用")
 
         with row3_col2:
             st.markdown("#### 金价-美元对比")
