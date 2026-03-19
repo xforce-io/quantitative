@@ -754,12 +754,12 @@ def scan_value_stocks(symbols: tuple) -> List[Dict[str, Any]]:
 
 # ==================== 宏观流动性分析服务 ====================
 
-def get_macro_liquidity(lookback_days: int = 365) -> Dict[str, Any]:
+def get_macro_liquidity(lookback_days: int = 365, force_refresh: bool = False) -> Dict[str, Any]:
     """
-    获取宏观流动性分析（逐维度文件缓存）
+    获取宏观流动性分析（cache-first 逐维度文件缓存）
 
-    每个维度独立缓存。成功获取的数据写入文件缓存，
-    失败的维度使用上次成功的缓存兜底。
+    策略：先查缓存，未过期直接用；过期或不存在才发起网络请求。
+    每个维度独立缓存，失败的维度用上次成功的缓存兜底。
     """
     from quant.analysis.indicators.macro_liquidity_analyzer import (
         MacroLiquidityAnalyzer, DIMENSION_WEIGHTS, STATUS_MAP
@@ -771,60 +771,87 @@ def get_macro_liquidity(lookback_days: int = 365) -> Dict[str, Any]:
     CACHE_API_TYPE = 'dimension'
     CACHE_EXPIRY_HOURS = 12
 
-    try:
-        analyzer = MacroLiquidityAnalyzer()
-        result = analyzer.analyze(lookback_days)
-    except Exception as e:
-        logger.error(f"宏观流动性分析失败: {e}")
-        return {'error': str(e)}
+    dimension_names = list(DIMENSION_WEIGHTS.keys())
 
-    dimensions = result.get('dimensions', {})
-    signals = []
-    any_live_data = False
+    # Phase 1: Check cache for all dimensions
+    dimensions = {}
+    dims_to_fetch = []
 
-    for dim_name, dim_data in dimensions.items():
-        is_error = isinstance(dim_data, dict) and 'error' in dim_data
-
-        if not is_error:
-            # Success — cache it (strip series before caching, re-add after)
-            cache_data = {k: v for k, v in dim_data.items() if k != 'series'}
-            cache.set(CACHE_PROVIDER, CACHE_API_TYPE, dim_name,
-                      cache_data, lookback_days=lookback_days)
-            any_live_data = True
-            signals.extend(dim_data.get('signals', []))
-        else:
-            # Failed — try cache fallback
+    if not force_refresh:
+        for dim_name in dimension_names:
             cached = cache.get(CACHE_PROVIDER, CACHE_API_TYPE, dim_name,
                                expiry_hours=CACHE_EXPIRY_HOURS,
                                lookback_days=lookback_days)
             if cached:
                 cached['from_cache'] = True
                 dimensions[dim_name] = cached
-                signals.extend(cached.get('signals', []))
-                logger.info(f"维度 {dim_name} 使用缓存兜底")
             else:
-                signals.extend(dim_data.get('signals', []))
+                dims_to_fetch.append(dim_name)
+    else:
+        dims_to_fetch = dimension_names
 
-    # Recalculate weighted risk score with potentially updated dimensions
+    # Phase 2: If all cached, return immediately (fast path)
+    if not dims_to_fetch:
+        return _assemble_macro_result(dimensions, DIMENSION_WEIGHTS, STATUS_MAP,
+                                      MacroLiquidityAnalyzer)
+
+    # Phase 3: Fetch missing/expired dimensions via analyzer
+    try:
+        analyzer = MacroLiquidityAnalyzer()
+        result = analyzer.analyze(lookback_days)
+    except Exception as e:
+        logger.error(f"宏观流动性分析失败: {e}")
+        if dimensions:
+            # Some cached dims available, return partial result
+            return _assemble_macro_result(dimensions, DIMENSION_WEIGHTS, STATUS_MAP,
+                                          MacroLiquidityAnalyzer)
+        return {'error': str(e)}
+
+    fetched_dims = result.get('dimensions', {})
+
+    # Phase 4: Merge fetched results, cache successes, fallback on failures
+    for dim_name in dimension_names:
+        fetched = fetched_dims.get(dim_name)
+        is_error = (fetched is None or
+                    (isinstance(fetched, dict) and 'error' in fetched))
+
+        if not is_error:
+            # Fresh data — cache it
+            cache_data = {k: v for k, v in fetched.items() if k != 'series'}
+            cache.set(CACHE_PROVIDER, CACHE_API_TYPE, dim_name,
+                      cache_data, lookback_days=lookback_days)
+            dimensions[dim_name] = fetched
+        elif dim_name not in dimensions:
+            # Failed and no cache — use error result
+            dimensions[dim_name] = fetched or {'error': '数据不可用', 'risk_score': 50}
+
+    return _assemble_macro_result(dimensions, DIMENSION_WEIGHTS, STATUS_MAP,
+                                  MacroLiquidityAnalyzer)
+
+
+def _assemble_macro_result(dimensions, weights, status_map, analyzer_cls):
+    """从维度数据组装最终结果（重算加权分、状态、信号）"""
+    signals = []
     dimension_scores = {}
+
     for dim_name, dim_data in dimensions.items():
         if isinstance(dim_data, dict):
             dimension_scores[dim_name] = dim_data.get('risk_score', 50)
+            signals.extend(dim_data.get('signals', []))
 
     total_risk_score = sum(
         dimension_scores.get(dim, 50) * weight
-        for dim, weight in DIMENSION_WEIGHTS.items()
+        for dim, weight in weights.items()
     )
     total_risk_score = round(total_risk_score, 1)
 
     status_en, status_cn, status_icon = 'Normal', '正常', '🟡'
-    for threshold, en, cn, icon in STATUS_MAP:
+    for threshold, en, cn, icon in status_map:
         if total_risk_score >= threshold:
             status_en, status_cn, status_icon = en, cn, icon
             break
 
-    # Merge series from dimensions
-    series = MacroLiquidityAnalyzer._merge_series(dimensions)
+    series = analyzer_cls._merge_series(dimensions)
 
     return {
         'status': status_en,
