@@ -448,6 +448,132 @@ class MacroLiquidityAnalyzer:
             'series': series,
         }
 
+    # ==================== 黄金异动早期预警层 ====================
+
+    @staticmethod
+    def _calc_rsi(close: pd.Series, period: int = 14) -> pd.Series:
+        """Calculate RSI using Wilder smoothing."""
+        delta = close.diff()
+        gain = delta.where(delta > 0, 0.0)
+        loss = (-delta.where(delta < 0, 0.0))
+        avg_gain = gain.ewm(alpha=1 / period, adjust=False).mean()
+        avg_loss = loss.ewm(alpha=1 / period, adjust=False).mean()
+        rs = avg_gain / avg_loss
+        return 100 - (100 / (1 + rs))
+
+    def _calc_early_warning(self, gold_close: pd.Series) -> dict:
+        """
+        Calculate early warning layer (max 40 points).
+
+        Signals:
+        - Consecutive down days >= 3: +15
+        - First MA20 crossover (close drops below MA20): +15
+        - RSI(14) < 40: +10
+        """
+        score = 0
+        result = {
+            'consecutive_down': False,
+            'below_ma20': False,
+            'rsi_weak': False,
+            'triple_resonance': False,
+            'consecutive_down_days': 0,
+            'rsi': None,
+            'score': 0,
+        }
+
+        if len(gold_close) < 22:
+            return result
+
+        # 1. Consecutive down days
+        daily_ret = gold_close.pct_change()
+        streak = 0
+        for ret in reversed(daily_ret.dropna().values):
+            if ret < 0:
+                streak += 1
+            else:
+                break
+        result['consecutive_down_days'] = streak
+        if streak >= THRESHOLDS['gold_consecutive_down_days']:
+            result['consecutive_down'] = True
+            score += 15
+
+        # 2. MA20 crossover (first-cross only)
+        ma20 = gold_close.rolling(20).mean()
+        if len(gold_close) >= 22 and not pd.isna(ma20.iloc[-1]) and not pd.isna(ma20.iloc[-2]):
+            today_below = gold_close.iloc[-1] < ma20.iloc[-1]
+            yesterday_above = gold_close.iloc[-2] >= ma20.iloc[-2]
+            if today_below and yesterday_above:
+                result['below_ma20'] = True
+                score += 15
+
+        # 3. RSI
+        rsi = self._calc_rsi(gold_close)
+        current_rsi = rsi.iloc[-1] if not pd.isna(rsi.iloc[-1]) else None
+        result['rsi'] = round(current_rsi, 1) if current_rsi is not None else None
+        if current_rsi is not None and current_rsi < THRESHOLDS['gold_rsi_weak']:
+            result['rsi_weak'] = True
+            score += 10
+
+        # Triple resonance
+        if result['consecutive_down'] and result['below_ma20'] and result['rsi_weak']:
+            result['triple_resonance'] = True
+
+        result['score'] = min(score, 40)
+        return result
+
+    def _calc_confirmation(
+        self,
+        gold_weekly_change_pct: float,
+        usd_weekly_change_pct: 'float | None',
+        real_yield_weekly_change_bp: 'float | None',
+    ) -> dict:
+        """
+        Calculate confirmation layer (max 60 points).
+
+        Signals:
+        - Weekly gold drop: >5% → 40, >3% → 25, >1% → 10
+        - Gold-USD divergence: gold down >2% + USD <+0.5% → +10
+        - Real yield spike: >30bp → +10, >15bp → +5
+        """
+        score = 0
+        result = {
+            'weekly_drop': False,
+            'gold_usd_divergence': False,
+            'real_rate_spike': False,
+            'score': 0,
+        }
+
+        # 1. Weekly gold drop
+        if gold_weekly_change_pct < -THRESHOLDS['gold_weekly_drop_severe_pct']:
+            result['weekly_drop'] = True
+            score += 40
+        elif gold_weekly_change_pct <= -THRESHOLDS['gold_weekly_drop_pct']:
+            result['weekly_drop'] = True
+            score += 25
+        elif gold_weekly_change_pct < -1.0:
+            score += 10
+
+        # 2. Gold-USD divergence
+        if (
+            usd_weekly_change_pct is not None
+            and gold_weekly_change_pct < -THRESHOLDS['gold_usd_divergence_gold_drop']
+            and usd_weekly_change_pct < THRESHOLDS['gold_usd_divergence_usd_max']
+        ):
+            result['gold_usd_divergence'] = True
+            score += 10
+
+        # 3. Real yield spike
+        if real_yield_weekly_change_bp is not None:
+            if real_yield_weekly_change_bp > THRESHOLDS['real_yield_spike_bp']:
+                result['real_rate_spike'] = True
+                score += 10
+            elif real_yield_weekly_change_bp > THRESHOLDS['real_yield_spike_moderate_bp']:
+                result['real_rate_spike'] = True
+                score += 5
+
+        result['score'] = min(score, 60)
+        return result
+
     # ==================== 辅助方法 ====================
 
     @staticmethod
