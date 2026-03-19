@@ -18,13 +18,15 @@
 
 ```python
 DIMENSION_WEIGHTS = {
-    'net_liquidity': 0.35,  # was 0.40
-    'sofr': 0.20,           # was 0.25
-    'move': 0.15,           # was 0.20
+    'net_liquidity': 0.35,  # was 0.40, -5%
+    'sofr': 0.20,           # was 0.25, -5%
+    'move': 0.15,           # was 0.20, -5%
     'yen_carry': 0.15,      # unchanged
     'gold': 0.15,           # new
 }
 ```
+
+**权重分配理由**: 净流动性、SOFR、MOVE 各让出5%。净流动性仍保持最高权重(35%)作为核心指标。日元套利不调整因其和黄金同属"市场压力间接信号"，不宜同时削弱。黄金与现有维度存在弱相关（如实际利率上升同时影响SOFR和黄金），但两者触发条件不同（SOFR看绝对水平，黄金看价格动量），不构成显著双重计分。
 
 ## Signal Design
 
@@ -35,7 +37,7 @@ DIMENSION_WEIGHTS = {
 | 信号 | 数据源 | 条件 | 分数 |
 |------|--------|------|------|
 | 连跌天数 | Yahoo: `GC=F` | ≥ 3个交易日连续收阴 | +15 |
-| 跌破MA20 | Yahoo: `GC=F` | 收盘价 < 20日均线（且前日在上方或已连续3日在下方） | +15 |
+| 跌破MA20 | Yahoo: `GC=F` | 收盘价从上方跌破20日均线（仅首次下穿当天触发） | +15 |
 | RSI跌入弱势 | Yahoo: `GC=F` | RSI(14) < 40 | +10 |
 
 - 三重共振（全部触发）时额外标记为 🔴 强预警
@@ -77,6 +79,23 @@ DIMENSION_WEIGHTS = {
 
 黄金和美元来自 Yahoo Finance（无需额外 API key），实际利率复用现有 FRED 连接。
 
+## Definitions
+
+- **周变化 (weekly change)**: 最新收盘价相对5个交易日前收盘价的百分比变化（`close[-1]` vs `close[-5]`），与 `_fetch_yen_carry` 一致。
+- **RSI(14)**: Wilder 平滑法计算，与经典 TA 定义一致。使用 pandas rolling 实现：`gain.ewm(alpha=1/14, adjust=False)` / `loss.ewm(alpha=1/14, adjust=False)`。不引入新依赖。
+- **MA20 下穿**: 当日 `close < MA20` 且前一日 `close >= MA20`。若已在 MA20 下方（非首次下穿），不重复触发此信号，但连跌天数和 RSI 信号仍可独立触发。
+
+## Failure Modes
+
+该维度依赖三个数据源，需处理部分失败：
+
+| 失败场景 | 处理方式 |
+|---------|---------|
+| `GC=F` 不可用 | 整个维度返回 error，`risk_score` 默认50（与其他维度一致） |
+| `DX-Y.NYB` 不可用 | 跳过金美背离信号，确认层满分降为50 |
+| `DFII10` 不可用 | 跳过实际利率信号，确认层满分降为50 |
+| 数据陈旧（最新日期 > 3天前） | 在信号中标注数据延迟警告 |
+
 ## Implementation
 
 ### Method: `_fetch_gold_anomaly(lookback_days: int) -> Dict[str, Any]`
@@ -109,7 +128,7 @@ DIMENSION_WEIGHTS = {
     },
     'risk_score': int,               # 0-100
     'signals': List[str],
-    'series': pd.DataFrame,          # columns: gold_price, usd_index
+    'series': pd.DataFrame,          # columns: gold_price, gold_ma20, usd_index
 }
 ```
 
@@ -133,12 +152,14 @@ THRESHOLDS = {
 
 `_render_macro_liquidity_mode()` 中：
 
-1. **顶部 metrics**: 4列 → 5列，新增黄金 (金价 + 周变化)
+1. **顶部 metrics**: 4列 → 5列，新增黄金:
+   - `sc5.metric("黄金", f"${gold_price:.0f}", delta=f"{weekly_change_pct:+.1f}% 周变化", delta_color="normal")`
 2. **图表布局**: 2×2 → 3行布局
    - Row 1: 净流动性 | SOFR（不变）
    - Row 2: MOVE | 日元套利（不变）
-   - Row 3: 黄金价格趋势图（带MA20线） | 金价-美元双轴对比图
+   - Row 3: 黄金价格趋势图（带MA20线 + 阈值注释） | 金价-美元双轴对比图
 3. **信号列表**: 自动包含黄金维度的前兆/确认信号
+4. **文案更新**: 页面副标题和模块 docstring 中加入"黄金"
 
 ### Files Changed
 
@@ -151,7 +172,7 @@ THRESHOLDS = {
 
 ## Backtesting Validation
 
-基于2026年3月数据的预期行为：
+基于2026年3月数据的预期行为（`lookback_days=365`）：
 
 | 日期 | 预期信号 | 风险分 |
 |------|---------|-------|
