@@ -38,14 +38,24 @@ THRESHOLDS = {
     'move_high': 130,                   # MOVE 指数超 130
     'yen_drop_weekly_pct': 3.0,        # USD/JPY 周跌幅超 3%
     'yield_spread_narrow': 1.0,         # 美日利差收窄至 1% 以下
+    # Gold anomaly thresholds
+    'gold_weekly_drop_pct': 3.0,
+    'gold_weekly_drop_severe_pct': 5.0,
+    'gold_consecutive_down_days': 3,
+    'gold_rsi_weak': 40,
+    'gold_usd_divergence_gold_drop': 2.0,
+    'gold_usd_divergence_usd_max': 0.5,
+    'real_yield_spike_bp': 30,
+    'real_yield_spike_moderate_bp': 15,
 }
 
 # 维度权重
 DIMENSION_WEIGHTS = {
-    'net_liquidity': 0.40,
-    'sofr': 0.25,
-    'move': 0.20,
+    'net_liquidity': 0.35,
+    'sofr': 0.20,
+    'move': 0.15,
     'yen_carry': 0.15,
+    'gold': 0.15,
 }
 
 # 状态映射 (基于风险分数)
