@@ -93,7 +93,9 @@ class TestEarlyWarningScoring:
     def test_triple_resonance(self):
         """All 3 early warning signals should produce triple_resonance=True and score=40."""
         analyzer = self._make_analyzer()
-        prices = [100.0] * 20 + [96.0, 92.0, 88.0, 84.0, 80.0]
+        # 10 stable days, 5 sharp falls (drives RSI < 40), 11 recovery days (price back above MA20),
+        # then 3 consecutive down days where the last day crosses below MA20 for the first time.
+        prices = [100.0] * 10 + [85, 83, 81, 79, 77] + [100.0] * 11 + [99.0, 98.0, 70.0]
         gold_close = self._make_gold_series(prices)
         result = analyzer._calc_early_warning(gold_close)
         assert result['triple_resonance'] is True
