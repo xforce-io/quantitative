@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
+from unittest.mock import patch, MagicMock
 
 
 class TestGoldAnomalyConstants:
@@ -216,3 +217,111 @@ class TestConfirmationScoring:
         assert result['gold_usd_divergence'] is False
         assert result['real_rate_spike'] is False
         assert result['score'] == 25
+
+
+class TestFetchGoldAnomaly:
+    """Test the full _fetch_gold_anomaly method with mocked data."""
+
+    def _make_analyzer(self):
+        from quant.analysis.indicators.macro_liquidity_analyzer import MacroLiquidityAnalyzer
+        return MacroLiquidityAnalyzer()
+
+    def _make_mock_gold_df(self, prices: list) -> pd.DataFrame:
+        """Create a mock yfinance DataFrame."""
+        dates = pd.bdate_range(end=datetime.now(), periods=len(prices))
+        return pd.DataFrame({
+            'Close': prices,
+            'High': [p * 1.01 for p in prices],
+            'Low': [p * 0.99 for p in prices],
+        }, index=dates)
+
+    def _make_mock_usd_df(self, prices: list) -> pd.DataFrame:
+        dates = pd.bdate_range(end=datetime.now(), periods=len(prices))
+        return pd.DataFrame({'Close': prices}, index=dates)
+
+    @patch('quant.analysis.indicators.macro_liquidity_analyzer.yf')
+    def test_fetch_returns_expected_structure(self, mock_yf):
+        """_fetch_gold_anomaly should return dict with required keys."""
+        gold_prices = [100.0] * 20 + [99, 98, 97, 96, 95]
+        usd_prices = [100.0] * 25
+
+        def download_side_effect(ticker, **kwargs):
+            if ticker == 'GC=F':
+                return self._make_mock_gold_df(gold_prices)
+            elif ticker == 'DX-Y.NYB':
+                return self._make_mock_usd_df(usd_prices)
+            return pd.DataFrame()
+
+        mock_yf.download.side_effect = download_side_effect
+
+        analyzer = self._make_analyzer()
+        analyzer._fred_api_key = 'fake'
+        with patch.object(analyzer, '_get_fred') as mock_fred:
+            mock_series = pd.Series([1.8, 1.82, 1.85, 1.83, 1.80],
+                                     index=pd.bdate_range(end=datetime.now(), periods=5))
+            mock_fred.return_value.get_series.return_value = mock_series
+            result = analyzer._fetch_gold_anomaly(90)
+
+        assert 'current_price' in result
+        assert 'weekly_change_pct' in result
+        assert 'early_warning' in result
+        assert 'confirmation' in result
+        assert 'risk_score' in result
+        assert 'signals' in result
+        assert 'series' in result
+        assert isinstance(result['signals'], list)
+        assert 0 <= result['risk_score'] <= 100
+
+    @patch('quant.analysis.indicators.macro_liquidity_analyzer.yf')
+    def test_fetch_handles_gold_data_failure(self, mock_yf):
+        """When GC=F returns empty, should return error with risk_score 50."""
+        mock_yf.download.return_value = pd.DataFrame()
+
+        analyzer = self._make_analyzer()
+        result = analyzer._fetch_gold_anomaly(90)
+
+        assert 'error' in result
+        assert result['risk_score'] == 50
+
+    @patch('quant.analysis.indicators.macro_liquidity_analyzer.yf')
+    def test_fetch_stale_data_warning(self, mock_yf):
+        """When latest gold data is > 3 days old, should add staleness warning."""
+        old_end = datetime.now() - timedelta(days=7)
+        prices = [100.0] * 25
+        dates = pd.bdate_range(end=old_end, periods=25)
+        gold_df = pd.DataFrame({
+            'Close': prices,
+            'High': [p * 1.01 for p in prices],
+            'Low': [p * 0.99 for p in prices],
+        }, index=dates)
+
+        mock_yf.download.return_value = gold_df
+
+        analyzer = self._make_analyzer()
+        result = analyzer._fetch_gold_anomaly(90)
+
+        assert any('数据延迟' in s or '延迟' in s for s in result.get('signals', []))
+
+    @patch('quant.analysis.indicators.macro_liquidity_analyzer.yf')
+    def test_fetch_usd_failure_skips_divergence(self, mock_yf):
+        """When DX-Y.NYB fails but GC=F succeeds, divergence should be skipped."""
+        gold_prices = [100.0] * 20 + [99, 98, 97, 96, 95]
+
+        def download_side_effect(ticker, **kwargs):
+            if ticker == 'GC=F':
+                dates = pd.bdate_range(end=datetime.now(), periods=len(gold_prices))
+                return pd.DataFrame({
+                    'Close': gold_prices,
+                    'High': [p * 1.01 for p in gold_prices],
+                    'Low': [p * 0.99 for p in gold_prices],
+                }, index=dates)
+            return pd.DataFrame()
+
+        mock_yf.download.side_effect = download_side_effect
+
+        analyzer = self._make_analyzer()
+        with patch.object(analyzer, '_get_fred', side_effect=Exception("no FRED")):
+            result = analyzer._fetch_gold_anomaly(90)
+
+        assert result['confirmation']['gold_usd_divergence'] is False
+        assert 'error' not in result
