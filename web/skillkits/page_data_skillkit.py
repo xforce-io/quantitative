@@ -344,11 +344,11 @@ class PageDataSkillkit(Skillkit):
     def fetch_stock_analysis(self, symbol: str, days: int = 60) -> str:
         """按需获取任意股票的完整分析数据"""
         try:
-            from web.data_service import fetch_stock_full_analysis
+            from quant.skills.stock_analysis import fetch_full_analysis
 
             logger.info(f"fetch_stock_analysis called: symbol={symbol}, days={days}")
 
-            result = fetch_stock_full_analysis(symbol, days=days)
+            result = fetch_full_analysis(symbol, days=days)
             result["source"] = "on_demand_fetch"
 
             json_str = json.dumps(result, ensure_ascii=False, default=str, sort_keys=True)
@@ -369,10 +369,10 @@ class PageDataSkillkit(Skillkit):
             return json_str
 
         except ImportError as e:
-            return json.dumps({"error": f"数据服务不可用: {str(e)}"}, ensure_ascii=False)
+            return json.dumps({"error": f"Skills layer unavailable: {str(e)}"}, ensure_ascii=False)
         except Exception as e:
             logger.exception(f"fetch_stock_analysis error: {e}")
-            return json.dumps({"error": f"获取数据失败: {str(e)}"}, ensure_ascii=False)
+            return json.dumps({"error": f"Failed to fetch data: {str(e)}"}, ensure_ascii=False)
 
     # ==================== 兼容旧接口 ====================
     

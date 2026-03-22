@@ -447,86 +447,20 @@ def resolve_stock_symbol(query: str) -> str:
 
 def fetch_stock_full_analysis(symbol: str, days: int = 60) -> Dict[str, Any]:
     """
-    一次性获取股票完整分析数据（资金流 + 技术 + 估值）
-    用于 AI 按需查询未在页面注册的股票
+    One-shot comprehensive stock analysis (money-flow + technical + valuation).
+
+    Delegates to ``quant.skills.stock_analysis.fetch_full_analysis`` which
+    contains the actual logic, free from any Streamlit dependency.
 
     Args:
-        symbol: 股票代码（支持名称，会自动解析）
-        days: 分析数据天数
+        symbol: Stock code or name (auto-resolved).
+        days: Analysis lookback days.
 
     Returns:
-        包含 money_flow, technical, valuation 三个维度的分析数据
+        Dict with money_flow, technical, valuation sub-dicts.
     """
-    # 解析股票代码
-    resolved_symbol = resolve_stock_symbol(symbol)
-
-    result = {
-        "symbol": resolved_symbol,
-        "query": symbol,
-        "resolved": resolved_symbol != symbol,
-        "fetch_time": datetime.now().isoformat(),
-    }
-
-    # 计算日期范围
-    end = datetime.now().strftime('%Y%m%d')
-    start = (datetime.now() - timedelta(days=days)).strftime('%Y%m%d')
-
-    # 1. 资金流向
-    try:
-        flow = get_stock_money_flow(resolved_symbol, start, end)
-        if flow and 'error' not in flow:
-            result['money_flow'] = {
-                'inst_net_flow_yi': round(flow.get('total_institutional_net', 0) / 1e8, 2),
-                'retail_net_flow_yi': round(flow.get('total_retail_net', 0) / 1e8, 2),
-                'inst_inflow_days': flow.get('institutional_inflow_days', 0),
-                'total_days': flow.get('total_days', 0),
-                'sentiment': flow.get('sentiment', ''),
-                'sentiment_detail': flow.get('sentiment_detail', ''),
-            }
-    except Exception as e:
-        result['money_flow'] = {'error': str(e)}
-
-    # 2. 技术指标
-    try:
-        from quant.analysis.indicators.technical_analyzer import TechnicalAnalyzer
-        tech_df = get_stock_technical_data(resolved_symbol, start, end)
-        if tech_df is not None and not tech_df.empty:
-            result['technical'] = TechnicalAnalyzer.interpret_latest_signals(tech_df)
-    except Exception as e:
-        result['technical'] = {'error': str(e)}
-
-    # 3. 估值分析
-    try:
-        val = get_stock_valuation(resolved_symbol, days=250)
-        if val and 'error' not in val:
-            latest = val.get('latest', {})
-            percentile = val.get('percentile', {})
-            status = val.get('status', {})
-
-            result['valuation'] = {
-                'pe_ttm': round(float(latest.get('pe_ttm', 0)), 2) if latest.get('pe_ttm') else None,
-                'pb': round(float(latest.get('pb', 0)), 2) if latest.get('pb') else None,
-                'ps_ttm': round(float(latest.get('ps_ttm', 0)), 2) if latest.get('ps_ttm') else None,
-                'dv_ratio': round(float(latest.get('dv_ratio', 0)), 2) if latest.get('dv_ratio') else None,
-                'total_mv_yi': round(float(latest.get('total_mv', 0)) / 10000, 2) if latest.get('total_mv') else None,
-                'pe_percentile': percentile.get('pe_ttm'),
-                'pb_percentile': percentile.get('pb'),
-                'pe_status': status.get('pe_ttm', ''),
-                'pb_status': status.get('pb', ''),
-            }
-    except Exception as e:
-        result['valuation'] = {'error': str(e)}
-
-    # 检查是否有有效数据
-    has_valid_data = any(
-        key in result and 'error' not in result[key]
-        for key in ['money_flow', 'technical', 'valuation']
-    )
-
-    if not has_valid_data:
-        result['error'] = f"无法获取 {resolved_symbol} 的有效数据，请检查代码是否正确"
-
-    return result
+    from quant.skills.stock_analysis import fetch_full_analysis
+    return fetch_full_analysis(symbol, days=days)
 
 
 def _calc_boll_position(row) -> str:

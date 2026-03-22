@@ -840,178 +840,122 @@ class ETFMomentumScreener:
                     'ts_code': ts_code,
                     'name': etf_info.get('name', ''),
                     'category': etf_info.get('category', default_category),
-                    # 🆕 子行业分类
+                    # Sub-category classification
                     'sub_category': industry_meta.get('sub_category', ''),
                     'industry': industry_meta.get('industry', ''),
                     'supply_chain_position': industry_meta.get('supply_chain_position', ''),
                     'risk_multiplier': industry_meta.get('risk_multiplier', 1.0),
-                    # 动量指标
+                    # Momentum indicators
                     '1m_return': momentum.get('1month_return', 0),
                     '3m_return': momentum.get('3month_return', 0),
                     '6m_return': momentum.get('6month_return', 0),
                     '12m_return': momentum.get('12month_return', 0),
                     'rsi': momentum.get('rsi', 50),
-                    # 🆕 相对强弱
+                    # Relative strength
                     'rs_rating': rs_analysis.get('rs_rating', 50.0),
                     'rs_status': rs_analysis.get('status', '同步'),
                     'excess_return_1m': rs_analysis.get('excess_returns', {}).get('1M', 0),
                     'excess_return_3m': rs_analysis.get('excess_returns', {}).get('3M', 0),
-                    # 🆕 PEG估值 (阶段2)
+                    # PEG valuation
                     'peg': peg_analysis.get('peg', 0) if peg_analysis.get('available') else None,
                     'peg_level': peg_analysis.get('valuation_level', '数据不足'),
                     'growth_rate_pct': peg_analysis.get('growth_rate_pct', 0),
-                    # 🆕 基本面 (阶段2)
+                    # Fundamentals
                     'fundamentals_score': fundamentals_analysis.get('fundamentals_score', 0.5),
                     'health_rating': fundamentals_analysis.get('health_rating', '未知'),
-                    # 评分
+                    # Scoring
                     'momentum_score': screening['momentum']['score'],
                     'overall_score': screening['overall']['score'],
                     'grade': screening['overall']['grade'],
                     'passes_screening': screening['overall']['passes'],
-                    # 估值信息
+                    # Valuation
                     'valuation_percentile': valuation.get('percentile', 50),
                     'valuation_level': valuation.get('valuation_level', '合理'),
                     'valuation_zone': valuation.get('valuation_zone', '合理区'),
                     'mean_reversion_signal': valuation.get('mean_reversion_signal', '持有'),
-                    # 风险指标
+                    # Risk
                     'drawdown_from_peak_pct': momentum.get('drawdown_from_peak_pct', 0),
                     'distance_to_peak_pct': momentum.get('distance_to_peak_pct', 1.0),
                     'momentum_status': momentum.get('momentum_status', '正常'),
                     'momentum_trend': momentum.get('momentum_trend', '稳定'),
                     'risk_warnings': '|'.join(screening['overall'].get('risk_warnings', [])),
-                    'failed_reasons': screening['overall'].get('failed_reasons', [])  # 🆕 未通过原因
+                    'failed_reasons': screening['overall'].get('failed_reasons', []),
                 })
 
-            # 轻量限速，避免频繁请求
+            # Light rate-limiting to avoid hammering the API
             time.sleep(0.1)
 
         if not results:
-            logger.warning("未获取到有效的ETF分析结果（自定义列表）")
+            logger.warning("No valid ETF analysis results (custom list)")
             return pd.DataFrame()
 
         results_df = pd.DataFrame(results).sort_values('overall_score', ascending=False)
-        logger.info(f"完成ETF筛选（自定义列表），共分析 {len(results_df)} 只ETF")
+        logger.info(f"ETF screening complete (custom list): {len(results_df)} ETFs analysed")
         return results_df
-    
+
     def print_screening_results(self, results_df: pd.DataFrame):
+        """Print screening results to terminal.
+
+        .. deprecated::
+            Use ``tui.etf.print_screening_results(results_df)`` directly.
+            This method is kept for backward compatibility and will be
+            removed in a future version.
         """
-        打印筛选结果
-        
-        Args:
-            results_df: 筛选结果DataFrame
-        """
-        if results_df.empty:
-            logger.info("\n❌ 未找到符合条件的ETF")
-            return
-        
-        # 筛选通过的ETF
-        passed_etfs = results_df[results_df['passes_screening'] == True]
-        
-        logger.info("\n🎯 ETF动量筛选结果")
-        print("=" * 120)
-        logger.info("总共分析: {len(results_df)} 只ETF")
-        logger.info("通过筛选: {len(passed_etfs)} 只ETF")
-        
-        if not passed_etfs.empty:
-            logger.info("\n✅ 通过筛选的ETF (按综合得分排序):")
-            print("-" * 180)
-            print(f"{'排名':<4} {'代码':<12} {'名称':<20} {'类型':<12} {'综合得分':<8} {'等级':<6} "
-                  f"{'1月%':<8} {'3月%':<8} {'6月%':<8} {'12月%':<8} {'RSI':<6} {'估值':<12} {'风险警告':<30}")
-            print("-" * 180)
-            
-            for idx, (_, row) in enumerate(passed_etfs.iterrows(), 1):
-                val_level = row.get('valuation_level', '合理')
-                warnings = row.get('risk_warnings', '')
-                print(f"{idx:<4} {row['ts_code']:<12} {row['name']:<20} {row['category']:<12} "
-                      f"{row['overall_score']:<8.3f} {row['grade']:<6} "
-                      f"{row['1m_return']:<8.1f} {row['3m_return']:<8.1f} "
-                      f"{row['6m_return']:<8.1f} {row['12m_return']:<8.1f} "
-                      f"{row['rsi']:<6.1f} {val_level:<12} {warnings:<30}")
-        
-        # 显示前10名ETF（包括未通过筛选的）
-        logger.info("\n📊 综合得分前10名ETF:")
-        print("-" * 120)
-        top_10 = results_df.head(10)
-        
-        for idx, (_, row) in enumerate(top_10.iterrows(), 1):
-            status = "✅" if row['passes_screening'] else "❌"
-            print(f"{status} {idx:<3} {row['ts_code']:<12} {row['name']:<20} "
-                  f"得分: {row['overall_score']:.3f} | "
-                  f"1月: {row['1m_return']:.1f}% | "
-                  f"3月: {row['3m_return']:.1f}% | "
-                  f"6月: {row['6m_return']:.1f}%")
-        
-        # 🆕 未通过筛选的ETF（显示前10名）
-        failed_etfs = results_df[results_df['passes_screening'] == False]
-        if not failed_etfs.empty:
-            logger.info("\n❌ 未通过筛选的ETF (按综合得分排序，显示前10名):")
-            print("-" * 150)
-            logger.info("{'排名':<4} {'代码':<12} {'名称':<20} {'类型':<12} {'综合得分':<8} {'等级':<6} {'未通过原因':<60}")
-            print("-" * 150)
-
-            # 按综合得分倒序，显示接近通过的ETF
-            failed_sorted = failed_etfs.sort_values('overall_score', ascending=False).head(10)
-
-            for idx, (_, row) in enumerate(failed_sorted.iterrows(), 1):
-                failed_reasons = row.get('failed_reasons', [])
-                if isinstance(failed_reasons, list):
-                    reasons_str = ', '.join(failed_reasons[:2]) if failed_reasons else '综合得分不足'  # 最多显示2个原因
-                else:
-                    reasons_str = str(failed_reasons) if failed_reasons else '综合得分不足'
-
-                # 限制原因字符串长度
-                if len(reasons_str) > 58:
-                    reasons_str = reasons_str[:55] + '...'
-
-                print(f"{idx:<4} {row['ts_code']:<12} {row['name']:<20} {row['category']:<12} "
-                      f"{row['overall_score']:<8.3f} {row['grade']:<6} {reasons_str:<60}")
-
-        # 统计信息
-        if not passed_etfs.empty:
-            logger.info("\n📈 通过筛选ETF的统计信息:")
-            logger.info("平均1月收益率: {passed_etfs['1m_return'].mean():.2f}%")
-            logger.info("平均3月收益率: {passed_etfs['3m_return'].mean():.2f}%")
-            logger.info("平均6月收益率: {passed_etfs['6m_return'].mean():.2f}%")
-            logger.info("平均12月收益率: {passed_etfs['12m_return'].mean():.2f}%")
+        import warnings
+        warnings.warn(
+            "ETFMomentumScreener.print_screening_results is deprecated. "
+            "Use tui.etf.print_screening_results() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        try:
+            from tui.etf import print_screening_results
+            print_screening_results(results_df)
+        except ImportError:
+            # Fallback: minimal plain output if tui package is unavailable
+            if results_df.empty:
+                logger.info("No ETFs matched the screening criteria.")
+                return
+            passed = results_df[results_df['passes_screening'] == True]
+            logger.info(
+                "Screening complete: %d analysed, %d passed",
+                len(results_df), len(passed),
+            )
 
 
 def main():
-    """主函数 - 用于测试"""
+    """Entry point for standalone testing."""
     import logging
-    
-    # 设置日志
+
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-    
+
     try:
-        # 创建ETF筛选器
         screener = ETFMomentumScreener()
-        
-        logger.info("🎯 ETF动量筛选系统")
-        print("=" * 50)
-        
-        # 执行筛选
-        logger.info("🚀 开始筛选动量和趋势俱佳的ETF...")
-        
+
         results = screener.screen_etfs(
-            etf_types=['broad_market', 'sector'],  # 筛选宽基和行业ETF
-            max_etfs=10  # 限制分析数量以节省时间
+            etf_types=['broad_market', 'sector'],
+            max_etfs=10,
         )
-        
-        # 显示结果
-        screener.print_screening_results(results)
-        
+
+        # Use the new TUI layer for rendering
+        try:
+            from tui.etf import print_screening_results
+            print_screening_results(results)
+        except ImportError:
+            logger.warning("TUI package not available, skipping display")
+
         if not results.empty:
-            # 保存结果
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             output_file = screener.report_dir / f"etf_screening_{timestamp}.csv"
             results.to_csv(output_file, index=False, encoding='utf-8-sig')
-            logger.info("\n💾 结果已保存到: {output_file}")
-        
+            logger.info("Results saved to: %s", output_file)
+
     except Exception as e:
-        logger.error(f"ETF筛选过程出错: {e}")
+        logger.error("ETF screening failed: %s", e)
         import traceback
         traceback.print_exc()
 
 
 if __name__ == "__main__":
     main()
+
