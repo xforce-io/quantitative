@@ -112,3 +112,52 @@ class TestAggregateTotalConfidence:
             GROUP_WEIGHTS,
         )
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Tests for GlobalUsdLiquidityAnalyzer
+# ---------------------------------------------------------------------------
+
+from unittest.mock import patch, MagicMock
+from quant.analysis.indicators.global_usd_liquidity import GlobalUsdLiquidityAnalyzer
+
+
+class TestFetchIndicatorSeries:
+    def _make_fred_series(self, values, start='2023-01-01'):
+        dates = pd.date_range(start, periods=len(values), freq='B')
+        return pd.Series(values, index=dates)
+
+    @patch.object(GlobalUsdLiquidityAnalyzer, '_get_fred')
+    def test_direct_indicator(self, mock_get_fred):
+        mock_fred = MagicMock()
+        mock_fred.get_series.return_value = self._make_fred_series([4.3] * 100)
+        mock_get_fred.return_value = mock_fred
+        analyzer = GlobalUsdLiquidityAnalyzer(fred_api_key='fake')
+        result = analyzer._fetch_indicator_series('sofr', lookback_days=365)
+        assert isinstance(result, pd.Series)
+        assert len(result) > 0
+
+    @patch.object(GlobalUsdLiquidityAnalyzer, '_get_fred')
+    def test_subtract_indicator(self, mock_get_fred):
+        mock_fred = MagicMock()
+        mock_fred.get_series.side_effect = [
+            self._make_fred_series([5.0] * 100),
+            self._make_fred_series([4.3] * 100),
+        ]
+        mock_get_fred.return_value = mock_fred
+        analyzer = GlobalUsdLiquidityAnalyzer(fred_api_key='fake')
+        result = analyzer._fetch_indicator_series('cp_treasury_spread', lookback_days=365)
+        assert abs(result.iloc[-1] - 0.7) < 0.01
+
+    @patch.object(GlobalUsdLiquidityAnalyzer, '_get_fred')
+    def test_net_liquidity_indicator(self, mock_get_fred):
+        mock_fred = MagicMock()
+        mock_fred.get_series.side_effect = [
+            self._make_fred_series([8_000_000] * 50),
+            self._make_fred_series([800_000] * 50),
+            self._make_fred_series([500_000] * 100),
+        ]
+        mock_get_fred.return_value = mock_fred
+        analyzer = GlobalUsdLiquidityAnalyzer(fred_api_key='fake')
+        result = analyzer._fetch_indicator_series('net_liquidity', lookback_days=365)
+        assert isinstance(result, pd.Series)

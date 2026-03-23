@@ -16,6 +16,7 @@
 import sys
 from pathlib import Path
 from typing import Dict, Optional
+from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
@@ -235,3 +236,169 @@ def aggregate_total_confidence(
         v * weights.get(k, 0.0) / total_weight for k, v in available.items()
     )
     return round(result, 2)
+
+
+# ---------------------------------------------------------------------------
+# FRED-backed analyzer
+# ---------------------------------------------------------------------------
+
+
+class GlobalUsdLiquidityAnalyzer:
+    def __init__(self, fred_api_key=None):
+        self._fred = None
+        self._fred_api_key = fred_api_key
+
+    def _get_fred(self):
+        """Lazy-load FRED client."""
+        if self._fred is None:
+            from fredapi import Fred
+            import os
+            from dotenv import load_dotenv
+            load_dotenv()
+            api_key = self._fred_api_key or os.environ.get('FRED_API_KEY')
+            if not api_key:
+                raise ValueError("需要 FRED API Key")
+            self._fred = Fred(api_key=api_key)
+        return self._fred
+
+    def _fetch_indicator_series(self, indicator_name, lookback_days=1095):
+        """Fetch raw time series for one indicator from FRED.
+
+        Handles 3 compute types:
+        - 'direct': single series, use as-is
+        - 'subtract': two series, s1 - s2
+        - 'net_liquidity': WALCL - WTREGEN - RRPONTSYD
+
+        All results forward-filled to daily frequency.
+        """
+        config = INDICATOR_CONFIG[indicator_name]
+        fred = self._get_fred()
+        start_date = datetime.now() - timedelta(days=lookback_days)
+
+        series_list = []
+        for series_id in config['fred_series']:
+            data = fred.get_series(series_id, observation_start=start_date)
+            if data is not None:
+                data = data.dropna()
+            series_list.append(data)
+
+        compute = config['compute']
+        if compute == 'direct':
+            result = series_list[0]
+        elif compute == 'subtract':
+            s1, s2 = series_list
+            combined = pd.DataFrame({'s1': s1, 's2': s2}).ffill().dropna()
+            result = combined['s1'] - combined['s2']
+        elif compute == 'net_liquidity':
+            walcl, wtregen, rrp = series_list
+            combined = pd.DataFrame({'walcl': walcl, 'wtregen': wtregen, 'rrp': rrp}).ffill().dropna()
+            result = combined['walcl'] - combined['wtregen'] - combined['rrp']
+        else:
+            raise ValueError(f"Unknown compute type: {compute}")
+
+        # Forward-fill to daily
+        result = result.asfreq('D').ffill()
+        return result.dropna()
+
+    def analyze(self, lookback_days=1095, display_days=365):
+        """Full analysis: fetch all indicators, compute confidence, aggregate.
+
+        Returns dict with:
+        - confidence: total composite confidence (-100 to 100)
+        - wow_change: week-over-week change (5 trading days)
+        - groups: per-group details with confidence, weight, indicators
+        - indicators: per-indicator details with current_value, percentile, confidence, series
+        - composite_series: time series of total confidence for charting
+        - analyzed_at: timestamp
+        """
+        indicator_results = {}
+        indicator_series = {}
+        confidence_series = {}
+
+        # Phase 1: Fetch all indicator series
+        for name, config in INDICATOR_CONFIG.items():
+            try:
+                series = self._fetch_indicator_series(name, lookback_days)
+                indicator_series[name] = series
+            except Exception as e:
+                logger.error(f"❌ {config['label']} 获取失败: {e}")
+                indicator_results[name] = {'error': str(e), 'label': config['label'], 'group': config['group']}
+
+        # Phase 2: Compute rolling confidence
+        for name, series in indicator_series.items():
+            config = INDICATOR_CONFIG[name]
+            conf_series = compute_rolling_confidence(series, window=PERCENTILE_WINDOW, inverted=config['inverted'])
+            confidence_series[name] = conf_series
+
+            latest_conf = conf_series.dropna()
+            if not latest_conf.empty:
+                current_value = series.iloc[-1]
+                pctile = percentileofscore(series.iloc[-PERCENTILE_WINDOW:].dropna().values, current_value, kind='mean')
+                indicator_results[name] = {
+                    'label': config['label'],
+                    'group': config['group'],
+                    'current_value': round(float(current_value), 4),
+                    'percentile': round(pctile, 1),
+                    'confidence': float(latest_conf.iloc[-1]),
+                    'series': conf_series,
+                }
+            else:
+                indicator_results[name] = {'label': config['label'], 'group': config['group'], 'error': '数据不足'}
+
+        # Phase 3: Group aggregation
+        group_confidences = {}
+        group_details = {}
+        for group_name in GROUP_WEIGHTS:
+            group_indicators = {k: v.get('confidence') for k, v in indicator_results.items() if v.get('group') == group_name and 'confidence' in v}
+            group_conf = aggregate_group_confidence(group_indicators)
+            group_confidences[group_name] = group_conf
+            group_details[group_name] = {
+                'label': GROUP_LABELS[group_name],
+                'confidence': group_conf,
+                'weight': GROUP_WEIGHTS[group_name],
+                'indicators': {k: v for k, v in indicator_results.items() if v.get('group') == group_name},
+            }
+
+        # Phase 4: Total + composite series
+        total_confidence = aggregate_total_confidence(group_confidences, GROUP_WEIGHTS)
+        composite_series = self._build_composite_series(confidence_series, display_days)
+
+        wow_change = None
+        if composite_series is not None and len(composite_series.dropna()) > 5:
+            valid = composite_series.dropna()
+            wow_change = round(float(valid.iloc[-1] - valid.iloc[-6]), 2)
+
+        return {
+            'confidence': total_confidence,
+            'wow_change': wow_change,
+            'groups': group_details,
+            'indicators': indicator_results,
+            'composite_series': composite_series,
+            'analyzed_at': datetime.now().isoformat(),
+        }
+
+    def _build_composite_series(self, confidence_series, display_days=365):
+        """Build composite confidence time series by day-by-day aggregation."""
+        if not confidence_series:
+            return None
+
+        df = pd.DataFrame(confidence_series)
+        group_cols = {}
+        for name, config in INDICATOR_CONFIG.items():
+            if name in df.columns:
+                group_cols.setdefault(config['group'], []).append(name)
+
+        group_means = pd.DataFrame()
+        for group_name, cols in group_cols.items():
+            group_means[group_name] = df[cols].mean(axis=1)
+
+        def weighted_row(row):
+            valid = {k: v for k, v in row.items() if pd.notna(v)}
+            if not valid:
+                return np.nan
+            total_w = sum(GROUP_WEIGHTS[k] for k in valid)
+            return sum(v * GROUP_WEIGHTS[k] / total_w for k, v in valid.items())
+
+        composite = group_means.apply(weighted_row, axis=1)
+        cutoff = datetime.now() - timedelta(days=display_days)
+        return composite[composite.index >= cutoff]
