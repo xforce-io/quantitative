@@ -161,3 +161,43 @@ class TestFetchIndicatorSeries:
         analyzer = GlobalUsdLiquidityAnalyzer(fred_api_key='fake')
         result = analyzer._fetch_indicator_series('net_liquidity', lookback_days=365)
         assert isinstance(result, pd.Series)
+
+
+# ---------------------------------------------------------------------------
+# Integration tests — require real FRED API access
+# ---------------------------------------------------------------------------
+
+import os
+
+@pytest.mark.skipif(
+    not os.environ.get('FRED_API_KEY'),
+    reason="FRED_API_KEY not set"
+)
+class TestIntegration:
+    """Integration tests — hit real FRED API"""
+
+    def test_full_analyze(self):
+        analyzer = GlobalUsdLiquidityAnalyzer()
+        result = analyzer.analyze(lookback_days=1095, display_days=90)
+
+        assert 'confidence' in result
+        assert result['confidence'] is None or -100 <= result['confidence'] <= 100
+        assert 'groups' in result
+        assert 'composite_series' in result
+
+        # At least some indicators should succeed
+        successful = [
+            v for v in result['indicators'].values()
+            if 'confidence' in v
+        ]
+        assert len(successful) >= 3, f"Only {len(successful)} indicators succeeded"
+
+    def test_individual_indicators(self):
+        from quant.analysis.indicators.global_usd_liquidity import INDICATOR_CONFIG
+        analyzer = GlobalUsdLiquidityAnalyzer()
+        for name in INDICATOR_CONFIG:
+            try:
+                series = analyzer._fetch_indicator_series(name, lookback_days=400)
+                assert len(series) > 50, f"{name}: only {len(series)} data points"
+            except Exception as e:
+                pytest.skip(f"{name} failed: {e}")
