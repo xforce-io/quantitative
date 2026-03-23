@@ -696,7 +696,7 @@ def get_macro_liquidity(lookback_days: int = 365, force_refresh: bool = False) -
     每个维度独立缓存，失败的维度用上次成功的缓存兜底。
     """
     from quant.analysis.indicators.macro_liquidity_analyzer import (
-        MacroLiquidityAnalyzer, DIMENSION_WEIGHTS, STATUS_MAP
+        MacroLiquidityAnalyzer, DIMENSION_WEIGHTS, STATUS_MAP, THRESHOLDS
     )
     from quant.data.cache_manager import get_cache_manager
 
@@ -724,46 +724,45 @@ def get_macro_liquidity(lookback_days: int = 365, force_refresh: bool = False) -
     else:
         dims_to_fetch = dimension_names
 
-    # Phase 2: If all cached, return immediately (fast path)
-    if not dims_to_fetch:
-        return _assemble_macro_result(dimensions, DIMENSION_WEIGHTS, STATUS_MAP,
-                                      MacroLiquidityAnalyzer)
-
-    # Phase 3: Fetch missing/expired dimensions via analyzer
+    # Phase 2: Always fetch from analyzer to get series data for charts.
+    # Cached dimensions are used as fallback when fetch fails.
     try:
         analyzer = MacroLiquidityAnalyzer()
         result = analyzer.analyze(lookback_days)
     except Exception as e:
         logger.error(f"宏观流动性分析失败: {e}")
         if dimensions:
-            # Some cached dims available, return partial result
+            # All cached, no series but at least show scores
             return _assemble_macro_result(dimensions, DIMENSION_WEIGHTS, STATUS_MAP,
-                                          MacroLiquidityAnalyzer)
+                                          MacroLiquidityAnalyzer, THRESHOLDS)
         return {'error': str(e)}
 
     fetched_dims = result.get('dimensions', {})
 
-    # Phase 4: Merge fetched results, cache successes, fallback on failures
+    # Phase 3: Merge fetched results, cache successes, fallback on failures
     for dim_name in dimension_names:
         fetched = fetched_dims.get(dim_name)
         is_error = (fetched is None or
                     (isinstance(fetched, dict) and 'error' in fetched))
 
         if not is_error:
-            # Fresh data — cache it
+            # Fresh data — cache non-series fields
             cache_data = {k: v for k, v in fetched.items() if k != 'series'}
             cache.set(CACHE_PROVIDER, CACHE_API_TYPE, dim_name,
                       cache_data, lookback_days=lookback_days)
             dimensions[dim_name] = fetched
-        elif dim_name not in dimensions:
+        elif dim_name in dimensions:
+            # Fetch failed but have cache — keep cached scores, no series
+            pass
+        else:
             # Failed and no cache — use error result
             dimensions[dim_name] = fetched or {'error': '数据不可用', 'risk_score': 50}
 
     return _assemble_macro_result(dimensions, DIMENSION_WEIGHTS, STATUS_MAP,
-                                  MacroLiquidityAnalyzer)
+                                  MacroLiquidityAnalyzer, THRESHOLDS)
 
 
-def _assemble_macro_result(dimensions, weights, status_map, analyzer_cls):
+def _assemble_macro_result(dimensions, weights, status_map, analyzer_cls, thresholds=None):
     """从维度数据组装最终结果（重算加权分、状态、信号）"""
     signals = []
     dimension_scores = {}
@@ -796,8 +795,8 @@ def _assemble_macro_result(dimensions, weights, status_map, analyzer_cls):
         'dimension_scores': dimension_scores,
         'signals': signals,
         'series': series,
-        'thresholds': result.get('thresholds', {}),
-        'analyzed_at': result.get('analyzed_at', ''),
+        'thresholds': thresholds or {},
+        'analyzed_at': datetime.now().isoformat(),
     }
 
 
@@ -1027,3 +1026,62 @@ def get_macro_liquidity_summary(
     except Exception as e:
         logger.warning(f"LLM summary generation failed: {e}")
         return ""
+
+
+def get_global_usd_liquidity(
+    display_days: int = 365,
+    force_refresh: bool = False,
+) -> Dict[str, Any]:
+    """
+    获取全球美元流动性置信度（带缓存）
+
+    缓存策略：缓存完整分析结果（不含 series），12 小时过期。
+    总是尝试获取最新数据，缓存作为 fallback。
+    """
+    from quant.analysis.indicators.global_usd_liquidity import (
+        GlobalUsdLiquidityAnalyzer,
+    )
+    from quant.data.cache_manager import get_cache_manager
+
+    cache = get_cache_manager()
+    CACHE_PROVIDER = 'global_usd_liquidity'
+    CACHE_API_TYPE = 'result'
+    CACHE_SYMBOL = 'composite'
+    CACHE_EXPIRY_HOURS = 12
+
+    # Try to load cached result as fallback
+    cached_result = None
+    if not force_refresh:
+        cached_result = cache.get(
+            CACHE_PROVIDER, CACHE_API_TYPE, CACHE_SYMBOL,
+            expiry_hours=CACHE_EXPIRY_HOURS,
+        )
+
+    # Always try fresh data (need series for charts)
+    try:
+        analyzer = GlobalUsdLiquidityAnalyzer()
+        result = analyzer.analyze(display_days=display_days)
+
+        # Cache non-series fields
+        cache_data = {
+            'confidence': result['confidence'],
+            'wow_change': result['wow_change'],
+            'groups': {
+                k: {kk: vv for kk, vv in v.items() if kk != 'indicators'}
+                for k, v in result['groups'].items()
+            },
+            'indicators': {
+                k: {kk: vv for kk, vv in v.items() if kk != 'series'}
+                for k, v in result['indicators'].items()
+            },
+            'analyzed_at': result['analyzed_at'],
+        }
+        cache.set(CACHE_PROVIDER, CACHE_API_TYPE, CACHE_SYMBOL, cache_data)
+
+        return result
+    except Exception as e:
+        logger.error(f"全球美元流动性分析失败: {e}")
+        if cached_result:
+            cached_result['from_cache'] = True
+            return cached_result
+        return {'error': str(e)}
