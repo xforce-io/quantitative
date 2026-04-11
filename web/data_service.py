@@ -760,6 +760,38 @@ def get_global_usd_liquidity(
         return {'error': str(e)}
 
 
+@st.cache_data(ttl=3600, show_spinner=False)  # 1 hour cache
+def get_leading_indicators(lookback_days: int = 365) -> Dict[str, Any]:
+    """
+    获取三个领先指标分析结果（VIX / 信用利差 / 融资余额）。
+    数据层与分析层解耦：margin 数据从 TushareProvider 获取后传入 analyzer。
+    """
+    from quant.analysis.indicators.leading_indicators import LeadingIndicatorsAnalyzer
+
+    analyzer = LeadingIndicatorsAnalyzer()
+
+    # 获取融资融券数据（数据层）
+    margin_df = None
+    try:
+        provider = get_provider()
+        margin_df = provider.get_margin_data(lookback_days=90)
+    except Exception as e:
+        logger.warning(f"融资融券数据获取失败: {e}")
+
+    # 分析（能力层）
+    result = analyzer.analyze_all(margin_df=margin_df, lookback_days=lookback_days)
+
+    # 过滤掉 series 数据（不能被 st.cache_data 序列化为 hashable）
+    for key in result:
+        if isinstance(result[key], dict):
+            result[key].pop("series", None)
+            delta = result[key].get("delta")
+            if isinstance(delta, dict):
+                delta.pop("velocity_series", None)
+
+    return result
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_dashboard_summary() -> Dict[str, Any]:
     """
