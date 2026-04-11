@@ -26,6 +26,20 @@ from web.components_ai_panel import render_ai_right_panel, init_ai_panel_for_pag
 from web.page_registry import get_page_registry
 
 
+def _alert_level(score: float) -> tuple:
+    """Map 0-100 score to alert level (label, color, emoji)."""
+    if score >= 85:
+        return "Strong Signal", "#e74c3c", "🔴"
+    elif score >= 75:
+        return "Signal", "#e67e22", "🟠"
+    elif score >= 60:
+        return "Warning", "#f1c40f", "🟡"
+    elif score >= 40:
+        return "Watch", "#95a5a6", "⚪"
+    else:
+        return "Quiet", "#2ecc71", "🟢"
+
+
 @st.cache_data(ttl=3600)  # 1小时缓存
 def calculate_industry_tech_signals(ind_name: str, ind_trend: pd.DataFrame):
     """提取行业技术指标计算逻辑并缓存，避免重复计算"""
@@ -191,7 +205,33 @@ def main():
                         else:
                             trend_icon = "❓"; trend_text = "无数据"
                         
-                        with st.expander(f"{trend_icon} **{name}** ({symbol}) | 机构: {trend_text}", expanded=False):
+                        # Compute alert level from technicals
+                        alert_emoji = "⚪"
+                        alert_label = ""
+                        try:
+                            _tech_end = datetime.now().strftime('%Y%m%d')
+                            _tech_start = (datetime.now() - timedelta(days=60)).strftime('%Y%m%d')
+                            _df = get_stock_technical_data(symbol, _tech_start, _tech_end)
+                            if not _df.empty:
+                                _last = _df.iloc[-1]
+                                _rsi = _last.get('RSI', 50)
+                                _close = _last.get('close', 0)
+                                _ma20 = _last.get('MA20', _close)
+                                _ma60 = _last.get('MA60', _close)
+                                _score = 50
+                                if _rsi > 70:
+                                    _score += 20
+                                elif _rsi < 30:
+                                    _score += 25
+                                if _close > _ma20 > _ma60:
+                                    _score += 15
+                                elif _close < _ma20 < _ma60:
+                                    _score += 10
+                                alert_label, _, alert_emoji = _alert_level(_score)
+                        except Exception:
+                            pass
+
+                        with st.expander(f"{alert_emoji} **{name}** ({symbol}) | {alert_label} | 机构: {trend_text}", expanded=False):
                             render_stock_detail_card(symbol=symbol, name=name, start_str=start_str, end_str=end_str, key_prefix="watch_")
 
         # >>> 行业监控 <<<
