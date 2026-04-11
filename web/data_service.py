@@ -726,9 +726,26 @@ def get_macro_liquidity(lookback_days: int = 365, force_refresh: bool = False) -
 
     # Phase 2: Always fetch from analyzer to get series data for charts.
     # Cached dimensions are used as fallback when fetch fails.
+    # Reuse global USD liquidity cache to avoid duplicate FRED requests.
+    liquidity_confidence = None
+    liquidity_velocity = None
+    liquidity_acceleration = None
+    try:
+        usd_liq = get_global_usd_liquidity()
+        liquidity_confidence = usd_liq.get('confidence')
+        liquidity_velocity = usd_liq.get('velocity')
+        liquidity_acceleration = usd_liq.get('acceleration')
+    except Exception:
+        pass
+
     try:
         analyzer = MacroLiquidityAnalyzer()
-        result = analyzer.analyze(lookback_days)
+        result = analyzer.analyze(
+            lookback_days,
+            liquidity_confidence=liquidity_confidence,
+            liquidity_velocity=liquidity_velocity,
+            liquidity_acceleration=liquidity_acceleration,
+        )
     except Exception as e:
         logger.error(f"宏观流动性分析失败: {e}")
         if dimensions:
@@ -1066,6 +1083,9 @@ def get_global_usd_liquidity(
         cache_data = {
             'confidence': result['confidence'],
             'wow_change': result['wow_change'],
+            'velocity': result.get('velocity'),
+            'acceleration': result.get('acceleration'),
+            'inflection_points': result.get('inflection_points', []),
             'groups': {
                 k: {kk: vv for kk, vv in v.items() if kk != 'indicators'}
                 for k, v in result['groups'].items()
@@ -1085,3 +1105,40 @@ def get_global_usd_liquidity(
             cached_result['from_cache'] = True
             return cached_result
         return {'error': str(e)}
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_dashboard_summary() -> Dict[str, Any]:
+    """
+    Aggregate dashboard data: macro status + watchlist alerts + top signals.
+    Returns dict with keys: macro, watchlist_alerts, top_signals
+    """
+    summary = {}
+
+    # 1. Macro status
+    macro = {}
+    try:
+        usd_liq = get_global_usd_liquidity()
+        macro['usd_liquidity'] = {
+            'confidence': usd_liq.get('confidence'),
+            'wow_change': usd_liq.get('wow_change'),
+        }
+    except Exception:
+        macro['usd_liquidity'] = {'confidence': None}
+
+    try:
+        macro_liq = get_macro_liquidity(lookback_days=365)
+        macro['macro_status'] = macro_liq.get('status', 'Unknown')
+        macro['macro_score'] = macro_liq.get('weighted_score', 50)
+    except Exception:
+        macro['macro_status'] = 'Unknown'
+        macro['macro_score'] = 50
+
+    try:
+        china = get_china_market_signals(lookback_days=60)
+        macro['china_sentiment'] = china.get('status', 'Unknown')
+    except Exception:
+        macro['china_sentiment'] = 'Unknown'
+
+    summary['macro'] = macro
+    return summary
