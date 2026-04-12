@@ -219,6 +219,17 @@ class MacroLiquidityAnalyzer:
             dimensions['copper_gold'] = {'error': str(e)}
             dimension_scores['copper_gold'] = 50
 
+        # 8. 原油通胀
+        try:
+            crude_result = self._fetch_crude_oil(lookback_days)
+            dimensions['crude_oil'] = crude_result
+            dimension_scores['crude_oil'] = crude_result.get('risk_score', 50)
+            signals.extend(crude_result.get('signals', []))
+        except Exception as e:
+            logger.error(f"获取原油数据失败: {e}")
+            dimensions['crude_oil'] = {'error': str(e)}
+            dimension_scores['crude_oil'] = 50
+
         # 加权风险分数
         total_risk_score = sum(
             dimension_scores.get(dim, 50) * weight
@@ -897,6 +908,77 @@ class MacroLiquidityAnalyzer:
         return {
             'ratio': round(current_ratio, 6),
             'percentile': round(percentile, 1),
+            'weekly_change_pct': round(weekly_change_pct, 2),
+            'risk_score': risk_score,
+            'signals': signals,
+            'series': series,
+        }
+
+    # ==================== 原油通胀代理 ====================
+
+    def _fetch_crude_oil(self, lookback_days: int = 365) -> Dict[str, Any]:
+        """
+        原油通胀代理
+        油价飙涨 → 通胀预期 → 加息预期 → 流动性收紧。
+        油价暴跌也是风险（需求崩塌）。
+        """
+        end = datetime.now()
+        start = end - timedelta(days=lookback_days + 30)
+
+        crude = yf.download('CL=F', start=start, end=end, progress=False)
+
+        if crude is None or crude.empty:
+            return {'error': '原油数据为空', 'risk_score': 50}
+
+        if isinstance(crude.columns, pd.MultiIndex):
+            crude.columns = crude.columns.get_level_values(0)
+
+        close_col = 'Close' if 'Close' in crude.columns else 'close'
+        if close_col not in crude.columns:
+            return {'error': '原油数据缺少 Close 列', 'risk_score': 50}
+
+        close = crude[close_col].dropna()
+        current_price = float(close.iloc[-1])
+
+        # Weekly change (5 trading days)
+        if len(close) >= 5:
+            week_ago = float(close.iloc[-5])
+            weekly_change_pct = (current_price - week_ago) / abs(week_ago) * 100 if week_ago != 0 else 0
+        else:
+            weekly_change_pct = 0
+
+        # Risk scoring
+        risk_score = 0
+        signals = []
+
+        if weekly_change_pct > THRESHOLDS['crude_weekly_surge_pct']:
+            risk_score = 85
+            signals.append(f'🔴 原油周涨 {weekly_change_pct:.1f}%，通胀预期急升')
+        elif weekly_change_pct > THRESHOLDS['crude_weekly_rise_pct']:
+            risk_score = 60
+            signals.append(f'🟠 原油周涨 {weekly_change_pct:.1f}%，关注通胀压力')
+        elif weekly_change_pct < -THRESHOLDS['crude_weekly_crash_pct']:
+            risk_score = 70
+            signals.append(f'🟠 原油周跌 {weekly_change_pct:.1f}%，需求崩塌信号')
+        elif current_price > THRESHOLDS['crude_high_price']:
+            risk_score = 50
+            if weekly_change_pct > 0:
+                signals.append(f'🟡 油价 ${current_price:.0f} 突破 $100，通胀风险持续')
+            else:
+                risk_score = 40
+        elif current_price > THRESHOLDS['crude_elevated_price']:
+            risk_score = 35
+        else:
+            risk_score = 15
+
+        if not signals:
+            signals.append(f'🟢 原油价格稳定（${current_price:.1f}，周变化 {weekly_change_pct:+.1f}%）')
+
+        cutoff = end - timedelta(days=lookback_days)
+        series = close[close.index >= cutoff].to_frame(name='crude_oil')
+
+        return {
+            'current_price': round(current_price, 2),
             'weekly_change_pct': round(weekly_change_pct, 2),
             'risk_score': risk_score,
             'signals': signals,

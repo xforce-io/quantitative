@@ -423,3 +423,87 @@ class TestCopperGoldRatio:
 
         assert 'error' in result
         assert result['risk_score'] == 50
+
+
+class TestCrudeOil:
+    """Test the _fetch_crude_oil method."""
+
+    def _make_analyzer(self):
+        from quant.analysis.indicators.macro_liquidity_analyzer import MacroLiquidityAnalyzer
+        return MacroLiquidityAnalyzer()
+
+    def _make_df(self, prices: list) -> pd.DataFrame:
+        dates = pd.bdate_range(end=datetime.now(), periods=len(prices))
+        return pd.DataFrame({'Close': prices}, index=dates)
+
+    @patch('quant.analysis.indicators.macro_liquidity_analyzer.yf')
+    def test_returns_expected_structure(self, mock_yf):
+        """_fetch_crude_oil should return dict with required keys."""
+        prices = [75.0 + i * 0.1 for i in range(30)]
+        mock_yf.download.return_value = self._make_df(prices)
+
+        analyzer = self._make_analyzer()
+        result = analyzer._fetch_crude_oil()
+
+        assert 'current_price' in result
+        assert 'weekly_change_pct' in result
+        assert 'risk_score' in result
+        assert 'signals' in result
+        assert 'series' in result
+        assert isinstance(result['signals'], list)
+        assert 0 <= result['risk_score'] <= 100
+
+    @patch('quant.analysis.indicators.macro_liquidity_analyzer.yf')
+    def test_weekly_surge_high_risk(self, mock_yf):
+        """~14% weekly surge should produce risk_score >= 80."""
+        prices = [70.0] * 25 + [72.0, 74.0, 76.0, 78.0, 80.0]
+        mock_yf.download.return_value = self._make_df(prices)
+
+        analyzer = self._make_analyzer()
+        result = analyzer._fetch_crude_oil()
+
+        assert result['risk_score'] >= 80
+
+    @patch('quant.analysis.indicators.macro_liquidity_analyzer.yf')
+    def test_weekly_crash_also_risk(self, mock_yf):
+        """~15% weekly crash should produce risk_score >= 60."""
+        prices = [80.0] * 25 + [78.0, 75.0, 73.0, 71.0, 68.0]
+        mock_yf.download.return_value = self._make_df(prices)
+
+        analyzer = self._make_analyzer()
+        result = analyzer._fetch_crude_oil()
+
+        assert result['risk_score'] >= 60
+
+    @patch('quant.analysis.indicators.macro_liquidity_analyzer.yf')
+    def test_high_price_elevated_risk(self, mock_yf):
+        """Stable price at $105 should produce risk_score >= 35."""
+        prices = [105.0] * 30
+        mock_yf.download.return_value = self._make_df(prices)
+
+        analyzer = self._make_analyzer()
+        result = analyzer._fetch_crude_oil()
+
+        assert result['risk_score'] >= 35
+
+    @patch('quant.analysis.indicators.macro_liquidity_analyzer.yf')
+    def test_stable_moderate_price_low_risk(self, mock_yf):
+        """Stable price at $70 should produce risk_score <= 20."""
+        prices = [70.0] * 30
+        mock_yf.download.return_value = self._make_df(prices)
+
+        analyzer = self._make_analyzer()
+        result = analyzer._fetch_crude_oil()
+
+        assert result['risk_score'] <= 20
+
+    @patch('quant.analysis.indicators.macro_liquidity_analyzer.yf')
+    def test_empty_data_returns_error(self, mock_yf):
+        """Empty DataFrame should return 'error' in result and risk_score == 50."""
+        mock_yf.download.return_value = pd.DataFrame()
+
+        analyzer = self._make_analyzer()
+        result = analyzer._fetch_crude_oil()
+
+        assert 'error' in result
+        assert result['risk_score'] == 50
