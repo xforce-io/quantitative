@@ -60,7 +60,12 @@ def get_trend_color(value: float, inverse: bool = False) -> str:
 
 def apply_plotly_theme():
     """配置 Plotly 默认模板"""
-    pio.templates.default = "plotly_white"
+    try:
+        pio.templates.default = "plotly_white"
+    except AttributeError:
+        # Python 3.13 + plotly 某些版本会因 pandas 循环导入而失败，
+        # 延迟到首次渲染时自动生效，这里静默跳过即可
+        pass
 
 def format_large_number(num: float) -> str:
     """格式化大数字 (亿/万)"""
@@ -88,15 +93,14 @@ def apply_custom_css():
         padding-left: 2rem !important;
         padding-right: 2rem !important;
         padding-top: 2rem !important;
-        padding-bottom: 0rem !important; /* 压缩主容器底部间距 */
+        padding-bottom: 2rem !important;
     }
 
-    /* 压缩顶部 Header 高度，但保留侧边栏切换按钮 */
+    /* 透明化顶部 Header（不改高度，避免破坏 Streamlit 内部滚动布局） */
     header[data-testid="stHeader"] {
         background: transparent;
-        height: 2.5rem;
     }
-    
+
     /* 隐藏底部样式 */
     footer {visibility: hidden !important;}
 
