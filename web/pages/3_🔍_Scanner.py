@@ -9,7 +9,7 @@ if str(_project_root) not in sys.path:
 
 import streamlit as st
 from web.ui_theme import apply_custom_css
-from web.data_service import get_heuristic_pool_verdict
+from web.data_service_verdict import get_regime
 from web.scanner.ashare_scan import render_ashare_scan
 from web.scanner.us_value_scan import render_us_value_scan
 from web.scanner.commodity_scan import render_commodity_scan
@@ -25,10 +25,10 @@ tab_ashare, tab_us, tab_commodity = st.tabs([
 ])
 
 with tab_ashare:
-    render_ashare_scan(get_heuristic_pool_verdict("a_shares"))
+    render_ashare_scan(get_regime("a_shares"))
 
 with tab_us:
-    render_us_value_scan(get_heuristic_pool_verdict("us_stocks"))
+    render_us_value_scan(get_regime("us_stocks"))
 
 with tab_commodity:
-    render_commodity_scan(get_heuristic_pool_verdict("gold"))
+    render_commodity_scan(get_regime("gold"))

@@ -16,11 +16,11 @@ from web.utils import add_to_watchlist
 
 
 def _regime_badge(verdict: dict) -> None:
-    """Render a compact regime badge from a verdict dict."""
-    icon = verdict.get("regime_icon", "⚪")
+    """Render a regime info banner from a regime dict."""
     regime = verdict.get("regime", "unknown")
-    action = verdict.get("action", "hold")
-    st.caption(f"{icon} Regime: **{regime}** — Action: **{action}**")
+    confidence = verdict.get("confidence", 0)
+    icon = "🟢" if regime == "expansion" else "🔴" if regime == "contraction" else "🟡"
+    st.info(f"{icon} 当前情景: **{regime}** (置信度: {confidence:.0%})")
 
 
 def _render_radar_chart(criteria: dict, key: str = "") -> None:

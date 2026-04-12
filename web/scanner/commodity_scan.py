@@ -9,37 +9,25 @@ if str(_project_root) not in sys.path:
 
 import streamlit as st
 
-
-def _regime_badge(label: str, verdict: dict) -> None:
-    """Render a regime badge for a named pool."""
-    icon = verdict.get("regime_icon", "⚪")
-    regime = verdict.get("regime", "unknown")
-    action = verdict.get("action", "hold")
-    reasoning = verdict.get("reasoning", "")
-    updated = verdict.get("updated_at", "")
-
-    action_colors = {"add": "#2ecc71", "reduce": "#e74c3c", "hold": "#f1c40f"}
-    color = action_colors.get(action, "#95a5a6")
-
-    st.markdown(
-        f'<div style="padding:10px 14px;border-radius:8px;'
-        f'background:linear-gradient(135deg,{color}22,{color}11);'
-        f'border-left:4px solid {color};margin-bottom:8px;">'
-        f'<strong style="color:{color};">{icon} {label}</strong> — '
-        f'Regime: <strong>{regime}</strong> | Action: <strong>{action}</strong>'
-        f'{"<br/><small>" + reasoning + "</small>" if reasoning else ""}'
-        f'{"<br/><small style=color:#888>Updated: " + updated + "</small>" if updated else ""}'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
+from web.data_service_verdict import get_regime
 
 
 def render_commodity_scan(verdict: dict) -> None:
     """Gold & commodity scanning tab."""
     st.subheader("🥇 Gold & Commodity Scan")
 
-    # Show gold verdict badge
-    _regime_badge("Gold (GLD / GC=F)", verdict)
+    # Gold regime banner
+    regime = verdict.get("regime", "unknown")
+    confidence = verdict.get("confidence", 0)
+    icon = "🟢" if regime == "risk-on" else "🔴" if regime == "risk-off" else "🟡"
+    st.info(f"{icon} 黄金情景: **{regime}** (置信度: {confidence:.0%})")
+
+    # Commodities regime banner
+    commodity_regime = get_regime("commodities")
+    c_regime = commodity_regime.get("regime", "unknown")
+    c_confidence = commodity_regime.get("confidence", 0)
+    c_icon = "🟢" if c_regime == "risk-on" else "🔴" if c_regime == "risk-off" else "🟡"
+    st.info(f"{c_icon} 大宗商品情景: **{c_regime}** (置信度: {c_confidence:.0%})")
 
     st.divider()
 
@@ -48,14 +36,3 @@ def render_commodity_scan(verdict: dict) -> None:
         "Planned: Gold/Silver technicals, Copper-Gold ratio, Crude oil trend, "
         "commodity momentum screener with watchlist add support."
     )
-
-    # Brief summary of current verdict
-    action = verdict.get("action", "hold")
-    regime = verdict.get("regime", "unknown")
-    reasoning = verdict.get("reasoning", "No data available")
-
-    col1, col2 = st.columns(2)
-    col1.metric("Gold Regime", regime, help="Derived from USD liquidity confidence")
-    col2.metric("Suggested Action", action.upper())
-
-    st.caption(f"Reasoning: {reasoning}")

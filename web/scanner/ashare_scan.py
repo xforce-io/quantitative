@@ -27,11 +27,13 @@ from web.utils import add_to_watchlist
 
 
 def _regime_badge(verdict: dict) -> None:
-    """Render a compact regime badge from a verdict dict."""
-    icon = verdict.get("regime_icon", "⚪")
+    """Render a regime info banner from a regime dict."""
     regime = verdict.get("regime", "unknown")
-    action = verdict.get("action", "hold")
-    st.caption(f"{icon} Regime: **{regime}** — Action: **{action}**")
+    confidence = verdict.get("confidence", 0)
+    icon = "🟢" if regime == "risk-on" else "🔴" if regime == "risk-off" else "🟡"
+    st.info(f"{icon} 当前情景: **{regime}** (置信度: {confidence:.0%})")
+    if regime == "risk-off":
+        st.warning("⚠️ Risk-off 情景 — 扫描偏向防御性标的")
 
 
 def _render_box_chart(symbol: str, name: str, box_high: float, box_low: float,
