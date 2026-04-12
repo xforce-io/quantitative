@@ -1,0 +1,21 @@
+# config/watchlist.yaml
+# Asset pool grouping for watchlist
+a_shares:
+  - symbol: "002594.SZ"
+    name: "比亚迪"
+  - symbol: "600036.SH"
+    name: "招商银行"
+  - symbol: "09992.HK"
+    name: "泡泡玛特"
+  - symbol: "01919.HK"
+    name: "中远海控"
+  - symbol: "601899.SH"
+    name: "紫金矿业"
+us_stocks: []
+gold: []
+commodities: []
+industries:
+  - "半导体"
+  - "商业航天"
+  - "创新药"
+  - "电网设备"
