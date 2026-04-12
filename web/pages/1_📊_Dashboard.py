@@ -113,7 +113,7 @@ _VELOCITY_ARROWS = {
 
 
 def _render_leading_signals():
-    """领先信号一行三灯。"""
+    """领先信号一行四灯。"""
     st.markdown("### ⚡ 领先信号")
 
     try:
@@ -122,7 +122,7 @@ def _render_leading_signals():
         st.warning("领先指标数据获取失败")
         return
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
 
     # VIX
     with col1:
@@ -132,7 +132,6 @@ def _render_leading_signals():
         else:
             value = vix.get("value", 0)
             emoji = vix.get("emoji", "⚪")
-            level_cn = vix.get("level_cn", "")
             delta = vix.get("delta", {})
             arrow = _VELOCITY_ARROWS.get(delta.get("status", "stable"), "→")
             status_cn = delta.get("status_cn", "")
@@ -155,7 +154,6 @@ def _render_leading_signals():
         else:
             spread = cs.get("spread", 0)
             emoji = cs.get("emoji", "⚪")
-            level_cn = cs.get("level_cn", "")
             delta = cs.get("delta", {})
             arrow = _VELOCITY_ARROWS.get(delta.get("status", "stable"), "→")
             status_cn = delta.get("status_cn", "")
@@ -166,8 +164,30 @@ def _render_leading_signals():
             if alert:
                 st.caption(f"⚠️ {alert}")
 
-    # 融资余额
+    # 收益率曲线
     with col3:
+        yc = data.get("yield_curve", {})
+        if "error" in yc:
+            st.metric("收益率曲线 2s10s", "获取失败")
+        else:
+            spread = yc.get("spread", 0)
+            emoji = yc.get("emoji", "⚪")
+            delta = yc.get("delta", {})
+            arrow = _VELOCITY_ARROWS.get(delta.get("status", "stable"), "→")
+            status_cn = delta.get("status_cn", "")
+
+            st.metric("收益率曲线 2s10s", f"{emoji} {spread:+.2f}%", f"{arrow} {status_cn}")
+
+            real_yield = yc.get("real_yield")
+            if real_yield is not None:
+                st.caption(f"实际利率 {real_yield:.1f}%")
+
+            alert = delta.get("alert")
+            if alert:
+                st.caption(f"⚠️ {alert}")
+
+    # 融资余额
+    with col4:
         margin = data.get("margin", {})
         if "error" in margin:
             st.metric("融资余额", margin.get("error", "获取失败"))
