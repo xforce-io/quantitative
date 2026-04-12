@@ -760,7 +760,7 @@ def get_global_usd_liquidity(
         return {'error': str(e)}
 
 
-@st.cache_data(ttl=3600, show_spinner=False)  # 1 hour cache
+@st.cache_data(ttl=14400, show_spinner=False)  # 4 hour cache — macro data is daily frequency
 def get_leading_indicators(lookback_days: int = 365) -> Dict[str, Any]:
     """
     获取三个领先指标分析结果（VIX / 信用利差 / 融资余额）。
