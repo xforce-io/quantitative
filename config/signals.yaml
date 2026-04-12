@@ -1,0 +1,133 @@
+# config/signals.yaml
+min_hit_rate: 0.55
+
+signals:
+  - name: rsi_oversold_bounce
+    asset_pools: [a_shares]
+    signal_type: mean_reversion
+    source_analyzer: TechnicalAnalyzer
+    lookback_days: 60
+    condition: "RSI < 30"
+    condition_description: "RSI drops below 30 (oversold territory)"
+    regime_filter:
+      a_shares: [risk-on, transition]
+    forward_days: 5
+
+  - name: rsi_overbought_warning
+    asset_pools: [a_shares]
+    signal_type: mean_reversion
+    source_analyzer: TechnicalAnalyzer
+    lookback_days: 60
+    condition: "RSI > 70"
+    condition_description: "RSI exceeds 70 (overbought territory)"
+    regime_filter:
+      a_shares: [risk-on, transition, risk-off]
+    forward_days: 5
+
+  - name: box_breakout_up
+    asset_pools: [a_shares]
+    signal_type: breakout
+    source_analyzer: BoxBreakoutAnalyzer
+    lookback_days: 120
+    condition: "breakout_type == 'up' AND volume_confirmed"
+    condition_description: "Price breaks above Donchian Channel with volume confirmation"
+    regime_filter:
+      a_shares: [risk-on, transition]
+    forward_days: 20
+
+  - name: institutional_accumulation
+    asset_pools: [a_shares]
+    signal_type: momentum
+    source_analyzer: CapitalFlowAnalyzer
+    lookback_days: 30
+    condition: "comprehensive_score > 70"
+    condition_description: "Strong institutional net inflow with consistency"
+    regime_filter:
+      a_shares: [risk-on, transition]
+    forward_days: 10
+
+  - name: institutional_distribution
+    asset_pools: [a_shares]
+    signal_type: momentum
+    source_analyzer: CapitalFlowAnalyzer
+    lookback_days: 30
+    condition: "comprehensive_score < 30"
+    condition_description: "Sustained institutional net outflow"
+    regime_filter:
+      a_shares: [risk-on, transition, risk-off]
+    forward_days: 10
+
+  - name: ma_golden_cross
+    asset_pools: [a_shares, us_stocks]
+    signal_type: trend
+    source_analyzer: TechnicalAnalyzer
+    lookback_days: 120
+    condition: "MA20 crosses above MA60"
+    condition_description: "20-day MA crosses above 60-day MA"
+    regime_filter:
+      a_shares: [risk-on, transition]
+      us_stocks: [expansion, transition]
+    forward_days: 20
+
+  - name: ma_death_cross
+    asset_pools: [a_shares, us_stocks]
+    signal_type: trend
+    source_analyzer: TechnicalAnalyzer
+    lookback_days: 120
+    condition: "MA20 crosses below MA60"
+    condition_description: "20-day MA crosses below 60-day MA"
+    regime_filter:
+      a_shares: [risk-on, transition, risk-off]
+      us_stocks: [expansion, transition, contraction]
+    forward_days: 20
+
+  - name: value_convergence
+    asset_pools: [us_stocks]
+    signal_type: value
+    source_analyzer: ValueInvestingAnalyzer
+    lookback_days: 250
+    condition: "composite_score > 75"
+    condition_description: "Five-factor value score exceeds 75 (strong value)"
+    regime_filter:
+      us_stocks: [expansion, transition]
+    forward_days: 60
+
+  - name: margin_debt_acceleration
+    asset_pools: [a_shares]
+    signal_type: macro
+    source_analyzer: LeadingIndicatorsAnalyzer
+    lookback_days: 60
+    condition: "margin_5d_change_pct > 3.0"
+    condition_description: "A-share margin debt surging (5-day change > 3%)"
+    regime_filter: {}
+    forward_days: 5
+
+  - name: credit_spread_widening
+    asset_pools: [us_stocks]
+    signal_type: macro
+    source_analyzer: LeadingIndicatorsAnalyzer
+    lookback_days: 90
+    condition: "credit_spread_change_20d > 0.3"
+    condition_description: "Credit spread widening rapidly (20-day change > 0.3pp)"
+    regime_filter: {}
+    forward_days: 10
+
+  - name: vix_spike
+    asset_pools: [us_stocks, gold]
+    signal_type: macro
+    source_analyzer: LeadingIndicatorsAnalyzer
+    lookback_days: 30
+    condition: "vix > 25 AND vix_5d_change > 5"
+    condition_description: "VIX spikes above 25 with rapid increase"
+    regime_filter: {}
+    forward_days: 5
+
+  - name: dxy_trend_reversal_down
+    asset_pools: [gold, commodities]
+    signal_type: macro
+    source_analyzer: GlobalUsdLiquidityAnalyzer
+    lookback_days: 60
+    condition: "dxy_20d_roc < -2.0"
+    condition_description: "DXY in sustained decline (20-day ROC < -2%)"
+    regime_filter: {}
+    forward_days: 10

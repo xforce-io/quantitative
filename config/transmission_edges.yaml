@@ -1,0 +1,101 @@
+# config/transmission_edges.yaml
+edges:
+  - source: DXY
+    target: gold
+    direction: inverse
+    lag_min_days: 0
+    lag_max_days: 1
+    threshold_pct: 0.8
+    initial_strength: 0.72
+    source_ticker: DX-Y.NYB
+    target_ticker: GC=F
+
+  - source: DXY
+    target: copper
+    direction: inverse
+    lag_min_days: 1
+    lag_max_days: 3
+    threshold_pct: 1.0
+    initial_strength: 0.58
+    source_ticker: DX-Y.NYB
+    target_ticker: HG=F
+
+  - source: DXY
+    target: a_share_northbound
+    direction: inverse
+    lag_min_days: 1
+    lag_max_days: 3
+    threshold_pct: 1.0
+    initial_strength: 0.55
+    source_ticker: DX-Y.NYB
+    target_ticker: null
+
+  - source: gold
+    target: a_share_gold_sector
+    direction: direct
+    lag_min_days: 0
+    lag_max_days: 2
+    threshold_pct: 1.5
+    initial_strength: 0.65
+    source_ticker: GC=F
+    target_ticker: null
+
+  - source: credit_spread
+    target: us_risk_assets
+    direction: inverse
+    lag_min_days: 3
+    lag_max_days: 7
+    threshold_pp: 0.15
+    initial_strength: 0.61
+    source_series: BAMLH0A0HYM2
+    target_ticker: SPY
+
+  - source: VIX
+    target: risk_assets
+    direction: inverse
+    lag_min_days: 0
+    lag_max_days: 1
+    threshold_points: 3.0
+    initial_strength: 0.70
+    source_ticker: ^VIX
+    target_ticker: SPY
+
+  - source: fed_balance_sheet
+    target: usd_liquidity
+    direction: direct
+    lag_min_days: 5
+    lag_max_days: 15
+    threshold_pct: 1.0
+    initial_strength: 0.68
+    source_series: WALCL
+    target_ticker: null
+
+  - source: margin_debt
+    target: a_share_sentiment
+    direction: direct
+    lag_min_days: 1
+    lag_max_days: 3
+    threshold_pct: 3.0
+    initial_strength: 0.64
+    source_ticker: null
+    target_ticker: null
+
+  - source: copper_gold_ratio
+    target: commodities_regime
+    direction: direct
+    lag_min_days: 0
+    lag_max_days: 5
+    threshold_pct: 2.0
+    initial_strength: 0.60
+    source_ticker: null
+    target_ticker: null
+
+  - source: crude_oil
+    target: inflation_expectations
+    direction: direct
+    lag_min_days: 5
+    lag_max_days: 10
+    threshold_pct: 5.0
+    initial_strength: 0.55
+    source_ticker: CL=F
+    target_ticker: null
