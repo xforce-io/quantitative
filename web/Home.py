@@ -27,12 +27,12 @@ apply_custom_css()
 
 from quant.core.logging_config import get_logger
 
-st.title("📈 Quantitative Trading Platform")
+st.title("📈 量化交易分析平台")
 
 st.markdown("""
-### 欢迎使用量化交易分析平台
+### 欢迎使用
 
-这是一个集成化的量化分析工作台，集成了数据获取、策略回测、市场分析等功能。
+集成化的量化分析工作台，覆盖宏观环境监控、持仓跟踪、机会扫描。
 """)
 
 st.divider()
@@ -50,8 +50,8 @@ with col1:
     </div>
     """, unsafe_allow_html=True)
     st.markdown("#### Dashboard")
-    st.caption("Macro environment, watchlist alerts, top signals — one page to know what to do")
-    st.page_link("pages/1_📊_Dashboard.py", label="Open →", icon="📊")
+    st.caption("Overall verdict, cross-asset alerts, pool status — one page to know what to do")
+    st.page_link("pages/1_📊_Dashboard.py", label="进入 →", icon="📊")
 
 with col2:
     st.markdown("""
@@ -60,8 +60,8 @@ with col2:
     </div>
     """, unsafe_allow_html=True)
     st.markdown("#### Watchlist")
-    st.caption("Position tracking, technical indicators, capital flow monitoring")
-    st.page_link("pages/2_👀_Watchlist.py", label="Open →", icon="👀")
+    st.caption("Positions organized by asset pool with regime context and action suggestions")
+    st.page_link("pages/2_👀_Watchlist.py", label="进入 →", icon="👀")
 
 with col3:
     st.markdown("""
@@ -70,8 +70,8 @@ with col3:
     </div>
     """, unsafe_allow_html=True)
     st.markdown("#### Scanner")
-    st.caption("Macro liquidity, A-share/HK signals, value investing, box breakout scans")
-    st.page_link("pages/3_🔍_Scanner.py", label="Open →", icon="🔍")
+    st.caption("Find opportunities in A-shares, US value stocks, gold and commodities")
+    st.page_link("pages/3_🔍_Scanner.py", label="进入 →", icon="🔍")
 
 st.divider()
 
@@ -80,23 +80,22 @@ st.divider()
 with st.expander("📖 功能详情", expanded=False):
     st.markdown("""
     #### 1. 📊 Dashboard
-    One-page overview of everything you need to know:
-    - **Macro Status Bar**: USD liquidity, macro risk, A-share sentiment
-    - **Watchlist Alerts**: Positions with triggered signals, sorted by alert level
-    - **Signal Levels**: Watch → Warning → Signal → Strong Signal
+    Overall verdict, cross-asset alerts, pool status — one page to know what to do:
+    - **Verdict bar with overall stance and per-pool actions**
+    - **Asset pool cards showing regime status**
+    - **Position alerts with action suggestions**
 
     #### 2. 👀 Watchlist
-    Monitor your positions and sectors:
-    - **Capital Flow**: Institutional vs retail flows for each position
-    - **Technical Indicators**: MA, MACD, RSI analysis
-    - **Sector Tracking**: Industry fund flows and technical charts
+    Positions organized by asset pool with regime context and action suggestions:
+    - **Tabs by asset pool** (A-shares, US stocks, gold, commodities)
+    - **Per-position regime context and signals**
+    - **In-page add/remove management**
 
     #### 3. 🔍 Scanner
-    Find opportunities across markets:
-    - **Macro Liquidity** (US): FRED-based risk monitoring
-    - **A-Share/HK Signals**: China market sentiment and capital flows
-    - **Value Investing** (US): Five-factor fundamental screening
-    - **Box Breakout** (A-Share): Donchian Channel breakout detection
+    Find opportunities in A-shares, US value stocks, gold and commodities:
+    - **A-share scan** (box breakout + market signals)
+    - **US value scan** (five-factor screening)
+    - **Gold & commodity scan**
     """)
 
 # 系统状态检查
