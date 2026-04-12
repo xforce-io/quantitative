@@ -6,7 +6,8 @@ import streamlit as st
 from datetime import datetime, timedelta
 
 from web.utils import load_watchlist, save_watchlist, add_to_watchlist, remove_from_watchlist, POOLS
-from web.data_service import get_stock_technical_data, get_heuristic_pool_verdict, get_all_pool_verdicts
+from web.data_service import get_stock_technical_data
+from web.data_service_verdict import get_regime, get_all_regimes
 from web.ui_theme import apply_custom_css
 
 # ---------- helpers ----------
@@ -19,11 +20,21 @@ POOL_META = {
 }
 
 
-def _regime_badge(verdict: dict) -> str:
-    icon  = verdict.get("regime_icon", "⚪")
-    regime = verdict.get("regime", "unknown")
-    action = verdict.get("action", "hold")
-    return f"{icon} **{regime}** · {action}"
+_REGIME_ICON_MAP = {
+    "risk-on": "🟢", "expansion": "🟢", "bullish": "🟢", "reflation": "🟢",
+    "risk-off": "🔴", "contraction": "🔴", "bearish": "🔴", "deflation": "🔴",
+}
+
+
+def _regime_icon(regime: str) -> str:
+    return _REGIME_ICON_MAP.get(regime.lower(), "🟡")
+
+
+def _regime_badge(regime_dict: dict) -> str:
+    regime = regime_dict.get("regime", "unknown")
+    confidence = regime_dict.get("confidence", 0)
+    icon = _regime_icon(regime)
+    return f"{icon} **{regime}** (confidence: {confidence:.0%})"
 
 
 def _parse_input(raw: str):
@@ -76,15 +87,15 @@ def _rsi_color(symbol: str) -> str:
 
 # ---------- per-pool tab ----------
 
-def render_pool_tab(pool: str, verdict: dict, watchlist: dict):
+def render_pool_tab(pool: str, regime: dict, watchlist: dict):
     meta      = POOL_META[pool]
     positions = watchlist.get(pool, [])  # list of {symbol, name}
 
     # Regime badge
-    st.markdown(f"**市场状态**: {_regime_badge(verdict)}")
-    reasoning = verdict.get("reasoning", "")
-    if reasoning:
-        st.caption(reasoning)
+    st.markdown(f"**市场状态**: {_regime_badge(regime)}")
+    drivers = regime.get("drivers", [])
+    if drivers:
+        st.caption(" · ".join(drivers))
 
     st.divider()
 
@@ -156,6 +167,12 @@ def render_pool_tab(pool: str, verdict: dict, watchlist: dict):
                     except Exception:
                         pass
 
+                    # Regime context
+                    regime_label = regime.get("regime", "unknown")
+                    confidence = regime.get("confidence", 0)
+                    st.caption(f"Regime: {regime_label} (confidence: {confidence:.0%})")
+                    st.caption("Signal validation: pending")
+
                 with col_btn:
                     if st.button("移除", key=f"rm_{pool}_{symbol}", type="secondary"):
                         remove_from_watchlist(symbol)
@@ -207,18 +224,18 @@ def main():
     watchlist = load_watchlist()
 
     with st.spinner("正在加载市场状态..."):
-        verdicts = get_all_pool_verdicts()
+        regimes = get_all_regimes()
 
     # Build tab labels with regime icon
     tab_labels = [
-        f"{POOL_META[p]['flag']} {POOL_META[p]['label']} ({verdicts[p].get('regime', 'unknown')})"
+        f"{POOL_META[p]['flag']} {POOL_META[p]['label']} {_regime_icon(regimes[p].get('regime', 'unknown'))} {regimes[p].get('regime', 'unknown')}"
         for p in POOLS
     ]
     tabs = st.tabs(tab_labels)
 
     for tab, pool in zip(tabs, POOLS):
         with tab:
-            render_pool_tab(pool, verdicts[pool], watchlist)
+            render_pool_tab(pool, regimes[pool], watchlist)
 
 
 if __name__ == "__main__":
