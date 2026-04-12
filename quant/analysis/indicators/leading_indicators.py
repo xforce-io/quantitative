@@ -36,6 +36,13 @@ _CREDIT_LEVELS = [
     (0.0, "normal", "正常", "🟢"),
 ]
 
+_YIELD_CURVE_LEVELS = [
+    (0.5, "normal", "正常", "🟢"),
+    (0.0, "flattening", "趋平", "🟡"),
+    (-0.5, "inverted", "倒挂", "🟠"),
+    (-999, "deeply_inverted", "深度倒挂", "🔴"),
+]
+
 
 def _classify(value: float, levels: list) -> tuple:
     for threshold, level, label_cn, emoji in levels:
@@ -151,6 +158,44 @@ class LeadingIndicatorsAnalyzer:
             "delta": delta,
         }
 
+    def analyze_yield_curve(self, lookback_days: int = 365) -> Dict[str, Any]:
+        """收益率曲线 — 2s10s 利差 + 实际利率注释。倒挂是最强的衰退前瞻指标。"""
+        try:
+            fred = self._get_fred()
+            start = datetime.now() - timedelta(days=lookback_days + 30)
+
+            spread_series = fred.get_series("T10Y2Y", observation_start=start)
+
+            if spread_series is None or spread_series.empty:
+                return {"error": "收益率曲线数据为空"}
+
+            spread_series = spread_series.dropna()
+            spread_value = float(spread_series.iloc[-1])
+            level, level_cn, emoji = _classify(spread_value, _YIELD_CURVE_LEVELS)
+            delta = MomentumDelta.compute(spread_series, velocity_window=5, zscore_window=60)
+
+            # Real yield annotation (best-effort)
+            real_yield = None
+            try:
+                ry_series = fred.get_series("DFII10", observation_start=start)
+                if ry_series is not None and not ry_series.empty:
+                    real_yield = round(float(ry_series.dropna().iloc[-1]), 2)
+            except Exception:
+                pass
+
+            return {
+                "spread": round(spread_value, 2),
+                "level": level,
+                "level_cn": level_cn,
+                "emoji": emoji,
+                "real_yield": real_yield,
+                "delta": delta,
+                "series": spread_series,
+            }
+        except Exception as e:
+            logger.error(f"收益率曲线分析失败: {e}")
+            return {"error": str(e)}
+
     def analyze_all(
         self,
         margin_df: Optional[pd.DataFrame] = None,
@@ -160,4 +205,5 @@ class LeadingIndicatorsAnalyzer:
             "vix": self.analyze_vix(lookback_days=lookback_days),
             "credit_spread": self.analyze_credit_spread(lookback_days=lookback_days),
             "margin": self.analyze_margin_balance(margin_df=margin_df),
+            "yield_curve": self.analyze_yield_curve(lookback_days=lookback_days),
         }

@@ -81,10 +81,82 @@ class TestAnalyzeMarginBalance:
         assert result["delta"]["velocity"] > 0
 
 
+class TestAnalyzeYieldCurve:
+    @patch("quant.analysis.indicators.leading_indicators.LeadingIndicatorsAnalyzer._get_fred")
+    def test_returns_yield_curve_with_delta(self, mock_get_fred):
+        mock_fred = MagicMock()
+        spread_values = _make_daily_series([0.5 - i * 0.015 for i in range(30)])
+        real_yield_values = _make_daily_series([2.0 + i * 0.01 for i in range(30)])
+        mock_fred.get_series.side_effect = [spread_values, real_yield_values]
+        mock_get_fred.return_value = mock_fred
+
+        analyzer = LeadingIndicatorsAnalyzer()
+        result = analyzer.analyze_yield_curve(lookback_days=30)
+
+        assert "spread" in result
+        assert "level" in result
+        assert "level_cn" in result
+        assert "emoji" in result
+        assert "real_yield" in result
+        assert "delta" in result
+        assert result["level"] in ("normal", "flattening", "inverted", "deeply_inverted")
+
+    @patch("quant.analysis.indicators.leading_indicators.LeadingIndicatorsAnalyzer._get_fred")
+    def test_inverted_curve(self, mock_get_fred):
+        mock_fred = MagicMock()
+        spread_values = _make_daily_series([-0.3] * 30)
+        real_yield_values = _make_daily_series([2.5] * 30)
+        mock_fred.get_series.side_effect = [spread_values, real_yield_values]
+        mock_get_fred.return_value = mock_fred
+
+        analyzer = LeadingIndicatorsAnalyzer()
+        result = analyzer.analyze_yield_curve(lookback_days=30)
+
+        assert result["level"] == "inverted"
+        assert result["emoji"] == "🟠"
+
+    @patch("quant.analysis.indicators.leading_indicators.LeadingIndicatorsAnalyzer._get_fred")
+    def test_deeply_inverted_curve(self, mock_get_fred):
+        mock_fred = MagicMock()
+        spread_values = _make_daily_series([-0.8] * 30)
+        real_yield_values = _make_daily_series([2.0] * 30)
+        mock_fred.get_series.side_effect = [spread_values, real_yield_values]
+        mock_get_fred.return_value = mock_fred
+
+        analyzer = LeadingIndicatorsAnalyzer()
+        result = analyzer.analyze_yield_curve(lookback_days=30)
+
+        assert result["level"] == "deeply_inverted"
+        assert result["emoji"] == "🔴"
+
+    @patch("quant.analysis.indicators.leading_indicators.LeadingIndicatorsAnalyzer._get_fred")
+    def test_normal_curve(self, mock_get_fred):
+        mock_fred = MagicMock()
+        spread_values = _make_daily_series([1.0] * 30)
+        real_yield_values = _make_daily_series([1.5] * 30)
+        mock_fred.get_series.side_effect = [spread_values, real_yield_values]
+        mock_get_fred.return_value = mock_fred
+
+        analyzer = LeadingIndicatorsAnalyzer()
+        result = analyzer.analyze_yield_curve(lookback_days=30)
+
+        assert result["level"] == "normal"
+        assert result["emoji"] == "🟢"
+
+    @patch("quant.analysis.indicators.leading_indicators.LeadingIndicatorsAnalyzer._get_fred")
+    def test_fred_failure_returns_error(self, mock_get_fred):
+        mock_get_fred.side_effect = Exception("FRED unavailable")
+
+        analyzer = LeadingIndicatorsAnalyzer()
+        result = analyzer.analyze_yield_curve()
+
+        assert "error" in result
+
+
 class TestAnalyzeAll:
     @patch("quant.analysis.indicators.leading_indicators.yf")
     @patch("quant.analysis.indicators.leading_indicators.LeadingIndicatorsAnalyzer._get_fred")
-    def test_analyze_all_returns_three_indicators(self, mock_get_fred, mock_yf):
+    def test_analyze_all_returns_four_indicators(self, mock_get_fred, mock_yf):
         mock_yf.download.return_value = pd.DataFrame(
             {"Close": [20.0] * 30},
             index=pd.date_range("2026-01-01", periods=30, freq="D"),
@@ -106,3 +178,4 @@ class TestAnalyzeAll:
         assert "vix" in result
         assert "credit_spread" in result
         assert "margin" in result
+        assert "yield_curve" in result
