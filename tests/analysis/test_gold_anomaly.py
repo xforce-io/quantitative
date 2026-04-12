@@ -392,10 +392,11 @@ class TestCopperGoldRatio:
     @patch('quant.analysis.indicators.macro_liquidity_analyzer.yf')
     def test_low_percentile_high_risk(self, mock_yf):
         """When copper declines sharply relative to gold, risk_score should be >= 70."""
-        # Copper: stable at 4.5 for 60 days, then drops to 2.2 for 30 days
+        # Copper: stable at 4.5 for 80 days, then steep decline to 2.2 over last 10
         # Gold: stable at 2000 throughout
-        # The 30-day low ratio (2.2/2000 = 0.0011) will be at a very low percentile
-        copper_prices = [4.5] * 60 + [2.2] * 30
+        # In the 60-day window, most values are high (4.5/2000) and only the last few
+        # are low (2.2/2000), so current ratio sits at a very low percentile
+        copper_prices = [4.5] * 80 + [4.0, 3.8, 3.5, 3.2, 3.0, 2.8, 2.6, 2.4, 2.3, 2.2]
         gold_prices = [2000.0] * 90
 
         def download_side_effect(ticker, **kwargs):

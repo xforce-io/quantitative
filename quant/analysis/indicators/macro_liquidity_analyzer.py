@@ -841,7 +841,7 @@ class MacroLiquidityAnalyzer:
         window = min(60, len(ratio_series))
         current_ratio = float(ratio_series.iloc[-1])
         rolling_window = ratio_series.iloc[-window:]
-        rank = (rolling_window < current_ratio).sum()
+        rank = (rolling_window <= current_ratio).sum()
         percentile = float(rank) / len(rolling_window) * 100
 
         # Weekly change (5 trading days)
