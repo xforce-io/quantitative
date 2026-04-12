@@ -12,12 +12,8 @@ if str(_project_root) not in sys.path:
 import streamlit as st
 from datetime import datetime, timedelta
 
-from web.data_service import (
-    get_all_pool_verdicts,
-    get_heuristic_pool_verdict,
-    get_stock_technical_data,
-    get_leading_indicators,
-)
+from web.data_service import get_stock_technical_data
+from web.data_service_verdict import get_dashboard_verdict, get_all_regimes, get_active_transmissions
 from web.utils import load_watchlist, get_all_symbols
 from web.ui_theme import apply_custom_css
 
@@ -63,18 +59,14 @@ _POOL_ORDER = ["a_shares", "us_stocks", "gold", "commodities"]
 
 # ==================== Helpers ====================
 
-def _overall_stance(verdicts: dict) -> str:
-    """Derive overall stance from per-pool actions."""
-    actions = [v.get("action", "hold") for v in verdicts.values()]
-    reduces = actions.count("reduce")
-    adds = actions.count("add")
-    if reduces >= 3:
-        return "defensive"
-    if reduces >= 2:
-        return "cautious"
-    if adds >= 3:
-        return "aggressive"
-    return "neutral"
+def _regime_icon(regime: str) -> str:
+    """Map a regime string to a traffic-light icon."""
+    regime_lower = regime.lower() if regime else ""
+    if any(k in regime_lower for k in ("risk-on", "expansion", "bullish", "reflation")):
+        return "🟢"
+    if any(k in regime_lower for k in ("risk-off", "contraction", "bearish", "deflation")):
+        return "🔴"
+    return "🟡"
 
 
 def _action_badge(action: str) -> str:
@@ -90,20 +82,20 @@ def _render_verdict_bar():
     st.markdown("### 🎯 决策总览")
 
     try:
-        verdicts = get_all_pool_verdicts()
+        verdict = get_dashboard_verdict()
     except Exception:
         st.warning("无法获取资产池判断，请稍后重试。")
         return
 
-    stance = _overall_stance(verdicts)
-    stance_color = _STANCE_COLORS[stance]
-    stance_emoji = _STANCE_EMOJIS[stance]
+    stance = verdict["overall_stance"]
+    stance_color = _STANCE_COLORS.get(stance, "#95a5a6")
+    stance_emoji = _STANCE_EMOJIS.get(stance, "⚪")
     stance_label = {
         "aggressive": "积极",
         "neutral":    "中性",
         "cautious":   "谨慎",
         "defensive":  "防御",
-    }[stance]
+    }.get(stance, stance)
 
     # Overall stance banner
     st.markdown(
@@ -123,13 +115,19 @@ def _render_verdict_bar():
         unsafe_allow_html=True,
     )
 
+    # Build a pool → verdict lookup for ordered display
+    pool_verdicts_map = {v["pool"]: v for v in verdict.get("pool_verdicts", [])}
+
     # Per-pool action lines
     cols = st.columns(4)
     for i, pool in enumerate(_POOL_ORDER):
-        v = verdicts.get(pool, {})
+        v = pool_verdicts_map.get(pool, {})
         action = v.get("action", "hold")
-        regime_icon = v.get("regime_icon", "⚪")
-        reasoning = v.get("reasoning", "—")
+        regime_dict = v.get("regime", {})
+        regime_str = regime_dict.get("regime", "unknown") if isinstance(regime_dict, dict) else str(regime_dict)
+        icon = _regime_icon(regime_str)
+        reasoning_list = v.get("reasoning", [])
+        reasoning = "; ".join(reasoning_list[:2]) if reasoning_list else "—"
         label = _POOL_LABELS.get(pool, pool)
         color = _ACTION_COLORS.get(action, "#95a5a6")
         badge = _action_badge(action)
@@ -146,24 +144,39 @@ def _render_verdict_bar():
                 ">
                     <div style="font-size:0.8rem;color:#7f8c8d;">{label}</div>
                     <div style="font-size:1rem;font-weight:700;color:{color};">{badge}</div>
-                    <div style="font-size:0.75rem;color:#95a5a6;margin-top:4px;">{regime_icon} {reasoning}</div>
+                    <div style="font-size:0.75rem;color:#95a5a6;margin-top:4px;">{icon} {reasoning}</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
 
     # Updated timestamp
-    updated_times = [v.get("updated_at") for v in verdicts.values() if v.get("updated_at")]
-    if updated_times:
-        st.caption(f"更新时间：{updated_times[0]}")
+    updated_at = verdict.get("updated_at")
+    if updated_at:
+        st.caption(f"更新时间：{updated_at}")
 
 
 # ==================== Section: Transmission Alerts ====================
 
 def _render_transmission_alerts():
-    """Placeholder — will be populated with cross-asset transmission signals later."""
+    """Cross-asset transmission signals from TransmissionGraph."""
     st.markdown("### 📡 传导预警")
-    st.info("暂无活跃传导信号。（此功能将在后续版本中启用）")
+    try:
+        transmissions = get_active_transmissions()
+    except Exception:
+        transmissions = []
+
+    if not transmissions:
+        st.caption("暂无活跃跨资产传导信号")
+        return
+
+    for t in transmissions:
+        direction_label = "→" if t["direction"] == "direct" else "→ (反向)"
+        st.markdown(
+            f"**{t['source']}** {t['source_move']:+.1f}% {direction_label} "
+            f"**{t['target']}** — {t['expected_target']} "
+            f"(强度: {t['strength']:.0%}, 剩余 {t['days_remaining']}天)"
+        )
 
 
 # ==================== Section: Pool Cards ====================
@@ -173,7 +186,9 @@ def _render_pool_cards():
     st.markdown("### 🗂 资产池状态")
 
     try:
-        verdicts = get_all_pool_verdicts()
+        regimes = get_all_regimes()
+        verdict = get_dashboard_verdict()
+        pool_verdicts = {v["pool"]: v for v in verdict["pool_verdicts"]}
     except Exception:
         st.warning("无法获取资产池数据。")
         return
@@ -183,11 +198,14 @@ def _render_pool_cards():
     for row_pools in rows:
         cols = st.columns(2)
         for col, pool in zip(cols, row_pools):
-            v = verdicts.get(pool, {})
-            action = v.get("action", "hold")
-            regime = v.get("regime", "unknown")
-            regime_icon = v.get("regime_icon", "⚪")
-            reasoning = v.get("reasoning", "—")
+            pv = pool_verdicts.get(pool, {})
+            regime_data = regimes.get(pool, {})
+            action = pv.get("action", "hold")
+            regime = regime_data.get("regime", "unknown")
+            icon = _regime_icon(regime)
+            confidence = regime_data.get("confidence", 0.0)
+            reasoning_list = pv.get("reasoning", [])
+            reasoning = "; ".join(reasoning_list[:2]) if reasoning_list else "—"
             label = _POOL_LABELS.get(pool, pool)
             color = _ACTION_COLORS.get(action, "#95a5a6")
             badge = _action_badge(action)
@@ -214,7 +232,8 @@ def _render_pool_cards():
                             ">{badge}</span>
                         </div>
                         <div style="margin-top:8px;font-size:0.85rem;color:#555;">
-                            {regime_icon} <strong>情景</strong>：{regime}
+                            {icon} <strong>情景</strong>：{regime}
+                            <span style="font-size:0.75rem;color:#95a5a6;margin-left:8px;">置信度 {confidence:.0%}</span>
                         </div>
                         <div style="margin-top:4px;font-size:0.8rem;color:#7f8c8d;">
                             {reasoning}
@@ -291,7 +310,8 @@ def _render_position_alerts():
 
     # Fetch pool verdicts for context
     try:
-        pool_verdicts = get_all_pool_verdicts()
+        verdict = get_dashboard_verdict()
+        pool_verdicts = {v["pool"]: v for v in verdict["pool_verdicts"]}
     except Exception:
         pool_verdicts = {}
 
@@ -303,7 +323,7 @@ def _render_position_alerts():
             pool = entry.get("pool", "")
 
             result = _compute_position_alert(symbol)
-            pool_action = pool_verdicts.get(pool, {}).get("action", "hold")
+            pool_action = pool_verdicts.get(pool, {}).get("action", "hold")  # VerdictEngine action
             pool_label = _POOL_LABELS.get(pool, pool)
 
             alerts.append({
