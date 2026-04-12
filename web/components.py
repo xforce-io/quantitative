@@ -637,8 +637,8 @@ def render_stock_detail_card(
                     # 优先尝试交互式图表
                     try:
                         # 尝试添加股价数据以增强展示
-                        from web.data_service import get_stock_price
-                        price_df = get_stock_price(symbol, start_str, end_str)
+                        from web.data_service import get_stock_technical_data
+                        price_df = get_stock_technical_data(symbol, start_str, end_str)
                         if not price_df.empty:
                             # 确保索引类型一致
                             price_df.index = pd.to_datetime(price_df.index)
