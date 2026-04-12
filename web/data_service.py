@@ -827,3 +827,91 @@ def get_dashboard_summary() -> Dict[str, Any]:
 
     summary['macro'] = macro
     return summary
+
+
+# ==================== Heuristic Verdict (pre-signal-framework) ====================
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_heuristic_pool_verdict(pool: str) -> Dict[str, Any]:
+    """
+    Compute a heuristic verdict for an asset pool using existing analyzers.
+    Temporary implementation — will be replaced by VerdictEngine.
+    """
+    from datetime import datetime
+    result = {"pool": pool, "updated_at": datetime.now().strftime("%H:%M")}
+
+    if pool == "a_shares":
+        try:
+            china = get_china_market_signals(lookback_days=60)
+            status = china.get("status", "Unknown")
+            risk_score = china.get("risk_score", 50)
+            if status == "Defensive" or risk_score > 70:
+                result.update(action="reduce", reasoning="A-share sentiment defensive, risk score high",
+                             regime="risk-off", regime_icon="🔴")
+            elif status == "Bullish" or risk_score < 30:
+                result.update(action="add", reasoning="A-share sentiment bullish",
+                             regime="risk-on", regime_icon="🟢")
+            else:
+                result.update(action="hold", reasoning=f"A-share sentiment {status}",
+                             regime="transition", regime_icon="🟡")
+        except Exception:
+            result.update(action="hold", reasoning="data unavailable", regime="unknown", regime_icon="⚪")
+
+    elif pool == "us_stocks":
+        try:
+            macro = get_macro_liquidity(lookback_days=365)
+            status = macro.get("status", "Unknown")
+            risk_score = macro.get("risk_score", 50)
+            if status == "Abundant" or risk_score < 35:
+                result.update(action="add", reasoning="macro liquidity abundant",
+                             regime="expansion", regime_icon="🟢")
+            elif status == "Crisis" or risk_score > 70:
+                result.update(action="reduce", reasoning="macro liquidity crisis",
+                             regime="contraction", regime_icon="🔴")
+            else:
+                result.update(action="hold", reasoning=f"macro liquidity {status}",
+                             regime="transition", regime_icon="🟡")
+        except Exception:
+            result.update(action="hold", reasoning="data unavailable", regime="unknown", regime_icon="⚪")
+
+    elif pool == "gold":
+        try:
+            usd = get_global_usd_liquidity()
+            confidence = usd.get("confidence", 0)
+            if confidence is not None and confidence < -10:
+                result.update(action="add", reasoning="USD liquidity contracting — gold bullish",
+                             regime="bullish", regime_icon="🟢")
+            elif confidence is not None and confidence > 20:
+                result.update(action="reduce", reasoning="USD liquidity expanding — gold headwind",
+                             regime="bearish", regime_icon="🔴")
+            else:
+                result.update(action="hold", reasoning="USD liquidity neutral",
+                             regime="neutral", regime_icon="🟡")
+        except Exception:
+            result.update(action="hold", reasoning="data unavailable", regime="unknown", regime_icon="⚪")
+
+    elif pool == "commodities":
+        try:
+            macro = get_macro_liquidity(lookback_days=365)
+            dimensions = macro.get("dimension_scores", {})
+            copper_gold = dimensions.get("copper_gold", {}).get("score", 50)
+            crude = dimensions.get("crude_oil", {}).get("score", 50)
+            if copper_gold > 60 and crude > 60:
+                result.update(action="add", reasoning="copper/gold + crude both bullish",
+                             regime="reflation", regime_icon="🟢")
+            elif copper_gold < 40 and crude < 40:
+                result.update(action="reduce", reasoning="copper/gold + crude both weak",
+                             regime="deflation", regime_icon="🔴")
+            else:
+                result.update(action="hold", reasoning="commodity signals mixed",
+                             regime="neutral", regime_icon="🟡")
+        except Exception:
+            result.update(action="hold", reasoning="data unavailable", regime="unknown", regime_icon="⚪")
+
+    return result
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_all_pool_verdicts() -> Dict[str, Dict[str, Any]]:
+    """Get heuristic verdicts for all four asset pools."""
+    return {pool: get_heuristic_pool_verdict(pool) for pool in ("a_shares", "us_stocks", "gold", "commodities")}
