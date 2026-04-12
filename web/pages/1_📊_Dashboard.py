@@ -55,25 +55,66 @@ _STATUS_EMOJI = {'Abundant': '🟢', 'Normal': '🟡', 'Tight': '🟠', 'Crisis'
 _SENTIMENT_EMOJI = {'Bullish': '🟢', 'Neutral': '🟡', 'Cautious': '🟠', 'Defensive': '🔴'}
 
 
+def _macro_interpretation(usd_confidence, macro_status, macro_score, sentiment, velocity):
+    """根据三个维度的数据，生成一句话宏观解读。"""
+    parts = []
+
+    # 流动性环境
+    if macro_status in ('Abundant',):
+        if usd_confidence is not None and usd_confidence > 10:
+            parts.append("全球流动性充裕，利于风险资产")
+        else:
+            parts.append("宏观流动性宽松")
+    elif macro_status == 'Normal':
+        parts.append("流动性中性，无明显方向")
+    elif macro_status == 'Tight':
+        parts.append("流动性偏紧，注意防守")
+    elif macro_status == 'Crisis':
+        parts.append("流动性危机信号，优先控制仓位")
+
+    # 趋势方向
+    if velocity is not None:
+        if velocity > 2:
+            parts.append("且在加速宽松")
+        elif velocity < -2:
+            parts.append("且在加速收紧")
+
+    # A股情绪叠加
+    if sentiment == 'Bullish':
+        parts.append("A股情绪积极，可积极参与")
+    elif sentiment == 'Defensive':
+        parts.append("A股情绪防御，宜轻仓观望")
+    elif sentiment == 'Cautious':
+        parts.append("A股情绪谨慎")
+
+    return "，".join(parts) + "。" if parts else ""
+
+
 def _render_macro_bar():
-    """宏观环境一行三灯。"""
+    """宏观环境一行三灯 + 一句话解读。"""
     st.markdown("### 🌍 宏观环境")
+
+    usd_confidence = None
+    usd_velocity = None
+    macro_status = 'Unknown'
+    macro_score = 50
+    sentiment = 'Unknown'
 
     col1, col2, col3 = st.columns(3)
 
     with col1:
         try:
             usd = get_global_usd_liquidity()
-            confidence = usd.get('confidence')
+            usd_confidence = usd.get('confidence')
             wow = usd.get('wow_change')
-            velocity = usd.get('velocity')
-            if confidence is not None:
+            usd_velocity = usd.get('velocity')
+            if usd_confidence is not None:
                 arrow = "↑" if (wow or 0) > 2 else ("↓" if (wow or 0) < -2 else "→")
-                st.metric("美元流动性", f"{confidence:+.1f}%",
+                st.metric("美元流动性", f"{usd_confidence:+.1f}%",
                           f"{arrow} 周变化 {wow:+.1f}pp" if wow else None)
-                if velocity is not None and abs(velocity) > 1:
-                    v_dir = "加速宽松" if velocity > 0 else "加速收紧"
-                    st.caption(f"⚡ {v_dir} (v={velocity:+.1f})")
+                if usd_velocity is not None and abs(usd_velocity) > 1:
+                    v_dir = "加速宽松" if usd_velocity > 0 else "加速收紧"
+                    st.caption(f"⚡ {v_dir} (v={usd_velocity:+.1f})")
             else:
                 st.metric("美元流动性", "暂无数据")
         except Exception:
@@ -82,11 +123,11 @@ def _render_macro_bar():
     with col2:
         try:
             macro = get_macro_liquidity(lookback_days=365)
-            status = macro.get('status', 'Unknown')
-            score = macro.get('weighted_score', 50)
-            emoji = _STATUS_EMOJI.get(status, '⚪')
-            label = _MACRO_STATUS_CN.get(status, status)
-            st.metric("宏观流动性", f"{emoji} {label}", f"风险分 {score:.0f}")
+            macro_status = macro.get('status', 'Unknown')
+            macro_score = macro.get('weighted_score', macro.get('risk_score', 50))
+            emoji = _STATUS_EMOJI.get(macro_status, '⚪')
+            label = _MACRO_STATUS_CN.get(macro_status, macro_status)
+            st.metric("宏观流动性", f"{emoji} {label}", f"风险分 {macro_score:.0f}")
         except Exception:
             st.metric("宏观流动性", "获取失败")
 
@@ -99,6 +140,13 @@ def _render_macro_bar():
             st.metric("A股情绪", f"{emoji} {label}")
         except Exception:
             st.metric("A股情绪", "获取失败")
+
+    # 一句话解读
+    interpretation = _macro_interpretation(
+        usd_confidence, macro_status, macro_score, sentiment, usd_velocity
+    )
+    if interpretation:
+        st.caption(f"📋 {interpretation}")
 
 
 # ==================== 领先信号 ====================
@@ -206,6 +254,68 @@ def _render_leading_signals():
             if abs(streak) >= 3:
                 direction = "增加" if streak > 0 else "减少"
                 st.caption(f"连续 {abs(streak)} 日{direction}")
+
+    # 领先信号综合解读
+    _render_leading_interpretation(data)
+
+
+def _render_leading_interpretation(data: dict):
+    """根据四个领先指标生成综合解读。"""
+    notes = []
+
+    # VIX
+    vix = data.get("vix", {})
+    if "error" not in vix:
+        value = vix.get("value", 0)
+        level = vix.get("level", "")
+        if level == "panic":
+            notes.append("VIX 极度恐慌，市场处于抛售状态，反转可能随时出现")
+        elif level == "fear":
+            notes.append("VIX 进入恐慌区间，短期风险加大但可能孕育机会")
+        elif level == "elevated":
+            notes.append("VIX 偏高，市场存在不确定性")
+        # normal 不说，没信息量
+
+    # 信用利差
+    cs = data.get("credit_spread", {})
+    if "error" not in cs:
+        level = cs.get("level", "")
+        if level == "crisis":
+            notes.append("信用利差飙升至危机水平，信用市场冻结风险")
+        elif level == "stress":
+            notes.append("信用利差走阔，企业融资成本上升，警惕信用风险")
+        elif level == "elevated":
+            notes.append("信用利差偏高，关注企业债市场压力")
+
+    # 收益率曲线
+    yc = data.get("yield_curve", {})
+    if "error" not in yc:
+        level = yc.get("level", "")
+        real_yield = yc.get("real_yield")
+        if level == "deeply_inverted":
+            notes.append("收益率曲线深度倒挂，衰退预警信号强烈")
+        elif level == "inverted":
+            notes.append("收益率曲线倒挂，历史上通常领先衰退 6-18 个月")
+        elif level == "flattening":
+            notes.append("收益率曲线趋平，经济增长预期放缓")
+        if real_yield is not None and real_yield > 2.0:
+            notes.append(f"实际利率 {real_yield:.1f}% 偏高，压制成长股估值")
+
+    # 融资余额
+    margin = data.get("margin", {})
+    if "error" not in margin:
+        delta = margin.get("delta", {})
+        streak = delta.get("streak", 0)
+        if streak >= 5:
+            notes.append("融资余额连续增加，杠杆资金活跃，市场做多意愿强")
+        elif streak <= -5:
+            notes.append("融资余额连续减少，杠杆资金撤退，谨慎为宜")
+
+    # 综合无风险信号时给一句正面的
+    if not notes:
+        notes.append("各项领先指标正常，未发现预警信号")
+
+    st.caption("📋 " + "；".join(notes) + "。")
 
 
 # ==================== 持仓预警 ====================
