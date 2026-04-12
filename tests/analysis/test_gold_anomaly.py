@@ -22,7 +22,32 @@ class TestGoldAnomalyConstants:
     def test_gold_dimension_weight_exists(self):
         from quant.analysis.indicators.macro_liquidity_analyzer import DIMENSION_WEIGHTS
         assert 'gold' in DIMENSION_WEIGHTS
-        assert DIMENSION_WEIGHTS['gold'] == 0.15
+        assert DIMENSION_WEIGHTS['gold'] == 0.08
+
+    def test_copper_gold_dimension_weight_exists(self):
+        from quant.analysis.indicators.macro_liquidity_analyzer import DIMENSION_WEIGHTS
+        assert 'copper_gold' in DIMENSION_WEIGHTS
+        assert DIMENSION_WEIGHTS['copper_gold'] == 0.10
+
+    def test_crude_oil_dimension_weight_exists(self):
+        from quant.analysis.indicators.macro_liquidity_analyzer import DIMENSION_WEIGHTS
+        assert 'crude_oil' in DIMENSION_WEIGHTS
+        assert DIMENSION_WEIGHTS['crude_oil'] == 0.10
+
+    def test_copper_gold_thresholds_exist(self):
+        from quant.analysis.indicators.macro_liquidity_analyzer import THRESHOLDS
+        assert 'copper_gold_percentile_extreme' in THRESHOLDS
+        assert 'copper_gold_percentile_high' in THRESHOLDS
+        assert 'copper_gold_percentile_elevated' in THRESHOLDS
+        assert 'copper_gold_weekly_drop_pct' in THRESHOLDS
+
+    def test_crude_thresholds_exist(self):
+        from quant.analysis.indicators.macro_liquidity_analyzer import THRESHOLDS
+        assert 'crude_weekly_surge_pct' in THRESHOLDS
+        assert 'crude_weekly_rise_pct' in THRESHOLDS
+        assert 'crude_weekly_crash_pct' in THRESHOLDS
+        assert 'crude_high_price' in THRESHOLDS
+        assert 'crude_elevated_price' in THRESHOLDS
 
     def test_gold_thresholds_exist(self):
         from quant.analysis.indicators.macro_liquidity_analyzer import THRESHOLDS
@@ -325,3 +350,75 @@ class TestFetchGoldAnomaly:
 
         assert result['confirmation']['gold_usd_divergence'] is False
         assert 'error' not in result
+
+
+class TestCopperGoldRatio:
+    """Test the _fetch_copper_gold_ratio method."""
+
+    def _make_analyzer(self):
+        from quant.analysis.indicators.macro_liquidity_analyzer import MacroLiquidityAnalyzer
+        return MacroLiquidityAnalyzer()
+
+    def _make_df(self, prices: list) -> pd.DataFrame:
+        dates = pd.bdate_range(end=datetime.now(), periods=len(prices))
+        return pd.DataFrame({'Close': prices}, index=dates)
+
+    @patch('quant.analysis.indicators.macro_liquidity_analyzer.yf')
+    def test_returns_expected_structure(self, mock_yf):
+        """_fetch_copper_gold_ratio should return dict with required keys."""
+        copper_prices = [4.0] * 90
+        gold_prices = [2000.0] * 90
+
+        def download_side_effect(ticker, **kwargs):
+            if ticker == 'HG=F':
+                return self._make_df(copper_prices)
+            elif ticker == 'GC=F':
+                return self._make_df(gold_prices)
+            return pd.DataFrame()
+
+        mock_yf.download.side_effect = download_side_effect
+
+        analyzer = self._make_analyzer()
+        result = analyzer._fetch_copper_gold_ratio()
+
+        assert 'ratio' in result
+        assert 'percentile' in result
+        assert 'risk_score' in result
+        assert 'signals' in result
+        assert 'series' in result
+        assert isinstance(result['signals'], list)
+        assert 0 <= result['risk_score'] <= 100
+
+    @patch('quant.analysis.indicators.macro_liquidity_analyzer.yf')
+    def test_low_percentile_high_risk(self, mock_yf):
+        """When copper declines sharply relative to gold, risk_score should be >= 70."""
+        # Copper: stable at 4.5 for 60 days, then drops to 2.2 for 30 days
+        # Gold: stable at 2000 throughout
+        # The 30-day low ratio (2.2/2000 = 0.0011) will be at a very low percentile
+        copper_prices = [4.5] * 60 + [2.2] * 30
+        gold_prices = [2000.0] * 90
+
+        def download_side_effect(ticker, **kwargs):
+            if ticker == 'HG=F':
+                return self._make_df(copper_prices)
+            elif ticker == 'GC=F':
+                return self._make_df(gold_prices)
+            return pd.DataFrame()
+
+        mock_yf.download.side_effect = download_side_effect
+
+        analyzer = self._make_analyzer()
+        result = analyzer._fetch_copper_gold_ratio()
+
+        assert result['risk_score'] >= 70
+
+    @patch('quant.analysis.indicators.macro_liquidity_analyzer.yf')
+    def test_empty_data_returns_error(self, mock_yf):
+        """When yf.download returns empty DataFrame, result should have 'error' and risk_score == 50."""
+        mock_yf.download.return_value = pd.DataFrame()
+
+        analyzer = self._make_analyzer()
+        result = analyzer._fetch_copper_gold_ratio()
+
+        assert 'error' in result
+        assert result['risk_score'] == 50
