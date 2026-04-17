@@ -10,6 +10,7 @@ from itertools import product
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
+from xgboost import XGBRegressor
 
 from quant.core.logging_config import get_logger
 
@@ -220,3 +221,33 @@ class WeightedLinearBackend(ScoringBackend):
             # Transition zone: no directional expectation
 
         return hits / total if total > 0 else 0.0
+
+
+class XGBoostBackend(ScoringBackend):
+    """
+    XGBoost regression backend for regime scoring.
+
+    fit() uses expanding walk-forward CV to evaluate generalization,
+    then retrains on the full dataset for production use.
+    score() returns tanh(predicted_return * 20) in [-1, +1].
+    """
+
+    _SCALE: float = 20.0
+    _HIT_THRESHOLD: float = 0.2
+    _MIN_TRAIN: int = 24
+    _STEP: int = 6
+
+    def __init__(self) -> None:
+        self._model: Optional[XGBRegressor] = None
+        self._feature_names: Optional[List[str]] = None
+
+    def score(self, features: Dict[str, float]) -> float:
+        if self._model is None:
+            raise RuntimeError(
+                "XGBoostBackend.score() called before fit(). Call fit() first."
+            )
+        x = np.array(
+            [features.get(n, 0.0) for n in self._feature_names], dtype=float
+        ).reshape(1, -1)
+        pred = float(self._model.predict(x)[0])
+        return math.tanh(pred * self._SCALE)
