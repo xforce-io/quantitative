@@ -257,8 +257,15 @@ class XGBoostBackend(ScoringBackend):
         forward_returns: np.ndarray,
         **kwargs,
     ) -> Dict:
-        self._feature_names = list(feature_names)
+        self._model = None
+        self._feature_names = None
         n = len(forward_returns)
+
+        if feature_matrix.shape[1] != len(feature_names):
+            raise ValueError(
+                f"feature_matrix has {feature_matrix.shape[1]} columns "
+                f"but {len(feature_names)} feature names were provided"
+            )
 
         # Phase 1: walk-forward CV for evaluation
         folds = self._walk_forward_folds(n)
@@ -291,11 +298,12 @@ class XGBoostBackend(ScoringBackend):
 
         test_hr = float(np.mean([f["hit_rate"] for f in fold_details])) if fold_details else 0.0
 
-        if test_hr < 0.50:
+        if fold_details and test_hr < 0.50:
             logger.warning(
                 f"XGBoostBackend CV test hit rate {test_hr:.3f} is below 0.50 (random baseline)"
             )
 
+        self._feature_names = list(feature_names)
         return {
             "train_hit_rate": round(train_hr, 4),
             "test_hit_rate": round(test_hr, 4),
