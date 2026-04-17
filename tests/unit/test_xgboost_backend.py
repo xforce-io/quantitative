@@ -125,3 +125,42 @@ class TestXGBoostBackendScore:
         backend.fit(feature_names, X, y)
         score = backend.score({"bear": 1.0, "noise": 0.0})
         assert score < 0, f"Expected negative score for bearish features, got {score}"
+
+
+class TestXGBoostBackendIntegration:
+    def test_scorer_returns_valid_regime_state(self):
+        """XGBoostBackend plugs into ContinuousRegimeScorer without errors."""
+        from quant.analysis.regime.continuous_scorer import ContinuousRegimeScorer
+
+        feature_names = [
+            "vix_level", "vix_roc", "cs_level", "cs_change",
+            "yc_level", "yc_change", "price_vs_ma200", "ma50_vs_ma200", "rsi",
+        ]
+        rng = np.random.RandomState(0)
+        n = 60
+        X = rng.uniform(-1, 1, (n, len(feature_names)))
+        y = rng.randn(n) * 0.01
+
+        backend = XGBoostBackend()
+        backend.fit(feature_names, X, y)
+
+        # Mock pipeline so we can test scorer without real market data
+        class _MockPipeline:
+            @property
+            def feature_names(self):
+                return feature_names
+
+            def compute(self, series, eval_idx=-1):
+                return {name: 0.3 for name in feature_names}
+
+        scorer = ContinuousRegimeScorer(
+            pool="us_stocks",
+            backend=backend,
+            pipeline=_MockPipeline(),
+        )
+        state = scorer.classify({})
+
+        assert state.pool == "us_stocks"
+        assert state.regime in ("expansion", "contraction", "transition")
+        assert 0.0 <= state.confidence <= 1.0
+        assert len(state.drivers) > 0
