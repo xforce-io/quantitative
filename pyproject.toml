@@ -37,6 +37,9 @@ dependencies = [
     # Scientific computing (for regression analysis)
     "scipy>=1.9.0",
 
+    # ML backend for regime scoring
+    "xgboost>=1.7.0",
+
     # Macro data (FRED API)
     "fredapi>=0.5.0",
 ]
