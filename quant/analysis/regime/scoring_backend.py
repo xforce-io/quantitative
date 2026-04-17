@@ -10,8 +10,6 @@ from itertools import product
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
-from xgboost import XGBRegressor
-
 from quant.core.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -238,7 +236,7 @@ class XGBoostBackend(ScoringBackend):
     _STEP: int = 6
 
     def __init__(self) -> None:
-        self._model: Optional[XGBRegressor] = None
+        self._model = None
         self._feature_names: Optional[List[str]] = None
 
     def score(self, features: Dict[str, float]) -> float:
@@ -251,3 +249,92 @@ class XGBoostBackend(ScoringBackend):
         ).reshape(1, -1)
         pred = float(self._model.predict(x)[0])
         return math.tanh(pred * self._SCALE)
+
+    def fit(
+        self,
+        feature_names: List[str],
+        feature_matrix: np.ndarray,
+        forward_returns: np.ndarray,
+        **kwargs,
+    ) -> Dict:
+        self._feature_names = list(feature_names)
+        n = len(forward_returns)
+
+        # Phase 1: walk-forward CV for evaluation
+        folds = self._walk_forward_folds(n)
+        fold_details = []
+        for i, (train_end, test_end) in enumerate(folds):
+            X_tr = feature_matrix[:train_end]
+            y_tr = forward_returns[:train_end]
+            X_te = feature_matrix[train_end:test_end]
+            y_te = forward_returns[train_end:test_end]
+
+            fold_model = self._make_model()
+            fold_model.fit(X_tr, y_tr)
+            preds = fold_model.predict(X_te)
+            scores = np.tanh(preds * self._SCALE)
+            hr = self._hit_rate(scores, y_te)
+            fold_details.append({
+                "fold": i + 1,
+                "train_n": train_end,
+                "test_n": test_end - train_end,
+                "hit_rate": round(hr, 4),
+            })
+
+        # Phase 2: final model on full dataset (for production score())
+        self._model = self._make_model()
+        self._model.fit(feature_matrix, forward_returns)
+
+        train_preds = self._model.predict(feature_matrix)
+        train_scores = np.tanh(train_preds * self._SCALE)
+        train_hr = self._hit_rate(train_scores, forward_returns)
+
+        test_hr = float(np.mean([f["hit_rate"] for f in fold_details])) if fold_details else 0.0
+
+        if test_hr < 0.50:
+            logger.warning(
+                f"XGBoostBackend CV test hit rate {test_hr:.3f} is below 0.50 (random baseline)"
+            )
+
+        return {
+            "train_hit_rate": round(train_hr, 4),
+            "test_hit_rate": round(test_hr, 4),
+            "n_folds": len(fold_details),
+            "fold_details": fold_details,
+        }
+
+    @classmethod
+    def _walk_forward_folds(cls, n: int) -> List[Tuple[int, int]]:
+        folds = []
+        train_end = cls._MIN_TRAIN
+        while train_end + cls._STEP <= n:
+            folds.append((train_end, train_end + cls._STEP))
+            train_end += cls._STEP
+        return folds
+
+    @classmethod
+    def _hit_rate(cls, scores: np.ndarray, returns: np.ndarray) -> float:
+        hits = total = 0
+        for s, r in zip(scores, returns):
+            if s > cls._HIT_THRESHOLD:
+                total += 1
+                if r > 0:
+                    hits += 1
+            elif s < -cls._HIT_THRESHOLD:
+                total += 1
+                if r < 0:
+                    hits += 1
+        return hits / total if total > 0 else 0.0
+
+    @staticmethod
+    def _make_model():
+        from xgboost import XGBRegressor  # deferred — xgboost is optional dependency
+        return XGBRegressor(
+            max_depth=3,
+            n_estimators=100,
+            learning_rate=0.1,
+            reg_lambda=1.5,
+            subsample=0.8,
+            random_state=42,
+            n_jobs=1,
+        )
