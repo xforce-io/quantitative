@@ -87,3 +87,41 @@ class TestXGBoostBackendFit:
         assert result["n_folds"] == 0
         assert result["test_hit_rate"] == 0.0
         assert "below 0.50" not in caplog.text
+
+
+class TestXGBoostBackendScore:
+    def test_score_in_range_after_fit(self):
+        feature_names, X, y = _make_data()
+        backend = XGBoostBackend()
+        backend.fit(feature_names, X, y)
+        score = backend.score({n: 0.3 for n in feature_names})
+        assert -1.0 <= score <= 1.0
+
+    def test_score_missing_feature_defaults_to_zero(self):
+        feature_names, X, y = _make_data()
+        backend = XGBoostBackend()
+        backend.fit(feature_names, X, y)
+        score = backend.score({feature_names[0]: 0.5})
+        assert -1.0 <= score <= 1.0
+
+    def test_bullish_features_give_positive_score(self):
+        rng = np.random.RandomState(0)
+        n = 60
+        feature_names = ["bull", "noise"]
+        X = rng.randn(n, 2)
+        y = X[:, 0] * 0.5
+        backend = XGBoostBackend()
+        backend.fit(feature_names, X, y)
+        score = backend.score({"bull": 1.0, "noise": 0.0})
+        assert score > 0, f"Expected positive score for bullish features, got {score}"
+
+    def test_bearish_features_give_negative_score(self):
+        rng = np.random.RandomState(1)
+        n = 60
+        feature_names = ["bear", "noise"]
+        X = rng.randn(n, 2)
+        y = -X[:, 0] * 0.5
+        backend = XGBoostBackend()
+        backend.fit(feature_names, X, y)
+        score = backend.score({"bear": 1.0, "noise": 0.0})
+        assert score < 0, f"Expected negative score for bearish features, got {score}"
