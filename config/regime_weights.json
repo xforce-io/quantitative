@@ -1,0 +1,16 @@
+{
+  "weights": {
+    "vix_level": 1.0,
+    "vix_roc": 1.0,
+    "cs_level": 1.0,
+    "cs_change": 1.0,
+    "yc_level": 1.0,
+    "yc_change": 1.0,
+    "price_vs_ma200": 1.0,
+    "ma50_vs_ma200": 1.0,
+    "rsi_norm": 1.0
+  },
+  "metadata": {
+    "note": "Default equal weights — run grid search to optimize"
+  }
+}
