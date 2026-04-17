@@ -1,0 +1,60 @@
+# config/regime_features.yaml
+# Feature definitions for ContinuousRegimeScorer (us_stocks pool).
+
+us_stocks:
+  # Normalization defaults
+  zscore_window: 60        # rolling window for z-score (trading days)
+  momentum_window: 20      # window for rate-of-change features
+
+  # Score-to-regime mapping thresholds
+  expansion_threshold: 0.2
+  contraction_threshold: -0.2
+
+  features:
+    # --- Macro level (z-score of absolute value) ---
+    vix_level:
+      source: vix
+      method: zscore       # z-score over rolling window, then tanh
+      polarity: -1         # higher VIX = bearish
+
+    cs_level:
+      source: credit_spread
+      method: zscore
+      polarity: -1         # higher spread = bearish
+
+    yc_level:
+      source: yield_curve
+      method: zscore
+      polarity: 1          # higher 2s10s = bullish
+
+    # --- Macro momentum (z-score of N-day change) ---
+    vix_roc:
+      source: vix
+      method: momentum_zscore   # ROC over momentum_window, z-score, tanh
+      polarity: -1              # rising VIX = bearish
+
+    cs_change:
+      source: credit_spread
+      method: momentum_zscore
+      polarity: -1              # widening spread = bearish
+
+    yc_change:
+      source: yield_curve
+      method: momentum_zscore
+      polarity: 1               # steepening = bullish
+
+    # --- Price technicals (natural-range normalization) ---
+    price_vs_ma200:
+      source: benchmark
+      method: ratio              # (price - MA200) / MA200, then tanh
+      polarity: 1                # above MA200 = bullish
+
+    ma50_vs_ma200:
+      source: benchmark
+      method: ma_ratio           # (MA50 - MA200) / MA200, then tanh
+      polarity: 1                # golden cross zone = bullish
+
+    rsi_norm:
+      source: benchmark
+      method: rsi                # (RSI14 - 50) / 50 -> [-1, +1]
+      polarity: 1                # RSI > 50 = bullish
