@@ -61,3 +61,29 @@ class TestXGBoostBackendFit:
         backend = XGBoostBackend()
         result = backend.fit(feature_names, X, y)
         assert result["n_folds"] == 1
+
+    def test_shape_mismatch_raises_value_error(self):
+        feature_names, X, y = _make_data(n_features=6)
+        backend = XGBoostBackend()
+        wrong_names = feature_names[:4]  # 4 names, 6 columns
+        with pytest.raises(ValueError, match="feature_matrix has 6 columns"):
+            backend.fit(wrong_names, X, y)
+
+    def test_score_raises_after_failed_fit(self):
+        feature_names, X, y = _make_data(n_features=6)
+        backend = XGBoostBackend()
+        with pytest.raises(ValueError):
+            backend.fit(feature_names[:4], X, y)  # fail due to shape mismatch
+        with pytest.raises(RuntimeError, match="before fit"):
+            backend.score({n: 0.1 for n in feature_names})
+
+    def test_no_warning_when_no_folds(self, caplog):
+        # n=20 < min_train=24 → no folds → test_hr=0.0, but no warning should fire
+        import logging
+        feature_names, X, y = _make_data(n=20)
+        backend = XGBoostBackend()
+        with caplog.at_level(logging.WARNING):
+            result = backend.fit(feature_names, X, y)
+        assert result["n_folds"] == 0
+        assert result["test_hit_rate"] == 0.0
+        assert "below 0.50" not in caplog.text
