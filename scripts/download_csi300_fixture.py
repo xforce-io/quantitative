@@ -6,7 +6,9 @@ from pathlib import Path
 import pandas as pd
 import tushare as ts
 
-token = os.environ["TUSHARE_TOKEN"]
+token = os.environ.get("TUSHARE_TOKEN")
+if not token:
+    raise SystemExit("Error: TUSHARE_TOKEN environment variable is not set")
 ts.set_token(token)
 pro = ts.pro_api()
 
@@ -18,7 +20,7 @@ df = df.sort_values("trade_date").reset_index(drop=True)
 df["trade_date"] = pd.to_datetime(df["trade_date"])
 df = df[["trade_date", "close"]].rename(columns={"trade_date": "date"})
 
-out = Path("tests/fixtures/csi300_daily.csv")
+out = Path(__file__).parent.parent / "tests/fixtures/csi300_daily.csv"
 out.parent.mkdir(parents=True, exist_ok=True)
 df.to_csv(out, index=False)
 print(f"Saved {len(df)} rows to {out}")
