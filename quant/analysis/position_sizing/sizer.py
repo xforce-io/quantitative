@@ -7,6 +7,9 @@ from dataclasses import dataclass
 import pandas as pd
 
 from quant.analysis.position_sizing.volatility import VolatilityCalculator
+from quant.core.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -31,12 +34,20 @@ class PositionSizer:
 
     def __init__(self, target_vol: float = 0.20) -> None:
         self._target_vol = target_vol
+        if not (0 < target_vol <= 1.0):
+            raise ValueError(f"target_vol must be in (0, 1], got {target_vol}")
         self._calc = VolatilityCalculator()
 
     def size(self, prices: pd.Series) -> PositionSizing:
         """Compute current recommended position from a price series."""
+        if prices is None or prices.empty:
+            raise ValueError("prices must be a non-empty Series")
         vol = self._calc.realized_vol(prices)
-        position = min(1.0, self._target_vol / vol) if vol > 0 else 1.0
+        if vol == 0:
+            logger.warning("realized_vol is 0.0 — prices may be constant. Defaulting to full position.")
+            position = 1.0
+        else:
+            position = min(1.0, self._target_vol / vol)
         last_date = prices.index[-1]
         updated = last_date.date().isoformat() if hasattr(last_date, "date") else str(last_date)
         return PositionSizing(
