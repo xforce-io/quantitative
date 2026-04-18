@@ -105,3 +105,49 @@ class TestPositionSizer:
         r_aggressive = PositionSizer(target_vol=0.30).size(prices)
         r_conservative = PositionSizer(target_vol=0.10).size(prices)
         assert r_aggressive.position_pct >= r_conservative.position_pct
+
+
+from quant.analysis.position_sizing.backtest import BacktestResult, PositionSizingBacktest
+
+
+class TestPositionSizingBacktest:
+    def test_backtest_output_fields(self):
+        bt = PositionSizingBacktest(target_vol=0.20)
+        result = bt.run(load_prices())
+        for field in [
+            "annual_return_strategy", "annual_return_benchmark",
+            "annual_vol_strategy", "annual_vol_benchmark",
+            "max_drawdown_strategy", "max_drawdown_benchmark",
+            "sharpe_strategy", "sharpe_benchmark",
+        ]:
+            assert hasattr(result, field), f"Missing field: {field}"
+
+    def test_strategy_vol_near_target(self):
+        bt = PositionSizingBacktest(target_vol=0.20)
+        result = bt.run(load_prices())
+        # Realized strategy vol should be within 8pp of 20% target
+        assert abs(result.annual_vol_strategy - 0.20) < 0.08, (
+            f"Strategy vol {result.annual_vol_strategy:.1%} too far from 20% target"
+        )
+
+    def test_drawdown_improved_vs_benchmark(self):
+        # Strategy max drawdown (negative number) should be less severe (closer to 0)
+        bt = PositionSizingBacktest(target_vol=0.20)
+        result = bt.run(load_prices())
+        assert result.max_drawdown_strategy > result.max_drawdown_benchmark, (
+            f"Strategy drawdown {result.max_drawdown_strategy:.1%} should be better than "
+            f"benchmark {result.max_drawdown_benchmark:.1%}"
+        )
+
+    def test_max_drawdown_is_negative(self):
+        bt = PositionSizingBacktest(target_vol=0.20)
+        result = bt.run(load_prices())
+        assert result.max_drawdown_strategy <= 0
+        assert result.max_drawdown_benchmark <= 0
+
+    def test_str_output_contains_key_fields(self):
+        bt = PositionSizingBacktest(target_vol=0.20)
+        result = bt.run(load_prices())
+        s = str(result)
+        assert "年化收益" in s
+        assert "最大回撤" in s
