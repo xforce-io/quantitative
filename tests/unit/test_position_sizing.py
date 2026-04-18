@@ -11,7 +11,7 @@ import pytest
 
 from quant.analysis.position_sizing.volatility import VolatilityCalculator
 
-FIXTURE = Path("tests/fixtures/csi300_daily.csv")
+FIXTURE = Path(__file__).parent.parent / "fixtures" / "csi300_daily.csv"
 
 
 def load_prices() -> pd.Series:
@@ -60,3 +60,8 @@ class TestVolatilityCalculator:
         assert len(rv) == len(prices)
         assert rv.iloc[:20].isna().all()
         assert rv.iloc[20:].notna().all()
+
+    def test_too_few_points_raises(self):
+        calc = VolatilityCalculator(window=20)
+        with pytest.raises(ValueError, match="at least 20 returns"):
+            calc.realized_vol(pd.Series([100.0] * 10))
