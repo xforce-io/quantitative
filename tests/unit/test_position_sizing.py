@@ -65,3 +65,43 @@ class TestVolatilityCalculator:
         calc = VolatilityCalculator(window=20)
         with pytest.raises(ValueError, match="at least 20 returns"):
             calc.realized_vol(pd.Series([100.0] * 10))
+
+
+from quant.analysis.position_sizing.sizer import PositionSizer, PositionSizing
+
+
+class TestPositionSizer:
+    def test_position_capped_at_100_pct(self):
+        sizer = PositionSizer(target_vol=0.20)
+        prices = prices_for("2023-07-01", "2024-03-31")
+        result = sizer.size(prices)
+        assert result.position_pct <= 1.0
+
+    def test_position_never_negative(self):
+        sizer = PositionSizer(target_vol=0.20)
+        prices = load_prices()
+        result = sizer.size(prices)
+        assert result.position_pct >= 0.0
+
+    def test_position_below_70_pct_in_2022_bear(self):
+        sizer = PositionSizer(target_vol=0.20)
+        prices = prices_for("2021-01-01", "2022-04-29")
+        result = sizer.size(prices)
+        assert result.position_pct < 0.70, (
+            f"High-vol period position={result.position_pct:.0%}, expected <70%"
+        )
+
+    def test_returns_position_sizing_dataclass(self):
+        sizer = PositionSizer(target_vol=0.20)
+        result = sizer.size(load_prices())
+        assert isinstance(result, PositionSizing)
+        assert 0.0 <= result.position_pct <= 1.0
+        assert result.target_vol == 0.20
+        assert result.realized_vol > 0
+        assert result.updated_date != ""
+
+    def test_higher_target_vol_gives_larger_position(self):
+        prices = load_prices()
+        r_aggressive = PositionSizer(target_vol=0.30).size(prices)
+        r_conservative = PositionSizer(target_vol=0.10).size(prices)
+        assert r_aggressive.position_pct >= r_conservative.position_pct
