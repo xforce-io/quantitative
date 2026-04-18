@@ -73,18 +73,21 @@ class PositionSizingBacktest:
             strategy_rets.append(position * weekly_ret)
             benchmark_rets.append(weekly_ret)
 
+        n = len(strategy_rets)
+        if n == 0:
+            raise ValueError("No weekly returns computed — price series too short to run backtest")
+
         s = np.array(strategy_rets)
         b = np.array(benchmark_rets)
-        n = len(s)
 
         ann_ret_s = float((1 + s).prod() ** (WEEKS_PER_YEAR / n) - 1)
         ann_ret_b = float((1 + b).prod() ** (WEEKS_PER_YEAR / n) - 1)
-        ann_vol_s = float(s.std() * math.sqrt(WEEKS_PER_YEAR))
-        ann_vol_b = float(b.std() * math.sqrt(WEEKS_PER_YEAR))
+        ann_vol_s = float(s.std(ddof=1) * math.sqrt(WEEKS_PER_YEAR))
+        ann_vol_b = float(b.std(ddof=1) * math.sqrt(WEEKS_PER_YEAR))
 
         rf_weekly = (1 + self._risk_free) ** (1 / WEEKS_PER_YEAR) - 1
-        sharpe_s = float((s - rf_weekly).mean() / s.std() * math.sqrt(WEEKS_PER_YEAR)) if s.std() > 0 else 0.0
-        sharpe_b = float((b - rf_weekly).mean() / b.std() * math.sqrt(WEEKS_PER_YEAR)) if b.std() > 0 else 0.0
+        sharpe_s = float((s - rf_weekly).mean() / s.std(ddof=1) * math.sqrt(WEEKS_PER_YEAR)) if s.std(ddof=1) > 0 else 0.0
+        sharpe_b = float((b - rf_weekly).mean() / b.std(ddof=1) * math.sqrt(WEEKS_PER_YEAR)) if b.std(ddof=1) > 0 else 0.0
 
         return BacktestResult(
             annual_return_strategy=round(ann_ret_s, 4),
