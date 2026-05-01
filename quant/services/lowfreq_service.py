@@ -6,7 +6,12 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from quant.analysis.lowfreq import LowFrequencyBacktester, LowFrequencySignalBuilder, SignalConfig
+from quant.analysis.lowfreq import (
+    LowFrequencyBacktester,
+    LowFrequencyRegimeScorer,
+    LowFrequencySignalBuilder,
+    SignalConfig,
+)
 from quant.services.data_service import DataService, PriceRequest
 
 
@@ -24,6 +29,7 @@ class LowFrequencySignalRequest:
     target_vol: float = 0.20
     max_position: float = 1.0
     transaction_cost: float = 0.0
+    regime: str = "none"
 
 
 class LowFrequencyService:
@@ -52,7 +58,12 @@ class LowFrequencyService:
                 max_position=request.max_position,
             )
         )
-        return builder.build(prices, trading_days)
+        signals = builder.build(prices, trading_days)
+        if request.regime == "simple":
+            return LowFrequencyRegimeScorer().apply(signals)
+        if request.regime != "none":
+            raise ValueError(f"Unsupported regime mode: {request.regime}")
+        return signals
 
     def run_backtest(self, request: LowFrequencySignalRequest) -> dict:
         """Build signals and run the benchmark low-frequency backtest."""

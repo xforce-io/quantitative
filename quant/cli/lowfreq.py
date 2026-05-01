@@ -55,6 +55,12 @@ def _add_common_signal_args(parser):
     parser.add_argument("--vol-window", type=int, default=20, help="日波动率窗口，默认 20")
     parser.add_argument("--target-vol", type=float, default=0.20, help="目标年化波动率")
     parser.add_argument("--max-position", type=float, default=1.0, help="最大仓位")
+    parser.add_argument(
+        "--regime",
+        choices=["none", "simple"],
+        default="none",
+        help="市场状态仓位乘数，默认 none",
+    )
 
 
 def handle_lowfreq_signals(args):
@@ -78,6 +84,7 @@ def handle_lowfreq_signals(args):
             vol_window=args.vol_window,
             target_vol=args.target_vol,
             max_position=args.max_position,
+            regime=args.regime,
         )
         result = LowFrequencyService().build_signals(request)
 
@@ -120,6 +127,7 @@ def handle_lowfreq_backtest(args):
             target_vol=args.target_vol,
             max_position=args.max_position,
             transaction_cost=args.transaction_cost,
+            regime=args.regime,
         )
         result = LowFrequencyService().run_backtest(request)
         metrics = result["metrics"]

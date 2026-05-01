@@ -2,7 +2,13 @@
 
 import pandas as pd
 
-from quant.analysis.lowfreq import LowFrequencyBacktester, LowFrequencySignalBuilder, SignalConfig
+from quant.analysis.lowfreq import (
+    LowFrequencyBacktester,
+    LowFrequencyRegimeScorer,
+    LowFrequencySignalBuilder,
+    RegimeConfig,
+    SignalConfig,
+)
 from quant.services import LowFrequencyService, LowFrequencySignalRequest
 
 
@@ -148,6 +154,66 @@ class TestLowFrequencyBacktester:
             raise AssertionError("Expected ValueError for missing target_position")
 
 
+class TestLowFrequencyRegimeScorer:
+    """Low-frequency regime scorer behavior."""
+
+    def test_regime_sets_zero_when_trend_is_off(self):
+        """Trend-off rows should be classified as bear with zero target."""
+        signals = pd.DataFrame(
+            {
+                "close": [100.0],
+                "trend_on": [False],
+                "realized_vol": [0.1],
+                "target_position": [1.0],
+            },
+            index=pd.to_datetime(["2024-01-31"]),
+        )
+
+        result = LowFrequencyRegimeScorer().apply(signals)
+
+        assert result.iloc[0]["regime"] == "bear"
+        assert result.iloc[0]["regime_multiplier"] == 0.0
+        assert result.iloc[0]["target_position"] == 0.0
+        assert result.iloc[0]["base_position"] == 1.0
+
+    def test_regime_reduces_position_for_high_vol(self):
+        """High volatility should cap target position."""
+        signals = pd.DataFrame(
+            {
+                "close": [100.0, 105.0],
+                "trend_on": [True, True],
+                "realized_vol": [0.21, 0.40],
+                "target_position": [1.0, 1.0],
+            },
+            index=pd.to_datetime(["2024-01-31", "2024-02-29"]),
+        )
+
+        result = LowFrequencyRegimeScorer().apply(signals)
+
+        assert result.iloc[0]["regime_multiplier"] == 0.7
+        assert result.iloc[1]["regime"] == "stress"
+        assert result.iloc[1]["target_position"] == 0.5
+
+    def test_regime_reduces_position_for_deep_drawdown(self):
+        """Deep drawdown should cap target position even with low volatility."""
+        signals = pd.DataFrame(
+            {
+                "close": [100.0, 75.0],
+                "trend_on": [True, True],
+                "realized_vol": [0.10, 0.10],
+                "target_position": [1.0, 1.0],
+            },
+            index=pd.to_datetime(["2024-01-31", "2024-02-29"]),
+        )
+        scorer = LowFrequencyRegimeScorer(RegimeConfig(drawdown_threshold=-0.20))
+
+        result = scorer.apply(signals)
+
+        assert result.iloc[1]["market_drawdown"] == -0.25
+        assert result.iloc[1]["regime_multiplier"] == 0.5
+        assert "deep_drawdown" in result.iloc[1]["regime_reason"]
+
+
 class TestLowFrequencyService:
     """Low-frequency service behavior."""
 
@@ -163,12 +229,15 @@ class TestLowFrequencyService:
                 end="20231231",
                 asset_type="index",
                 ma_months=3,
+                regime="simple",
             )
         )
 
         assert not result.empty
         assert data_service.price_request.symbol == "000300.SH"
         assert data_service.price_request.asset_type == "index"
+        assert "base_position" in result.columns
+        assert "regime_multiplier" in result.columns
 
     def test_run_backtest_returns_metrics_and_equity(self):
         """Service should expose backtest artifacts for CLI and web."""

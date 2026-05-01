@@ -98,6 +98,7 @@ def create_parser():
   A股低频:
     python -m quant lowfreq signals 000300.SH --start 20150101 --end 20241231
     python -m quant lowfreq backtest 000300.SH --start 20150101 --end 20241231
+    python -m quant lowfreq backtest 000300.SH --start 20150101 --end 20241231 --regime simple
 
   系统管理:
     python -m quant system status
