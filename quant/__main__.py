@@ -28,7 +28,9 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from quant.cli import (
+    register_data_commands,
     register_etf_commands,
+    register_lowfreq_commands,
     register_portfolio_commands,
     register_advisor_commands,
     register_strategy_commands,
@@ -36,6 +38,8 @@ from quant.cli import (
     register_screener_commands
 )
 from quant.cli.etf import handle_etf_command
+from quant.cli.data import handle_data_command
+from quant.cli.lowfreq import handle_lowfreq_command
 from quant.cli.portfolio import handle_portfolio_command
 from quant.cli.advisor import handle_advisor_command
 from quant.cli.strategy import handle_strategy_command
@@ -87,6 +91,14 @@ def create_parser():
     python -m quant screener rank --pool BANK --profile value --top 10
     python -m quant screener profiles
 
+  数据层:
+    python -m quant data status
+    python -m quant data price 000300.SH --asset-type index --start 20240101 --end 20241231
+
+  A股低频:
+    python -m quant lowfreq signals 000300.SH --start 20150101 --end 20241231
+    python -m quant lowfreq backtest 000300.SH --start 20150101 --end 20241231
+
   系统管理:
     python -m quant system status
     python -m quant system clean --type all
@@ -103,7 +115,9 @@ def create_parser():
     subparsers = parser.add_subparsers(dest='command', help='可用命令', metavar='<command>')
     
     # 注册各个模块的命令
+    register_data_commands(subparsers)
     register_etf_commands(subparsers)
+    register_lowfreq_commands(subparsers)
     register_portfolio_commands(subparsers)
     register_advisor_commands(subparsers)
     register_strategy_commands(subparsers)
@@ -129,8 +143,12 @@ def main():
     
     try:
         # 路由到对应的命令处理器
-        if args.command == 'etf':
+        if args.command == 'data':
+            handle_data_command(args)
+        elif args.command == 'etf':
             handle_etf_command(args)
+        elif args.command == 'lowfreq':
+            handle_lowfreq_command(args)
         elif args.command == 'portfolio':
             handle_portfolio_command(args)
         elif args.command == 'advisor':

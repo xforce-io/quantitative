@@ -50,32 +50,28 @@ def handle_system_status(args):
     print("=" * 80)
     
     try:
-        import os
-        from quant import __version__
+        from quant.services import SystemService
+
+        status_result = SystemService().get_status()
         
         # 版本信息
         print(f"\n📦 版本信息:")
-        print(f"  量化系统版本: {__version__}")
+        print(f"  量化系统版本: {status_result.version}")
         
         # 环境变量
         print(f"\n🔐 环境配置:")
-        print(f"  TUSHARE_TOKEN: {'已设置 ✅' if os.getenv('TUSHARE_TOKEN') else '未设置 ❌'}")
+        for name, exists in status_result.environment.items():
+            print(f"  {name}: {'已设置 ✅' if exists else '未设置 ❌'}")
         
         # 目录检查
         print(f"\n📁 目录状态:")
-        directories = ['data', 'cache', 'logs', 'reports', 'config']
-        for dir_name in directories:
-            dir_path = Path(dir_name)
-            exists = dir_path.exists()
+        for dir_name, exists in status_result.directories.items():
             status = '✅' if exists else '❌'
             print(f"  {dir_name}/: {status}")
         
         # 配置文件检查
         print(f"\n⚙️ 配置文件:")
-        config_files = ['config.yaml', 'config/portfolios.yaml', 'config/screens.yaml']
-        for config_file in config_files:
-            config_path = Path(config_file)
-            exists = config_path.exists()
+        for config_file, exists in status_result.config_files.items():
             status = '✅' if exists else '❌'
             print(f"  {config_file}: {status}")
         
@@ -151,4 +147,3 @@ def handle_system_version(args):
         
     except Exception as e:
         print(f"❌ 获取版本信息失败: {e}")
-
