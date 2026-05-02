@@ -130,7 +130,6 @@ class RotationService:
 
     def _build_overlay(self, request: RotationRequest):
         if request.overlay_type == "simple":
-            from quant.analysis.rotation import SimpleRegimeOverlay
             overlay = SimpleRegimeOverlay(
                 data_service=self.data_service,
                 benchmark_symbol=request.overlay_benchmark,
