@@ -90,7 +90,9 @@ class AshareHistoricalIndicators:
             .sort_index()
         )
         window = self.config.northbound_flow_window_days
-        # min_periods=1 so sparse inputs (e.g. only a few dates) still produce values;
-        # the full window is only required once there are enough data points.
-        rolled = series.rolling(window=window, min_periods=1).sum()
+        # Strict window: require exactly `window` trading-day observations before emitting a
+        # value. min_periods=1 would silently produce partial-window sums at series start,
+        # which look indistinguishable from genuine low-activity readings and can spuriously
+        # trigger risk-off classification during backtest warm-up.
+        rolled = series.rolling(window=window).sum()
         return rolled

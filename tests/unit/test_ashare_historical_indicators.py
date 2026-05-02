@@ -112,7 +112,12 @@ def test_natural_day_index_with_ffill():
     dates = pd.to_datetime(["2024-01-05", "2024-01-08"])  # Fri, Mon
     margin = _margin_frame([1.0e12, 1.05e12], dates)
     nb = _northbound_frame([10.0, 12.0], dates)
-    indicators = AshareHistoricalIndicators(_StubDataService(margin=margin, northbound=nb))
+    # Use window=1 so strict rolling semantics produce a real value (not NaN) with only
+    # 2 data points.  The test is about ffill on natural days, not rolling-sum leniency.
+    indicators = AshareHistoricalIndicators(
+        _StubDataService(margin=margin, northbound=nb),
+        IndicatorPanelConfig(margin_trend_lookback_days=1, northbound_flow_window_days=1),
+    )
 
     panel = indicators.build("20240105", "20240108")
     # Saturday (2024-01-06) and Sunday (2024-01-07) should appear with ffilled values
