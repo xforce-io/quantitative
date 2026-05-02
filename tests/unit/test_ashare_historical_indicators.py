@@ -94,6 +94,8 @@ def test_missing_margin_data_results_in_nan_column():
     panel = indicators.build("20240101", "20240301")
     assert panel["margin_debt_trend"].isna().all()
     assert panel["northbound_flow"].notna().any()
+    assert panel["margin_debt_trend"].dtype == float
+    assert panel["northbound_flow"].dtype == float
 
 
 def test_both_sources_fail_returns_empty_dataframe():
@@ -142,3 +144,23 @@ def test_config_overrides_lookback_windows():
     assert panel["northbound_flow"].dropna().iloc[-1] == pytest.approx(10.0, abs=1e-6)
     # 5-day pct change at 0.5%/day ≈ 2.52%
     assert 1.5 < panel["margin_debt_trend"].dropna().iloc[-1] < 3.5
+
+
+def test_handles_duplicate_dates_in_provider_response():
+    """Real-world Tushare data sometimes contains duplicate trade_date rows
+    (e.g. from cross-exchange aggregation). Verify build() doesn't crash."""
+    dates = _trading_dates(35)
+    values = [1.0e12 * (1.005 ** i) for i in range(35)]
+    margin = _margin_frame(values, dates)
+    # Duplicate the last row to simulate a duplicate-date provider response
+    margin = pd.concat([margin, margin.tail(1)], ignore_index=True)
+    nb = _northbound_frame([1.0] * 35, dates)
+
+    indicators = AshareHistoricalIndicators(
+        _StubDataService(margin=margin, northbound=nb),
+        IndicatorPanelConfig(margin_trend_lookback_days=10, northbound_flow_window_days=5),
+    )
+    panel = indicators.build("20240101", "20240301")
+
+    assert not panel.empty
+    assert panel["margin_debt_trend"].notna().any()

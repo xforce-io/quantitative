@@ -36,12 +36,23 @@ class AshareHistoricalIndicators:
         # Union of available dates, ffilled to natural day.
         # Columns for failed sources are included as NaN so callers can rely on a
         # consistent schema (both columns always present when at least one source worked).
-        frames = {
-            "margin_debt_trend": margin_series,
-            "northbound_flow": nb_series,
-        }
-
-        df = pd.DataFrame(frames).sort_index()
+        if margin_series is not None and nb_series is not None:
+            df = pd.DataFrame({
+                "margin_debt_trend": margin_series,
+                "northbound_flow": nb_series,
+            }).sort_index()
+        elif margin_series is not None:
+            nan_series = pd.Series(float("nan"), index=margin_series.index, dtype=float)
+            df = pd.DataFrame({
+                "margin_debt_trend": margin_series,
+                "northbound_flow": nan_series,
+            }).sort_index()
+        else:  # nb_series is not None
+            nan_series = pd.Series(float("nan"), index=nb_series.index, dtype=float)
+            df = pd.DataFrame({
+                "margin_debt_trend": nan_series,
+                "northbound_flow": nb_series,
+            }).sort_index()
         if df.empty:
             return df
 
@@ -57,11 +68,13 @@ class AshareHistoricalIndicators:
         if raw is None or raw.empty or "total" not in raw.columns:
             return None
 
-        series = (
+        filtered = (
             raw[["trade_date", "total"]]
             .dropna()
             .drop_duplicates("trade_date")
-            .set_index(pd.to_datetime(raw["trade_date"]))["total"]
+        )
+        series = (
+            filtered.set_index(pd.to_datetime(filtered["trade_date"]))["total"]
             .astype(float)
             .sort_index()
         )
@@ -81,11 +94,13 @@ class AshareHistoricalIndicators:
         if raw is None or raw.empty or "total_net" not in raw.columns:
             return None
 
-        series = (
+        filtered = (
             raw[["trade_date", "total_net"]]
             .dropna()
             .drop_duplicates("trade_date")
-            .set_index(pd.to_datetime(raw["trade_date"]))["total_net"]
+        )
+        series = (
+            filtered.set_index(pd.to_datetime(filtered["trade_date"]))["total_net"]
             .astype(float)
             .sort_index()
         )
