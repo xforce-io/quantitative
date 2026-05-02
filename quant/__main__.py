@@ -33,6 +33,7 @@ from quant.cli import (
     register_lowfreq_commands,
     register_portfolio_commands,
     register_advisor_commands,
+    register_rotation_commands,
     register_strategy_commands,
     register_system_commands,
     register_screener_commands
@@ -42,6 +43,7 @@ from quant.cli.data import handle_data_command
 from quant.cli.lowfreq import handle_lowfreq_command
 from quant.cli.portfolio import handle_portfolio_command
 from quant.cli.advisor import handle_advisor_command
+from quant.cli.rotation import handle_rotation_command
 from quant.cli.strategy import handle_strategy_command
 from quant.cli.system import handle_system_command
 from quant.cli.screener import handle_screener_command
@@ -119,6 +121,7 @@ def create_parser():
     register_data_commands(subparsers)
     register_etf_commands(subparsers)
     register_lowfreq_commands(subparsers)
+    register_rotation_commands(subparsers)
     register_portfolio_commands(subparsers)
     register_advisor_commands(subparsers)
     register_strategy_commands(subparsers)
@@ -150,6 +153,8 @@ def main():
             handle_etf_command(args)
         elif args.command == 'lowfreq':
             handle_lowfreq_command(args)
+        elif args.command == 'rotation':
+            handle_rotation_command(args)
         elif args.command == 'portfolio':
             handle_portfolio_command(args)
         elif args.command == 'advisor':
