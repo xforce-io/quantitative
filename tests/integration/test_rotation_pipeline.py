@@ -64,6 +64,27 @@ class _DeterministicDataService:
     def get_trading_days(self, start, end):
         return pd.date_range(start, end, freq="B").strftime("%Y-%m-%d").tolist()
 
+    def get_margin_balance(self, start, end):
+        dates = pd.date_range("2018-01-02", "2024-12-31", freq="B")
+        # Slowly rising margin → margin_debt_trend stays positive (risk-on bias)
+        values = [1.0e12 * (1.0001 ** i) for i in range(len(dates))]
+        return pd.DataFrame({
+            "trade_date": dates,
+            "rzye": values,
+            "rqye": [v * 0.01 for v in values],
+            "total": [v * 1.01 for v in values],
+        })
+
+    def get_northbound_flow(self, start, end):
+        dates = pd.date_range("2018-01-02", "2024-12-31", freq="B")
+        # Constant 3 亿 net buy/day → 20-day window = 60 → above risk_on_above=50.0
+        return pd.DataFrame({
+            "trade_date": dates,
+            "hgt_net": [2.0] * len(dates),
+            "sgt_net": [1.0] * len(dates),
+            "total_net": [3.0] * len(dates),
+        })
+
 
 def test_pipeline_runs_against_default_universe() -> None:
     service = RotationService(data_service=_DeterministicDataService())
@@ -98,3 +119,21 @@ def test_latest_targets_against_default_universe() -> None:
     assert 0.0 <= targets["multiplier"] <= 1.0
     assert sum(targets["final_positions"].values()) <= 1.0 + 1e-9
     assert len(targets["top_momentum"]) <= 5
+
+
+def test_pipeline_runs_with_cockpit_overlay() -> None:
+    service = RotationService(data_service=_DeterministicDataService())
+    request = RotationRequest(
+        start="2018-01-01",
+        end="2023-12-31",
+        universe_path=str(_DEFAULT_UNIVERSE),
+        ranker_config=RankerConfig(top_k=5),
+        transaction_cost=0.002,
+        overlay_type="cockpit",
+    )
+    result = service.run_backtest(request)
+
+    assert len(result.equity_curve) >= 60
+    assert {"strategy", "benchmark", "equal_weight"} == set(result.equity_curve.columns)
+    nonzero_per_row = (result.holdings != 0).sum(axis=1)
+    assert nonzero_per_row.max() <= 5
