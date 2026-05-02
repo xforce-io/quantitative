@@ -40,7 +40,7 @@ def test_insufficient_history_excluded_from_ranking() -> None:
     prices = _monthly_prices_with_known_momentum(
         {"A": 0.05, "B": 0.04, "C": 0.03}
     )
-    prices.loc[prices.index[:12], "B"] = np.nan
+    prices.loc[prices.index[:18], "B"] = np.nan
 
     ranker = MomentumRanker(RankerConfig(top_k=3))
     weights = ranker.rank(prices, prices.index[-1])

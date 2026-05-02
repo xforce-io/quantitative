@@ -112,9 +112,9 @@ tests/integration/test_rotation_pipeline.py
 ```python
 @dataclass(frozen=True)
 class RankerConfig:
-    lookback_months: int = 12        # 12-1 动量
+    lookback_months: int = 6         # 6-1 动量（见 §5.3 验证）
     skip_recent_months: int = 1      # 跳最近 1 个月（避开短期反转）
-    top_k: int = 5
+    top_k: int = 3
     cash_threshold: float = 0.0      # top-K 平均动量 < 此值则全切现金
 
 class MomentumRanker:
@@ -133,8 +133,8 @@ class MomentumRanker:
 ```
 
 **关键行为**：
-- 12-1 月动量公式：`momentum_t = price_{t-1} / price_{t-13} - 1`，跳掉最近 1 月避免短期反转。
-- 数据不足（ETF 上市晚、价格序列不到 13 个月）的标的当期不参与排名——不是 NaN 兜底而是直接剔除。
+- 6-1 月动量公式：`momentum_t = price_{t-1} / price_{t-7} - 1`，跳掉最近 1 月避免短期反转。
+- 数据不足（ETF 上市晚、价格序列不到 7 个月）的标的当期不参与排名——不是 NaN 兜底而是直接剔除。
 - 现金过滤：top-K 的**平均**动量 < `cash_threshold` 则返回空 dict（全现金），不是 top-K 各自看是否 > 0。
 - 等权：top-K 内每个 = `1/K`。
 
@@ -319,13 +319,31 @@ style_etfs:
 
 | 参数 | 默认值 | 来源 |
 |------|-------|------|
-| `lookback_months` | 12 | 学界标准 12-1 月动量 |
-| `skip_recent_months` | 1 | 同上 |
-| `top_k` | 5 | universe ~24，top 20% |
+| `lookback_months` | 6 | 2018-2024 验证：6-1 vs 12-1 全期收益 +14pp / MDD 折半（见 §5.3）|
+| `skip_recent_months` | 1 | 跳最近 1 月避免短期反转，与学界标准一致 |
+| `top_k` | 3 | 2018-2024 验证：K=3 在 walk-forward 4 折中 3 折胜出（见 §5.3）|
 | `cash_threshold` | 0.0 | top-K 平均动量为负则切现金 |
 | `transaction_cost` | 0.002 | 0.2% 双边，A 股 ETF 实际佣金+滑点保守估计 |
 | `risk_free` | 0.03 | Sharpe 计算用 |
 | `overlay_benchmark` | `000300.SH` | regime 用市场层信号，不用 universe 自身 |
+
+### 5.3 默认参数验证（2018-2024 实跑数据）
+
+完成基础实现后用真实 Tushare 数据跑了 walk-forward + regime split + lookback sweep，结果：
+
+**Walk-forward（3 年训练选 K，1 年 OOS）**：K=3 在 4 折训练 Sharpe 中赢 3 折；K=12-1 default 从未被选中。
+**Regime split（牛/熊/震荡分段）**：每段 K=3 都最优，**不是 2024 单段过拟合**。
+**Lookback sweep**：6-1 在全期总收益 +53.95% / MDD -8.87% / Sharpe 0.319，全面碾压 12-1（+39.99% / -21.64% / 0.195）。9-1 第二名但 MDD 更深。
+
+**关键发现 — 真实 alpha 来源是 cash filter，不是 momentum selection**：
+- 2018 / 2022 两段熊市 cash filter 全期空仓，避了 -29.59% 和 -21.63% 的 bench 损失（共救 ~50pp）
+- 2019-21 牛市策略 +62.29% 但仍跑输 bench +64.10% 与等权 universe +59.17%
+- 2024 OOS 仅 +0.83% vs bench +14.68% — 12-1 月动量在 2024 是反指标
+- 即剔除 2024 两个热门 ETF（512200 / 510310），K=3 仍领先 K=5、K=8
+
+**含义**：策略本质是"行业池子 + 熊市避险"，不是"持续选出强势板块"。后续接 cockpit 多极投票替换 SimpleRegimeOverlay 大概率提升。
+
+验证脚本归档在 `/tmp/rotation_validation.py`（一次性分析，不入库）。
 
 ---
 
@@ -410,8 +428,8 @@ style_etfs:
 | 风险 overlay | A SimpleRegimeOverlay (包 LowFrequencyRegimeScorer) |
 | 个股择时 | 不做 |
 | 调仓频率 | 月末 |
-| 动量公式 | 12-1 月（lookback=12, skip=1）|
-| top K | 5，等权 |
+| 动量公式 | 6-1 月（lookback=6, skip=1）— 见 §5.3 验证 |
+| top K | 3，等权 — 见 §5.3 验证 |
 | 现金过滤 | top-K 平均动量 < 0 切全现金 |
 | 交易成本 | 0.2% 双边 |
 | 回测起点 | 2018-01 |

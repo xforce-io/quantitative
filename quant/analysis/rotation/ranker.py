@@ -11,9 +11,9 @@ import pandas as pd
 class RankerConfig:
     """Parameters for cross-sectional momentum ranking."""
 
-    lookback_months: int = 12
+    lookback_months: int = 6
     skip_recent_months: int = 1
-    top_k: int = 5
+    top_k: int = 3
     cash_threshold: float = 0.0
 
 
