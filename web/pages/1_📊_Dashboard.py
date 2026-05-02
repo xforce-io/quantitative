@@ -16,6 +16,8 @@ from web.data_service import get_stock_technical_data
 from web.data_service_verdict import get_dashboard_verdict, get_all_regimes, get_active_transmissions
 from web.utils import load_watchlist, get_all_symbols
 from web.ui_theme import apply_custom_css
+from web.components_ai_panel import render_ai_right_panel, init_ai_panel_for_page, get_ai_panel_layout
+from web.page_registry import get_page_registry
 
 
 # ==================== Constants ====================
@@ -373,17 +375,26 @@ def _render_position_alerts():
 
 def main():
     apply_custom_css()
+    init_ai_panel_for_page("Dashboard", "pages/1_📊_Dashboard.py")
+    registry = get_page_registry()
+    registry.set_page_info("Dashboard", "pages/1_📊_Dashboard.py")
 
-    st.title("📊 决策驾驶舱")
-    st.caption("打开就知道现在该干什么 — 总览姿态 · 资产池状态 · 持仓提示")
+    main_col, ai_col = get_ai_panel_layout()
 
-    _render_verdict_bar()
-    st.divider()
-    _render_transmission_alerts()
-    st.divider()
-    _render_pool_cards()
-    st.divider()
-    _render_position_alerts()
+    with main_col:
+        st.title("📊 决策驾驶舱")
+        st.caption("打开就知道现在该干什么 — 总览姿态 · 资产池状态 · 持仓提示")
+
+        _render_verdict_bar()
+        st.divider()
+        _render_transmission_alerts()
+        st.divider()
+        _render_pool_cards()
+        st.divider()
+        _render_position_alerts()
+
+    with ai_col:
+        render_ai_right_panel(session_id="dashboard")
 
 
 if __name__ == "__main__":

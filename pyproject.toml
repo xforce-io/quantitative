@@ -82,8 +82,8 @@ dev-dependencies = [
 ]
 
 [tool.uv.sources]
-# Dolphin SDK 路径配置（与 alfred 项目共享）
-kweaver-dolphin = { path = "/Users/xupeng/dev/github/dolphin", editable = true }
+# Dolphin SDK for the optional AI agent integration.
+kweaver-dolphin = { git = "https://github.com/kweaver-ai/dolphin.git", rev = "14eb1d2bc91fb6b3d2377044ffbcd30605a76e26" }
 
 [tool.black]
 line-length = 100

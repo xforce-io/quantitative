@@ -220,7 +220,7 @@ class TestAIPanelMultiTurn:
         messages_before = page.locator('[data-testid="stChatMessage"]').count()
 
         # 切换页面再切回来
-        page.goto(f"{app_url}/Money_Flow")
+        page.goto(f"{app_url}/Dashboard")
         streamlit_helper.wait_for_app_loaded()
 
         page.goto(f"{app_url}/Watchlist")
@@ -289,12 +289,12 @@ class TestAIPanelOnDifferentPages:
     """不同页面上的 AI 面板测试"""
 
     def test_ai_panel_on_money_flow_page(self, page: Page, app_url: str, streamlit_helper):
-        """测试资金流向页面的 AI 面板"""
-        page.goto(f"{app_url}/Money_Flow")
+        """测试 Dashboard 页面的 AI 面板"""
+        page.goto(f"{app_url}/Dashboard")
         streamlit_helper.wait_for_app_loaded()
 
         ai_panel_exists = page.get_by_text("AI 分析师").count() > 0
-        assert ai_panel_exists, "AI 面板容器在 Money Flow 页不存在"
+        assert ai_panel_exists, "AI 面板容器在 Dashboard 页不存在"
 
     def test_ai_panel_on_watchlist_page(self, page: Page, app_url: str, streamlit_helper):
         """测试自选股页面的 AI 面板"""
@@ -305,14 +305,14 @@ class TestAIPanelOnDifferentPages:
         assert ai_panel_exists, "AI 面板容器在 Watchlist 页不存在"
 
     def test_ai_panel_on_ranking_page(self, page: Page, app_url: str, streamlit_helper):
-        """测试排行榜页面的 AI 面板"""
-        page.goto(f"{app_url}/Ranking")
+        """测试 Scanner 页面的 AI 面板"""
+        page.goto(f"{app_url}/Scanner")
         streamlit_helper.wait_for_app_loaded()
 
         page.wait_for_timeout(3000)
 
         ai_panel_exists = page.get_by_text("AI 分析师").count() > 0
-        assert ai_panel_exists, "AI 面板容器在 Ranking 页不存在"
+        assert ai_panel_exists, "AI 面板容器在 Scanner 页不存在"
 
 
 if __name__ == "__main__":

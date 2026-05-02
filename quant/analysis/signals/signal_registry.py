@@ -38,6 +38,10 @@ class SignalDefinition:
     condition_description: str   # human-readable explanation for UI display
     regime_filter: dict          # {"a_shares": ["risk-on", "transition"]} or {}
     forward_days: int = 5        # evaluation horizon for hit-rate measurement
+    # "bullish" | "bearish" | None.  When set, SignalValidator uses this directly
+    # to decide hit polarity.  When None, validator falls back to keyword inference
+    # on the signal name (which is brittle for ambiguous names like "vol_spike").
+    direction: Optional[str] = None
 
 
 @dataclass
@@ -110,6 +114,7 @@ class SignalRegistry:
                 condition_description=sig["condition_description"],
                 regime_filter=sig.get("regime_filter") or {},
                 forward_days=int(sig.get("forward_days", 5)),
+                direction=sig.get("direction"),
             )
             for sig in raw.get("signals", [])
         ]

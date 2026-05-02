@@ -9,6 +9,8 @@ from web.utils import load_watchlist, save_watchlist, add_to_watchlist, remove_f
 from web.data_service import get_stock_technical_data
 from web.data_service_verdict import get_regime, get_all_regimes
 from web.ui_theme import apply_custom_css
+from web.components_ai_panel import render_ai_right_panel, init_ai_panel_for_page, get_ai_panel_layout
+from web.page_registry import get_page_registry
 
 # ---------- helpers ----------
 
@@ -217,25 +219,32 @@ def render_pool_tab(pool: str, regime: dict, watchlist: dict):
 
 def main():
     apply_custom_css()
+    init_ai_panel_for_page("Watchlist", "pages/2_👀_Watchlist.py")
+    registry = get_page_registry()
+    registry.set_page_info("Watchlist", "pages/2_👀_Watchlist.py")
 
-    st.title("👀 自选监控")
+    main_col, ai_col = get_ai_panel_layout()
 
-    # Load data
-    watchlist = load_watchlist()
+    with main_col:
+        st.title("👀 自选监控")
 
-    with st.spinner("正在加载市场状态..."):
-        regimes = get_all_regimes()
+        watchlist = load_watchlist()
 
-    # Build tab labels with regime icon
-    tab_labels = [
-        f"{POOL_META[p]['flag']} {POOL_META[p]['label']} {_regime_icon(regimes[p].get('regime', 'unknown'))} {regimes[p].get('regime', 'unknown')}"
-        for p in POOLS
-    ]
-    tabs = st.tabs(tab_labels)
+        with st.spinner("正在加载市场状态..."):
+            regimes = get_all_regimes()
 
-    for tab, pool in zip(tabs, POOLS):
-        with tab:
-            render_pool_tab(pool, regimes[pool], watchlist)
+        tab_labels = [
+            f"{POOL_META[p]['flag']} {POOL_META[p]['label']} {_regime_icon(regimes[p].get('regime', 'unknown'))} {regimes[p].get('regime', 'unknown')}"
+            for p in POOLS
+        ]
+        tabs = st.tabs(tab_labels)
+
+        for tab, pool in zip(tabs, POOLS):
+            with tab:
+                render_pool_tab(pool, regimes[pool], watchlist)
+
+    with ai_col:
+        render_ai_right_panel(session_id="watchlist")
 
 
 if __name__ == "__main__":

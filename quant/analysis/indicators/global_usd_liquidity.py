@@ -238,6 +238,120 @@ def aggregate_total_confidence(
     return round(result, 2)
 
 
+def compute_derivatives(
+    composite_series: pd.Series,
+    window: int = 20,
+) -> 'tuple[pd.Series, pd.Series]':
+    """Compute first and second derivatives of a confidence time series.
+
+    Parameters
+    ----------
+    composite_series:
+        Daily composite confidence series (output of
+        ``GlobalUsdLiquidityAnalyzer._build_composite_series``).
+    window:
+        Rolling difference window in trading days.  20 ≈ 1 calendar month.
+
+    Returns
+    -------
+    (velocity, acceleration)
+        velocity:     ``composite.diff(window)`` — change in pp over *window* days.
+        acceleration: daily change of velocity, smoothed with *window*-day
+                      rolling mean.  Needs ≈ ``2*window + 1`` valid input
+                      observations before producing non-NaN values.
+    """
+    velocity = composite_series.diff(window)
+    velocity.name = 'velocity'
+    acceleration = velocity.diff(1).rolling(window).mean()
+    acceleration.name = 'acceleration'
+    return velocity, acceleration
+
+
+def compute_divergence(
+    confidence_series: pd.Series,
+    gold_series: pd.Series,
+    window: int = 60,
+) -> 'tuple[pd.Series, str, str]':
+    """Compute rolling correlation between liquidity confidence and gold returns.
+
+    Both series are converted to ``diff(1)`` (daily changes) before computing
+    the rolling Pearson correlation, so the result captures co-movement of
+    *changes* rather than levels.
+
+    Parameters
+    ----------
+    confidence_series:
+        Daily composite confidence (from ``_build_composite_series``).
+    gold_series:
+        Daily gold price (e.g. GC=F Close).
+    window:
+        Rolling correlation window in trading days.  60 ≈ 3 months.
+
+    Returns
+    -------
+    (correlation_series, regime, regime_cn)
+        correlation_series: rolling correlation, range [-1, 1].
+        regime:    one of 'normal' (r > 0.3), 'divergent' (r < -0.3),
+                   'decoupled' (|r| ≤ 0.3), or 'unknown' (insufficient data).
+        regime_cn: Chinese label for the regime with interpretation.
+    """
+    # Align on common dates
+    df = pd.DataFrame({
+        'conf': confidence_series,
+        'gold': gold_series,
+    }).dropna()
+
+    if len(df) < window + 1:
+        empty = pd.Series(dtype=float, name='correlation')
+        return empty, 'unknown', '数据不足'
+
+    # Use daily changes to capture co-movement direction
+    conf_diff = df['conf'].diff()
+    gold_ret = df['gold'].pct_change()
+    correlation = conf_diff.rolling(window).corr(gold_ret)
+    correlation.name = 'correlation'
+
+    latest = correlation.dropna()
+    if latest.empty:
+        return correlation, 'unknown', '数据不足'
+
+    corr_val = float(latest.iloc[-1])
+
+    if corr_val > 0.3:
+        regime, regime_cn = 'normal', f'正常同步 (r={corr_val:.2f})：流动性驱动金价'
+    elif corr_val < -0.3:
+        regime, regime_cn = 'divergent', f'显著背离 (r={corr_val:.2f})：避险/央行买盘主导'
+    else:
+        regime, regime_cn = 'decoupled', f'弱相关 (r={corr_val:.2f})：多因子混合驱动'
+
+    return correlation, regime, regime_cn
+
+
+def detect_inflection_points(acceleration_series: pd.Series) -> pd.DatetimeIndex:
+    """Find dates where the acceleration series crosses zero.
+
+    A zero-crossing indicates a change in the *direction* of the rate of
+    change — i.e., a liquidity inflection point.
+
+    Parameters
+    ----------
+    acceleration_series:
+        Second derivative series (output of :func:`compute_derivatives`).
+
+    Returns
+    -------
+    pd.DatetimeIndex
+        Dates of zero-crossings (sign changes).
+    """
+    clean = acceleration_series.dropna()
+    if len(clean) < 2:
+        return pd.DatetimeIndex([])
+    signs = np.sign(clean)
+    # diff() produces NaN for the first element, which is excluded by > 0
+    crossings = signs.diff().abs() > 0
+    return clean.index[crossings]
+
+
 # ---------------------------------------------------------------------------
 # FRED-backed analyzer
 # ---------------------------------------------------------------------------
@@ -364,18 +478,89 @@ class GlobalUsdLiquidityAnalyzer:
         composite_series = self._build_composite_series(confidence_series, display_days)
 
         wow_change = None
+        velocity = None
+        acceleration = None
+        velocity_series = None
+        acceleration_series = None
+        inflection_points = []
+
         if composite_series is not None and len(composite_series.dropna()) > 5:
             valid = composite_series.dropna()
             wow_change = round(float(valid.iloc[-1] - valid.iloc[-6]), 2)
 
+            # Compute derivatives — needs ≈ 2*window+1 valid points to produce
+            # non-NaN acceleration (velocity = diff(window), then a window-day
+            # rolling mean over its first difference).
+            derivative_window = 20
+            if len(valid) > 2 * derivative_window:
+                vel_s, acc_s = compute_derivatives(
+                    composite_series, window=derivative_window
+                )
+                velocity_series = vel_s
+                acceleration_series = acc_s
+                inflection_points = detect_inflection_points(acc_s).tolist()
+
+                vel_clean = vel_s.dropna()
+                acc_clean = acc_s.dropna()
+                if not vel_clean.empty:
+                    velocity = round(float(vel_clean.iloc[-1]), 2)
+                if not acc_clean.empty:
+                    acceleration = round(float(acc_clean.iloc[-1]), 2)
+
+        # Phase 5: Gold-liquidity divergence
+        correlation_series = None
+        divergence_regime = None
+        divergence_regime_cn = None
+        if composite_series is not None:
+            try:
+                gold_series = self._fetch_gold_price(display_days)
+            except ImportError:
+                logger.warning("黄金背离计算跳过：未安装 yfinance")
+                gold_series = None
+            except Exception:
+                logger.warning("黄金价格获取失败", exc_info=True)
+                gold_series = None
+
+            if gold_series is not None:
+                try:
+                    correlation_series, divergence_regime, divergence_regime_cn = (
+                        compute_divergence(composite_series, gold_series)
+                    )
+                except Exception:
+                    logger.warning("黄金背离相关性计算失败", exc_info=True)
+
         return {
             'confidence': total_confidence,
             'wow_change': wow_change,
+            'velocity': velocity,
+            'acceleration': acceleration,
+            'velocity_series': velocity_series,
+            'acceleration_series': acceleration_series,
+            'inflection_points': inflection_points,
+            'correlation_series': correlation_series,
+            'divergence_regime': divergence_regime,
+            'divergence_regime_cn': divergence_regime_cn,
             'groups': group_details,
             'indicators': indicator_results,
             'composite_series': composite_series,
             'analyzed_at': datetime.now().isoformat(),
         }
+
+    @staticmethod
+    def _fetch_gold_price(display_days: int = 365) -> 'pd.Series | None':
+        """Fetch gold futures close price from Yahoo Finance."""
+        import yfinance as yf
+        end = datetime.now()
+        start = end - timedelta(days=display_days + 90)  # extra buffer for correlation window
+        gold = yf.download('GC=F', start=start, end=end, progress=False)
+        if gold is None or gold.empty:
+            return None
+        if isinstance(gold.columns, pd.MultiIndex):
+            gold.columns = gold.columns.get_level_values(0)
+        col = 'Close' if 'Close' in gold.columns else 'close'
+        if col not in gold.columns:
+            return None
+        return gold[col].dropna()
 
     def _build_composite_series(self, confidence_series, display_days=365):
         """Build composite confidence time series by day-by-day aggregation."""

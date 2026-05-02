@@ -16,11 +16,9 @@ class TestCrossPageNavigation:
         """Visit every page in sequence — none should crash."""
         pages = [
             "/",
-            "/Money_Flow",
+            "/Dashboard",
             "/Watchlist",
-            "/Ranking",
-            "/Signal_Scanner",
-            "/Event_Graph",
+            "/Scanner",
         ]
 
         for path in pages:
@@ -37,7 +35,7 @@ class TestCrossPageNavigation:
 
     def test_navigate_back_and_forth(self, page: Page, app_url: str, streamlit_helper):
         """Navigate from sub-page back to home — app should remain stable."""
-        page.goto(f"{app_url}/Ranking")
+        page.goto(f"{app_url}/Scanner")
         streamlit_helper.wait_for_app_loaded()
 
         page.goto(app_url)
@@ -52,7 +50,7 @@ class TestCrossPageNavigation:
 
     def test_sidebar_visible_on_all_pages(self, page: Page, app_url: str, streamlit_helper):
         """Every page should have a visible sidebar."""
-        pages = ["/", "/Money_Flow", "/Watchlist", "/Ranking", "/Signal_Scanner", "/Event_Graph"]
+        pages = ["/", "/Dashboard", "/Watchlist", "/Scanner"]
 
         for path in pages:
             page.goto(f"{app_url}{path}")

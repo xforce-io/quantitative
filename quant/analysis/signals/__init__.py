@@ -9,6 +9,7 @@ Provides:
     SignalValidation  — backtested hit-rate statistics
     ActiveSignal      — a fired signal with context
     SignalRegistry    — loads and queries signal definitions from config
+    SignalValidator   — walk-forward hit-rate calculation for registered signals
 """
 
 from .signal_registry import (
@@ -17,10 +18,12 @@ from .signal_registry import (
     SignalRegistry,
     SignalValidation,
 )
+from .signal_validator import SignalValidator
 
 __all__ = [
     "SignalDefinition",
     "SignalValidation",
     "ActiveSignal",
     "SignalRegistry",
+    "SignalValidator",
 ]
