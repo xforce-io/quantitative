@@ -197,7 +197,7 @@ class TushareProvider(BaseDataProvider):
         df = raw.copy()
         if "trade_date" in df.columns:
             df["trade_date"] = pd.to_datetime(df["trade_date"])
-        elif df.index.name == "trade_date":
+        elif df.index.name in ("trade_date", "date"):
             df = df.reset_index()
             df["trade_date"] = pd.to_datetime(df["trade_date"])
         else:
@@ -205,8 +205,13 @@ class TushareProvider(BaseDataProvider):
 
         # tushare returns north_money / south_money or hgt / sgt depending on version;
         # normalize whichever is present. Values come back in 万元 — convert to 亿元.
-        hgt_col = "hgt" if "hgt" in df.columns else ("north_money" if "north_money" in df.columns else None)
-        sgt_col = "sgt" if "sgt" in df.columns else None
+        hgt_col = next((c for c in ("hgt", "north_money") if c in df.columns), None)
+        sgt_col = next((c for c in ("sgt", "south_money") if c in df.columns), None)
+
+        if hgt_col is None:
+            logger.warning("get_northbound_flow: no recognized HGT column in %s", list(df.columns))
+        if sgt_col is None:
+            logger.warning("get_northbound_flow: no recognized SGT column in %s", list(df.columns))
 
         df["hgt_net"] = (df[hgt_col].astype(float) / 10000.0) if hgt_col else 0.0
         df["sgt_net"] = (df[sgt_col].astype(float) / 10000.0) if sgt_col else 0.0
@@ -510,7 +515,7 @@ class TushareProvider(BaseDataProvider):
 
         combined = pd.concat(frames, ignore_index=True)
         grouped = combined.groupby("trade_date", as_index=False).sum()
-        grouped["trade_date"] = pd.to_datetime(grouped["trade_date"], format="%Y%m%d")
+        grouped["trade_date"] = pd.to_datetime(grouped["trade_date"])
         grouped["total"] = grouped["rzye"] + grouped["rqye"]
         return grouped.sort_values("trade_date").reset_index(drop=True)
 
