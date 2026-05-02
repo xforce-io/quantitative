@@ -199,6 +199,8 @@ class TushareProvider(BaseDataProvider):
             df["trade_date"] = pd.to_datetime(df["trade_date"])
         elif df.index.name in ("trade_date", "date"):
             df = df.reset_index()
+            if "date" in df.columns and "trade_date" not in df.columns:
+                df = df.rename(columns={"date": "trade_date"})
             df["trade_date"] = pd.to_datetime(df["trade_date"])
         else:
             df["trade_date"] = pd.to_datetime(df.index)
