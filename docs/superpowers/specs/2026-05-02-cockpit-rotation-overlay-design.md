@@ -382,6 +382,28 @@ parser.add_argument("--overlay", choices=["simple", "cockpit"], default="simple"
 - **margin / northbound 数据 Tushare 历史完整性**：northbound 通从 2014 年开始；2018-2024 应完整，但更早的回测会缺数据。
 - **真数据增益未知**：cockpit 信号不一定就比 Simple 好。Implementation 阶段必须做手工对比（同样 2018-2024 区间），如果 cockpit 没显著优于 Simple，spec 价值打折——这是开放风险。
 
+### 9.1 Validation 实测结果（2026-05-02 更新）
+
+Implementation Task 8 跑 2018-01 到 2024-12 真实 Tushare 数据，对比 simple vs cockpit（默认 K=3, lookback=6）：
+
+| overlay | 总收益 | 年化 | MDD | Sharpe |
+|---|---|---|---|---|
+| simple | +53.95% | +6.36% | -8.87% | 0.319 |
+| **cockpit** | **+18.03%** | **+2.40%** | **-30.94%** | **0.031** |
+
+**Cockpit 显著跑输 simple，且 MDD 是 simple 的 3.5 倍**。结论：**当前默认配置下 cockpit 不应替换 simple**。spec 的默认 `overlay_type="simple"` 是正确决策。
+
+诊断信息：
+- 指标分布：margin_debt_trend 中位数 -0.08%（2514 个交易日），yaml 阈值 ±2.0/-3.0 落在分位数 25-75% 之间，分类有响应；northbound_flow 数据点只 439 个（vs 期望 ~1750），远低于交易日数——**Tushare HSGT 数据完整性需调查**（怀疑 `_legacy.getHSGTFlow` 有截断或聚合问题）
+- regime 分布：transition 40% / risk-on 36% / risk-off 24% — 不是退化分布，overlay 确实在响应数据
+- 失败原因推测：(a) 2 个指标信噪比不够；(b) yaml 阈值是按实时使用场景校准的，月线节奏下"风险开关"频率不对；(c) Simple 用沪深 300 自身的 MA200/DD 反而更直接捕捉市场风险
+
+后续需要做的（按优先级）：
+1. **查 Tushare HSGT 数据缺失**：439 vs 1750 的差距太大，可能直接影响 northbound_flow 序列长度
+2. **加 market_breadth 和 china_risk_score 的历史化版本**（spec §8 已列入 future work）
+3. **重新校准 yaml 阈值**：基于真实分布的 60/40 分位数而非实时场景估计
+4. 上述 3 项都做完后重跑 validation；仍跑输 simple → cockpit overlay 在 a_shares rotation 场景没有 alpha，应转向"接 VerdictEngine 完整决策"或彻底放弃
+
 ---
 
 ## 10. 决策摘要
