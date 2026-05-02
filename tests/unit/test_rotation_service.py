@@ -94,3 +94,20 @@ def test_default_universe_path_used_when_omitted() -> None:
     request = RotationRequest(start="2018-01-01", end="2024-12-31")
     result = service.run_backtest(request)
     assert "annual_return_strategy" in result.metrics
+
+
+def test_unknown_overlay_type_raises():
+    from quant.services.rotation_service import RotationRequest, RotationService
+
+    service = RotationService(data_service=None)
+    bad = RotationRequest(
+        start="20240101",
+        end="20240301",
+        overlay_type="bogus",
+    )
+    try:
+        service._build_overlay(bad)
+    except ValueError as exc:
+        assert "bogus" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError for unknown overlay_type")

@@ -30,6 +30,7 @@ class RotationRequest:
     overlay_benchmark: str = "000300.SH"
     transaction_cost: float = 0.002
     provider: str = "auto"
+    overlay_type: str = "simple"   # "simple" | "cockpit"
 
 
 class RotationService:
@@ -127,11 +128,19 @@ class RotationService:
         )
         return df["close"].astype(float).resample("ME").last().dropna()
 
-    def _build_overlay(self, request: RotationRequest) -> SimpleRegimeOverlay:
-        overlay = SimpleRegimeOverlay(
-            data_service=self.data_service,
-            benchmark_symbol=request.overlay_benchmark,
-        )
+    def _build_overlay(self, request: RotationRequest):
+        if request.overlay_type == "simple":
+            from quant.analysis.rotation import SimpleRegimeOverlay
+            overlay = SimpleRegimeOverlay(
+                data_service=self.data_service,
+                benchmark_symbol=request.overlay_benchmark,
+            )
+        elif request.overlay_type == "cockpit":
+            from quant.analysis.rotation import CockpitRegimeOverlay
+            # overlay_benchmark is unused in cockpit mode (no benchmark dependency)
+            overlay = CockpitRegimeOverlay(data_service=self.data_service)
+        else:
+            raise ValueError(f"unknown overlay_type: {request.overlay_type}")
         overlay.precompute(start=request.start, end=request.end)
         return overlay
 
