@@ -6,6 +6,10 @@ from quant.analysis.rotation.backtest import (
 )
 from quant.analysis.rotation.portfolio import PortfolioCombiner
 from quant.analysis.rotation.ranker import MomentumRanker, RankerConfig
+from quant.analysis.rotation.cockpit_overlay import (
+    CockpitOverlayConfig,
+    CockpitRegimeOverlay,
+)
 from quant.analysis.rotation.regime_overlay import (
     PrecomputedRegimeOverlay,
     RegimeOverlay,
@@ -14,6 +18,8 @@ from quant.analysis.rotation.regime_overlay import (
 from quant.analysis.rotation.universe import EtfEntry, load_universe
 
 __all__ = [
+    "CockpitOverlayConfig",
+    "CockpitRegimeOverlay",
     "EtfEntry",
     "MomentumRanker",
     "PortfolioCombiner",
