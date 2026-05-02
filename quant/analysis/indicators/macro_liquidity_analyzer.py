@@ -4,15 +4,18 @@
 """
 宏观流动性监控分析器 (Macro Liquidity Analyzer)
 
-五维度监控，每个维度有明确的触发阈值：
+八维度监控，每个维度有明确的触发阈值：
 
-| 维度     | 数据源                           | 预警条件              | 权重 |
-|---------|----------------------------------|----------------------|------|
-| 净流动性 | FRED: WALCL - WTREGEN - RRPONTSYD | 单周下降 > 5%         | 40%  |
-| SOFR    | FRED: SOFR                        | 突破 5.5%            | 25%  |
-| MOVE指数 | Yahoo: ^MOVE                      | 超过 130             | 20%  |
-| 日元套利 | Yahoo: JPY=X + FRED: DGS2        | USD/JPY急跌+利差收窄   | 15%  |
-| 黄金异动 | Yahoo: GC=F + DX-Y.NYB, FRED: DFII10 | 连跌3天/破MA20/RSI弱势/周跌>3% | 15%  |
+| 维度       | 数据源                             | 预警条件                          | 权重 |
+|-----------|----------------------------------|----------------------------------|------|
+| 净流动性   | FRED: WALCL - WTREGEN - RRPONTSYD | 单周下降 > 5%                     | 25%  |
+| SOFR      | FRED: SOFR                        | 突破 5.5%                        | 12%  |
+| MOVE指数   | Yahoo: ^MOVE                      | 超过 130                         | 12%  |
+| 日元套利   | Yahoo: JPY=X + FRED: DGS2        | USD/JPY急跌+利差收窄               | 8%   |
+| 黄金异动   | Yahoo: GC=F + DX-Y.NYB, FRED: DFII10 | 连跌3天/破MA20/RSI弱势/周跌>3%   | 8%   |
+| 流动性趋势 | GlobalUsdLiquidityAnalyzer         | 百分位置信度转风险分               | 15%  |
+| 铜金比率   | Yahoo: HG=F + GC=F               | 铜金比低百分位/急跌                | 10%  |
+| 原油       | Yahoo: CL=F                       | 周涨>10%/暴跌>10%/高价位           | 10%  |
 
 状态输出：充裕(Abundant) / 正常(Normal) / 偏紧(Tight) / 危机(Crisis)
 """
@@ -49,15 +52,29 @@ THRESHOLDS = {
     'gold_usd_divergence_usd_max': 0.5,
     'real_yield_spike_bp': 30,
     'real_yield_spike_moderate_bp': 15,
+    # Copper/Gold ratio thresholds
+    'copper_gold_percentile_extreme': 10,
+    'copper_gold_percentile_high': 20,
+    'copper_gold_percentile_elevated': 40,
+    'copper_gold_weekly_drop_pct': 5.0,
+    # Crude oil thresholds
+    'crude_weekly_surge_pct': 10.0,
+    'crude_weekly_rise_pct': 5.0,
+    'crude_weekly_crash_pct': 10.0,
+    'crude_high_price': 100,
+    'crude_elevated_price': 90,
 }
 
 # 维度权重
 DIMENSION_WEIGHTS = {
-    'net_liquidity': 0.35,
-    'sofr': 0.20,
-    'move': 0.15,
-    'yen_carry': 0.15,
-    'gold': 0.15,
+    'net_liquidity': 0.25,
+    'sofr': 0.12,
+    'move': 0.12,
+    'yen_carry': 0.08,
+    'gold': 0.08,
+    'liquidity_trend': 0.15,
+    'copper_gold': 0.10,
+    'crude_oil': 0.10,
 }
 
 # 状态映射 (基于风险分数)
@@ -103,7 +120,13 @@ class MacroLiquidityAnalyzer:
             self._fred = Fred(api_key=api_key)
         return self._fred
 
-    def analyze(self, lookback_days: int = 365) -> Dict[str, Any]:
+    def analyze(
+        self,
+        lookback_days: int = 365,
+        liquidity_confidence: Optional[float] = None,
+        liquidity_velocity: Optional[float] = None,
+        liquidity_acceleration: Optional[float] = None,
+    ) -> Dict[str, Any]:
         """
         全量分析宏观流动性状态
 
@@ -171,6 +194,41 @@ class MacroLiquidityAnalyzer:
             logger.error(f"获取黄金异动数据失败: {e}")
             dimensions['gold'] = {'error': str(e)}
             dimension_scores['gold'] = 50
+
+        # 6. 流动性趋势（全球美元流动性置信度）
+        try:
+            trend_result = self._fetch_liquidity_trend(
+                liquidity_confidence, liquidity_velocity, liquidity_acceleration,
+            )
+            dimensions['liquidity_trend'] = trend_result
+            dimension_scores['liquidity_trend'] = trend_result.get('risk_score', 50)
+            signals.extend(trend_result.get('signals', []))
+        except Exception as e:
+            logger.error(f"获取流动性趋势数据失败: {e}")
+            dimensions['liquidity_trend'] = {'error': str(e)}
+            dimension_scores['liquidity_trend'] = 50
+
+        # 7. 铜金比率
+        try:
+            copper_gold_result = self._fetch_copper_gold_ratio(lookback_days)
+            dimensions['copper_gold'] = copper_gold_result
+            dimension_scores['copper_gold'] = copper_gold_result.get('risk_score', 50)
+            signals.extend(copper_gold_result.get('signals', []))
+        except Exception as e:
+            logger.error(f"获取铜金比率数据失败: {e}")
+            dimensions['copper_gold'] = {'error': str(e)}
+            dimension_scores['copper_gold'] = 50
+
+        # 8. 原油通胀
+        try:
+            crude_result = self._fetch_crude_oil(lookback_days)
+            dimensions['crude_oil'] = crude_result
+            dimension_scores['crude_oil'] = crude_result.get('risk_score', 50)
+            signals.extend(crude_result.get('signals', []))
+        except Exception as e:
+            logger.error(f"获取原油数据失败: {e}")
+            dimensions['crude_oil'] = {'error': str(e)}
+            dimension_scores['crude_oil'] = 50
 
         # 加权风险分数
         total_risk_score = sum(
@@ -734,6 +792,284 @@ class MacroLiquidityAnalyzer:
             'risk_score': risk_score,
             'signals': signals,
             'series': series,
+        }
+
+    # ==================== 铜金比率 ====================
+
+    def _fetch_copper_gold_ratio(self, lookback_days: int = 365) -> Dict[str, Any]:
+        """
+        获取铜金比率数据，作为经济周期与流动性压力的前瞻指标。
+
+        铜金比 = 铜价 (HG=F) / 金价 (GC=F)
+        低比率（历史低百分位）预示经济下行压力和流动性收紧。
+
+        Data sources:
+        - HG=F (COMEX copper futures) via Yahoo Finance
+        - GC=F (COMEX gold futures) via Yahoo Finance
+        """
+        end = datetime.now()
+        start = end - timedelta(days=lookback_days + 60)
+
+        # === Copper price ===
+        copper = yf.download('HG=F', start=start, end=end, progress=False)
+        if copper is None or copper.empty:
+            return {'error': '铜价数据为空', 'risk_score': 50, 'signals': [], 'series': None}
+
+        if isinstance(copper.columns, pd.MultiIndex):
+            copper.columns = copper.columns.get_level_values(0)
+
+        copper_col = 'Close' if 'Close' in copper.columns else 'close'
+        if copper_col not in copper.columns:
+            return {'error': '铜价数据缺少 Close 列', 'risk_score': 50, 'signals': [], 'series': None}
+
+        copper_close = copper[copper_col].dropna()
+        if len(copper_close) < 10:
+            return {'error': '铜价数据不足', 'risk_score': 50, 'signals': [], 'series': None}
+
+        # === Gold price ===
+        gold = yf.download('GC=F', start=start, end=end, progress=False)
+        if gold is None or gold.empty:
+            return {'error': '黄金数据为空（铜金比）', 'risk_score': 50, 'signals': [], 'series': None}
+
+        if isinstance(gold.columns, pd.MultiIndex):
+            gold.columns = gold.columns.get_level_values(0)
+
+        gold_col = 'Close' if 'Close' in gold.columns else 'close'
+        if gold_col not in gold.columns:
+            return {'error': '黄金数据缺少 Close 列（铜金比）', 'risk_score': 50, 'signals': [], 'series': None}
+
+        gold_close = gold[gold_col].dropna()
+        if len(gold_close) < 10:
+            return {'error': '黄金数据不足（铜金比）', 'risk_score': 50, 'signals': [], 'series': None}
+
+        # === Compute ratio ===
+        # Align on common dates
+        ratio_series = (copper_close / gold_close).dropna()
+        if ratio_series.empty:
+            return {'error': '铜金比数据对齐后为空', 'risk_score': 50, 'signals': [], 'series': None}
+
+        # 60-day rolling percentile
+        window = min(60, len(ratio_series))
+        current_ratio = float(ratio_series.iloc[-1])
+        rolling_window = ratio_series.iloc[-window:]
+        rank = (rolling_window <= current_ratio).sum()
+        percentile = float(rank) / len(rolling_window) * 100
+
+        # Weekly change (5 trading days)
+        if len(ratio_series) >= 5:
+            weekly_change_pct = float(
+                (ratio_series.iloc[-1] - ratio_series.iloc[-5]) / ratio_series.iloc[-5] * 100
+            )
+        else:
+            weekly_change_pct = 0.0
+
+        # === Risk scoring ===
+        if percentile < THRESHOLDS['copper_gold_percentile_extreme']:
+            risk_score = 90
+        elif percentile < THRESHOLDS['copper_gold_percentile_high']:
+            risk_score = 70
+        elif percentile < THRESHOLDS['copper_gold_percentile_elevated']:
+            risk_score = 45
+        else:
+            risk_score = 15
+
+        # Weekly drop bonus
+        if weekly_change_pct < -THRESHOLDS['copper_gold_weekly_drop_pct']:
+            risk_score = min(risk_score + 15, 100)
+
+        # === Signals ===
+        signals = []
+        if percentile < THRESHOLDS['copper_gold_percentile_extreme']:
+            signals.append(
+                f'🔴 铜金比处于历史极低百分位 ({percentile:.1f}%)，经济下行压力严重'
+            )
+        elif percentile < THRESHOLDS['copper_gold_percentile_high']:
+            signals.append(
+                f'🟠 铜金比偏低 (百分位 {percentile:.1f}%)，经济预期走弱'
+            )
+        elif percentile < THRESHOLDS['copper_gold_percentile_elevated']:
+            signals.append(
+                f'🟡 铜金比低于历史中位 (百分位 {percentile:.1f}%)'
+            )
+        else:
+            signals.append(
+                f'🟢 铜金比正常 (百分位 {percentile:.1f}%, 当前 {current_ratio:.4f})'
+            )
+
+        if weekly_change_pct < -THRESHOLDS['copper_gold_weekly_drop_pct']:
+            signals.append(
+                f'🔴 铜金比周跌 {weekly_change_pct:.1f}%，铜价相对黄金快速下滑'
+            )
+
+        # === Time series ===
+        cutoff = end - timedelta(days=lookback_days)
+        series = ratio_series[ratio_series.index >= cutoff].to_frame(name='copper_gold_ratio')
+
+        return {
+            'ratio': round(current_ratio, 6),
+            'percentile': round(percentile, 1),
+            'weekly_change_pct': round(weekly_change_pct, 2),
+            'risk_score': risk_score,
+            'signals': signals,
+            'series': series,
+        }
+
+    # ==================== 原油通胀代理 ====================
+
+    def _fetch_crude_oil(self, lookback_days: int = 365) -> Dict[str, Any]:
+        """
+        原油通胀代理
+        油价飙涨 → 通胀预期 → 加息预期 → 流动性收紧。
+        油价暴跌也是风险（需求崩塌）。
+        """
+        end = datetime.now()
+        start = end - timedelta(days=lookback_days + 30)
+
+        crude = yf.download('CL=F', start=start, end=end, progress=False)
+
+        if crude is None or crude.empty:
+            return {'error': '原油数据为空', 'risk_score': 50}
+
+        if isinstance(crude.columns, pd.MultiIndex):
+            crude.columns = crude.columns.get_level_values(0)
+
+        close_col = 'Close' if 'Close' in crude.columns else 'close'
+        if close_col not in crude.columns:
+            return {'error': '原油数据缺少 Close 列', 'risk_score': 50}
+
+        close = crude[close_col].dropna()
+        current_price = float(close.iloc[-1])
+
+        # Weekly change (5 trading days)
+        if len(close) >= 5:
+            week_ago = float(close.iloc[-5])
+            weekly_change_pct = (current_price - week_ago) / abs(week_ago) * 100 if week_ago != 0 else 0
+        else:
+            weekly_change_pct = 0
+
+        # Risk scoring
+        risk_score = 0
+        signals = []
+
+        if weekly_change_pct > THRESHOLDS['crude_weekly_surge_pct']:
+            risk_score = 85
+            signals.append(f'🔴 原油周涨 {weekly_change_pct:.1f}%，通胀预期急升')
+        elif weekly_change_pct > THRESHOLDS['crude_weekly_rise_pct']:
+            risk_score = 60
+            signals.append(f'🟠 原油周涨 {weekly_change_pct:.1f}%，关注通胀压力')
+        elif weekly_change_pct < -THRESHOLDS['crude_weekly_crash_pct']:
+            risk_score = 70
+            signals.append(f'🟠 原油周跌 {weekly_change_pct:.1f}%，需求崩塌信号')
+        elif current_price > THRESHOLDS['crude_high_price']:
+            risk_score = 50
+            if weekly_change_pct > 0:
+                signals.append(f'🟡 油价 ${current_price:.0f} 突破 $100，通胀风险持续')
+            else:
+                risk_score = 40
+        elif current_price > THRESHOLDS['crude_elevated_price']:
+            risk_score = 35
+        else:
+            risk_score = 15
+
+        if not signals:
+            signals.append(f'🟢 原油价格稳定（${current_price:.1f}，周变化 {weekly_change_pct:+.1f}%）')
+
+        cutoff = end - timedelta(days=lookback_days)
+        series = close[close.index >= cutoff].to_frame(name='crude_oil')
+
+        return {
+            'current_price': round(current_price, 2),
+            'weekly_change_pct': round(weekly_change_pct, 2),
+            'risk_score': risk_score,
+            'signals': signals,
+            'series': series,
+        }
+
+    # ==================== 流动性趋势 ====================
+
+    def _fetch_liquidity_trend(
+        self,
+        precomputed_confidence: Optional[float] = None,
+        precomputed_velocity: Optional[float] = None,
+        precomputed_acceleration: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """
+        获取全球美元流动性置信度 + 导数，映射为风险分数。
+
+        基础分: risk = 50 - confidence / 2
+        导数调整:
+          - 一阶导 < -5 → +15, < -2 → +10
+          - 一阶导 > 0  → -5 (改善减分)
+          - 二阶导 < -2 → +10 (恶化加速), < 0 → +5
+        """
+        wow_change = None
+        velocity = precomputed_velocity
+        acceleration = precomputed_acceleration
+
+        if precomputed_confidence is not None:
+            confidence = precomputed_confidence
+        else:
+            from quant.analysis.indicators.global_usd_liquidity import (
+                GlobalUsdLiquidityAnalyzer,
+            )
+            analyzer = GlobalUsdLiquidityAnalyzer(fred_api_key=self._fred_api_key)
+            result = analyzer.analyze()
+            confidence = result.get('confidence')
+            wow_change = result.get('wow_change')
+            velocity = result.get('velocity')
+            acceleration = result.get('acceleration')
+
+        if confidence is None:
+            return {'error': '流动性置信度不可用', 'risk_score': 50}
+
+        # 基础分: 置信度 → 风险分 (-100→100, 0→50, +100→0)
+        base_risk = 50 - confidence / 2
+
+        # 一阶导调整
+        velocity_adj = 0
+        if velocity is not None:
+            if velocity < -5:
+                velocity_adj = 15
+            elif velocity < -2:
+                velocity_adj = 10
+            elif velocity > 0:
+                velocity_adj = -5
+
+        # 二阶导调整
+        acceleration_adj = 0
+        if acceleration is not None:
+            if acceleration < -2:
+                acceleration_adj = 10
+            elif acceleration < 0:
+                acceleration_adj = 5
+
+        risk_score = max(0, min(100, round(base_risk + velocity_adj + acceleration_adj)))
+
+        # 信号生成
+        signals = []
+        if confidence <= -50:
+            signals.append(f'🔴 流动性趋势显著收紧（置信度 {confidence:+.1f}%）')
+        elif confidence <= -20:
+            signals.append(f'🟠 流动性趋势偏紧（置信度 {confidence:+.1f}%）')
+        elif confidence <= 20:
+            signals.append(f'🟡 流动性趋势中性（置信度 {confidence:+.1f}%）')
+        else:
+            signals.append(f'🟢 流动性趋势宽松（置信度 {confidence:+.1f}%）')
+
+        if velocity is not None and velocity < -5:
+            signals.append(f'🔴 流动性快速恶化（月度变化 {velocity:+.1f}pp）')
+        if acceleration is not None and acceleration < -2:
+            signals.append(f'🟠 恶化在加速（加速度 {acceleration:+.1f}）')
+        elif acceleration is not None and acceleration > 2 and velocity is not None and velocity < 0:
+            signals.append(f'🟡 恶化速度放缓，关注拐点（加速度 {acceleration:+.1f}）')
+
+        return {
+            'confidence': confidence,
+            'velocity': velocity,
+            'acceleration': acceleration,
+            'wow_change': wow_change,
+            'risk_score': risk_score,
+            'signals': signals,
         }
 
     # ==================== 辅助方法 ====================

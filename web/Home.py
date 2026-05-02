@@ -27,12 +27,12 @@ apply_custom_css()
 
 from quant.core.logging_config import get_logger
 
-st.title("📈 Quantitative Trading Platform")
+st.title("📈 量化交易分析平台")
 
 st.markdown("""
-### 欢迎使用量化交易分析平台
+### 欢迎使用
 
-这是一个集成化的量化分析工作台，集成了数据获取、策略回测、市场分析等功能。
+集成化的量化分析工作台，覆盖宏观环境监控、持仓跟踪、机会扫描。
 """)
 
 st.divider()
@@ -41,17 +41,17 @@ st.divider()
 
 st.markdown("### 🚀 快速入口")
 
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3 = st.columns(3)
 
 with col1:
     st.markdown("""
     <div style="text-align: center; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 15px; margin-bottom: 10px;">
-        <span style="font-size: 48px;">💸</span>
+        <span style="font-size: 48px;">📊</span>
     </div>
     """, unsafe_allow_html=True)
-    st.markdown("#### 资金流向分析")
-    st.caption("监控机构/散户资金博弈，追踪北向资金，发现主力动向")
-    st.page_link("pages/1_💸_Money_Flow.py", label="进入应用 →", icon="💸")
+    st.markdown("#### Dashboard")
+    st.caption("Overall verdict, cross-asset alerts, pool status — one page to know what to do")
+    st.page_link("pages/1_📊_Dashboard.py", label="进入 →", icon="📊")
 
 with col2:
     st.markdown("""
@@ -59,29 +59,19 @@ with col2:
         <span style="font-size: 48px;">👀</span>
     </div>
     """, unsafe_allow_html=True)
-    st.markdown("#### 自选股监控")
-    st.caption("管理自选列表，跟踪技术指标，监控估值分位")
-    st.page_link("pages/2_👀_Watchlist.py", label="进入应用 →", icon="👀")
+    st.markdown("#### Watchlist")
+    st.caption("Positions organized by asset pool with regime context and action suggestions")
+    st.page_link("pages/2_👀_Watchlist.py", label="进入 →", icon="👀")
 
 with col3:
     st.markdown("""
     <div style="text-align: center; padding: 20px; background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); border-radius: 15px; margin-bottom: 10px;">
-        <span style="font-size: 48px;">🏆</span>
+        <span style="font-size: 48px;">🔍</span>
     </div>
     """, unsafe_allow_html=True)
-    st.markdown("#### 风向排行榜")
-    st.caption("多因子智能排名，多种策略配置，发现投资机会")
-    st.page_link("pages/3_🏆_Ranking.py", label="进入应用 →", icon="🏆")
-
-with col4:
-    st.markdown("""
-    <div style="text-align: center; padding: 20px; background: linear-gradient(135deg, #ffb347 0%, #ff6b6b 100%); border-radius: 15px; margin-bottom: 10px;">
-        <span style="font-size: 48px;">📰</span>
-    </div>
-    """, unsafe_allow_html=True)
-    st.markdown("#### 新闻事件概率图")
-    st.caption("从新闻反推事件因果链、Bull/Base/Bear 概率与受益受损方向")
-    st.page_link("pages/5_📰_Event_Graph.py", label="进入应用 →", icon="📰")
+    st.markdown("#### Scanner")
+    st.caption("Find opportunities in A-shares, US value stocks, gold and commodities")
+    st.page_link("pages/3_🔍_Scanner.py", label="进入 →", icon="🔍")
 
 st.divider()
 
@@ -89,30 +79,23 @@ st.divider()
 
 with st.expander("📖 功能详情", expanded=False):
     st.markdown("""
-    #### 1. 💸 资金流向分析 (Money Flow)
-    提供全方位的市场资金流向监控：
-    - **市场概览**：机构 vs 散户博弈、北向资金动向
-    - **行业分析**：捕捉主力资金流入流出的热门板块
-    - **个股追踪**：深度剖析个股的资金趋势
+    #### 1. 📊 Dashboard
+    Overall verdict, cross-asset alerts, pool status — one page to know what to do:
+    - **Verdict bar with overall stance and per-pool actions**
+    - **Asset pool cards showing regime status**
+    - **Position alerts with action suggestions**
 
-    #### 2. 👀 自选股监控 (Watchlist)
-    管理和监控您的自选股列表：
-    - **资金监控**：跟踪自选股资金流向
-    - **技术指标**：均线、MACD、RSI 等指标分析
-    - **估值监控**：PE/PB 历史分位追踪
+    #### 2. 👀 Watchlist
+    Positions organized by asset pool with regime context and action suggestions:
+    - **Tabs by asset pool** (A-shares, US stocks, gold, commodities)
+    - **Per-position regime context and signals**
+    - **In-page add/remove management**
 
-    #### 3. 🏆 风向排行榜 (Ranking)
-    对候选池标的进行多维度分析和排序：
-    - **智能排名**：资金流向 + 技术形态 + 估值的多因子加权评分
-    - **多种策略**：短线交易、均衡配置、价值投资、趋势跟踪、资金驱动
-    - **赛道排行**：行业板块资金流向对比
-
-    #### 4. 📰 新闻事件概率图 (Event Graph)
-    将新闻事件转换为可解释投资推理：
-    - **事件结构化**：识别事件类型、实体、方向、强度与证据
-    - **因果路径**：展示事件如何传导到行业、主题和资产
-    - **情景概率**：输出 Bull / Base / Bear 三情景概率分布
-    - **资产映射**：生成受益、受损和观察名单
+    #### 3. 🔍 Scanner
+    Find opportunities in A-shares, US value stocks, gold and commodities:
+    - **A-share scan** (box breakout + market signals)
+    - **US value scan** (five-factor screening)
+    - **Gold & commodity scan**
     """)
 
 # 系统状态检查

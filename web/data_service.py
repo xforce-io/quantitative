@@ -137,16 +137,6 @@ def get_stock_money_flow(symbol: str, start: str, end: str) -> Dict[str, Any]:
 
 
 @st.cache_data(ttl=7200, show_spinner=False)  # 2小时缓存
-def get_stock_price(symbol: str, start: str, end: str) -> pd.DataFrame:
-    """获取个股价格数据"""
-    provider = get_provider()
-    try:
-        return provider.get_stock_data(symbol, start, end)
-    except Exception:
-        return pd.DataFrame()
-
-
-@st.cache_data(ttl=7200, show_spinner=False)  # 2小时缓存
 def get_stock_technical_data(symbol: str, start: str, end: str) -> pd.DataFrame:
     """
     获取个股K线数据并计算技术指标
@@ -224,45 +214,6 @@ def get_industry_flow_daily(date_str: str) -> pd.DataFrame:
     """获取单日行业资金流向 (缓存24小时)"""
     provider = get_provider()
     return provider.get_industry_money_flow_dc(trade_date=date_str)
-
-
-@st.cache_data(ttl=7200, show_spinner=False)  # 2小时缓存
-def get_industry_flow_aggregated(start_date: str, end_date: str) -> pd.DataFrame:
-    """
-    获取聚合的行业资金流向 (多日汇总)
-    返回: DataFrame with columns [name, net_amount, pct_change, ...]
-    """
-    days = get_trading_days(start_date, end_date)
-    if not days:
-        return pd.DataFrame()
-    
-    all_dfs = []
-    for day in days:
-        try:
-            df = get_industry_flow_daily(day)
-            if not df.empty and 'net_amount' in df.columns:
-                df['net_amount'] = pd.to_numeric(df['net_amount'], errors='coerce')
-                
-                # 选取需要的列
-                cols = ['name', 'net_amount', 'pct_change']
-                if 'company_num' in df.columns:
-                    cols.append('company_num')
-                cols = [c for c in cols if c in df.columns]
-                
-                all_dfs.append(df[cols])
-        except Exception:
-            continue
-    
-    if not all_dfs:
-        return pd.DataFrame()
-    
-    combined = pd.concat(all_dfs, ignore_index=True)
-    
-    agg_rules = {'net_amount': 'sum', 'pct_change': 'mean'}
-    if 'company_num' in combined.columns:
-        agg_rules['company_num'] = 'last'
-    
-    return combined.groupby('name').agg(agg_rules).reset_index()
 
 
 @st.cache_data(ttl=7200, show_spinner=False)  # 2小时缓存
@@ -364,15 +315,6 @@ def get_industry_constituent_stocks(industry_name: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-# ==================== 市场概览 ====================
-
-@st.cache_data(ttl=7200, show_spinner=False)  # 2小时缓存
-def get_market_summary(date_str: str) -> Dict[str, Any]:
-    """获取市场资金流向摘要"""
-    provider = get_provider()
-    return provider.get_market_money_flow_summary(date_str)
-
-
 # ==================== 股票排名服务 ====================
 
 @st.cache_resource
@@ -380,93 +322,6 @@ def get_stock_ranker():
     """获取 StockRanker 单例"""
     from quant.analysis.screener.ranker import StockRanker
     return StockRanker()
-
-
-def get_ranking_profiles() -> Dict[str, Dict]:
-    """获取可用的排名配置"""
-    ranker = get_stock_ranker()
-
-    # 配置的中文名称和描述
-    profile_info = {
-        'short_term': {'name': '短线交易', 'desc': '重视资金流向和趋势动量'},
-        'balanced': {'name': '均衡配置', 'desc': '四因子均衡考虑'},
-        'value': {'name': '价值投资', 'desc': '重视估值和基本面'},
-        'trend': {'name': '趋势跟踪', 'desc': '趋势因子占50%权重'},
-        'momentum': {'name': '资金驱动', 'desc': '资金流向+趋势动量'},
-    }
-
-    result = {}
-    for name in ranker.get_available_profiles():
-        weights = ranker.profiles.get(name, {})
-        info = profile_info.get(name, {'name': name, 'desc': ''})
-        result[name] = {
-            'name': info['name'],
-            'description': info['desc'],
-            'weights': weights
-        }
-    return result
-
-
-# 注意：rank_stocks 不再使用 Streamlit 缓存
-# 因为底层 StockRanker._calculate_scores 已有当日有效的模块级缓存
-# Streamlit 缓存反而会导致问题（如切换配置时无法更新权重）
-def rank_stocks(symbols: List[str], profile: str = 'balanced', days: int = 60) -> pd.DataFrame:
-    """
-    对股票列表进行排名
-
-    Args:
-        symbols: 股票代码列表
-        profile: 权重配置名称
-        days: 分析数据天数
-
-    Returns:
-        排名结果 DataFrame
-    """
-    ranker = get_stock_ranker()
-    return ranker.rank(symbols, profile=profile, days=days)
-
-
-# ==================== AI 按需获取服务 ====================
-
-def resolve_stock_symbol(query: str) -> str:
-    """
-    将股票名称/简称解析为标准代码 (委托给 SymbolResolver)
-
-    Args:
-        query: 用户输入（可能是代码如 "002594.SZ" 或名称如 "比亚迪"）
-
-    Returns:
-        标准股票代码（如 "002594.SZ"），未找到则返回原值
-    """
-    try:
-        stock_list = get_stock_list()
-    except Exception:
-        stock_list = None
-    return SymbolResolver.resolve(query, stock_list)
-
-
-def fetch_stock_full_analysis(symbol: str, days: int = 60) -> Dict[str, Any]:
-    """
-    One-shot comprehensive stock analysis (money-flow + technical + valuation).
-
-    Delegates to ``quant.skills.stock_analysis.fetch_full_analysis`` which
-    contains the actual logic, free from any Streamlit dependency.
-
-    Args:
-        symbol: Stock code or name (auto-resolved).
-        days: Analysis lookback days.
-
-    Returns:
-        Dict with money_flow, technical, valuation sub-dicts.
-    """
-    from quant.skills.stock_analysis import fetch_full_analysis
-    return fetch_full_analysis(symbol, days=days)
-
-
-def _calc_boll_position(row) -> str:
-    """计算价格在布林带中的位置 (委托给 TechnicalAnalyzer)"""
-    from quant.analysis.indicators.technical_analyzer import TechnicalAnalyzer
-    return TechnicalAnalyzer.bollinger_position(row)
 
 
 # ==================== 趋势强度分析服务 ====================
@@ -520,30 +375,6 @@ def get_trend_strength_from_price_data(price_df: pd.DataFrame, symbol: str = "un
 
 # ==================== 箱体突破分析服务 ====================
 
-@st.cache_data(ttl=7200, show_spinner=False)  # 2小时缓存
-def get_box_breakout(symbol: str, period: int = 20, days: int = 120,
-                      volume_threshold: float = 1.5) -> Dict[str, Any]:
-    """
-    获取单个标的的箱体突破分析
-
-    Args:
-        symbol: 股票代码
-        period: 箱体计算周期（天）
-        days: 历史数据天数
-        volume_threshold: 放量确认倍数阈值
-
-    Returns:
-        箱体突破分析结果
-    """
-    try:
-        from quant.analysis.indicators.box_breakout_analyzer import BoxBreakoutAnalyzer
-        analyzer = BoxBreakoutAnalyzer()
-        return analyzer.analyze(symbol, period, days, volume_threshold)
-    except Exception as e:
-        logger.error(f"获取箱体突破分析失败: {e}")
-        return {'symbol': symbol, 'error': str(e)}
-
-
 @st.cache_data(ttl=3600, show_spinner=False)  # 1小时缓存
 def scan_box_breakouts(symbols: tuple, period: int = 20, days: int = 120,
                         volume_threshold: float = 1.5,
@@ -594,54 +425,6 @@ def load_all_ashare_stocks() -> pd.DataFrame:
         'industry': df.get('industry', ''),
     })
     return result
-
-
-@st.cache_data(ttl=7200, show_spinner=False)  # 2小时缓存
-def get_industry_trend_strength(industry_name: str, start: str, end: str) -> Dict[str, Any]:
-    """
-    获取行业趋势强度评分
-    
-    使用行业涨跌幅构建价格指数，然后计算趋势强度。
-    
-    Args:
-        industry_name: 行业名称
-        start: 开始日期 (YYYYMMDD)
-        end: 结束日期 (YYYYMMDD)
-    
-    Returns:
-        趋势强度分析结果
-    """
-    try:
-        # 获取行业趋势数据
-        _, trend_df = get_industry_flow_with_details(start, end)
-        
-        if trend_df.empty:
-            return {'error': '无法获取行业数据'}
-        
-        # 筛选该行业
-        industry_data = trend_df[trend_df['name'] == industry_name].copy()
-        
-        if industry_data.empty:
-            return {'error': f'未找到行业 {industry_name} 的数据'}
-        
-        # 排序
-        industry_data = industry_data.sort_values('trade_date')
-        
-        if len(industry_data) < 60:
-            return {'error': f'数据不足，需要至少60个交易日（当前:{len(industry_data)}）'}
-        
-        # 使用涨跌幅构建价格指数
-        if 'pct_change' in industry_data.columns:
-            industry_data['close'] = (1 + industry_data['pct_change']/100).cumprod() * 100
-        else:
-            return {'error': '缺少涨跌幅数据'}
-        
-        # 计算趋势强度
-        return get_trend_strength_from_price_data(industry_data, industry_name)
-        
-    except Exception as e:
-        logger.error(f"获取行业趋势强度失败: {e}")
-        return {'error': str(e)}
 
 
 # ==================== 美股价值投资分析服务 ====================
@@ -696,7 +479,7 @@ def get_macro_liquidity(lookback_days: int = 365, force_refresh: bool = False) -
     每个维度独立缓存，失败的维度用上次成功的缓存兜底。
     """
     from quant.analysis.indicators.macro_liquidity_analyzer import (
-        MacroLiquidityAnalyzer, DIMENSION_WEIGHTS, STATUS_MAP
+        MacroLiquidityAnalyzer, DIMENSION_WEIGHTS, STATUS_MAP, THRESHOLDS
     )
     from quant.data.cache_manager import get_cache_manager
 
@@ -724,46 +507,62 @@ def get_macro_liquidity(lookback_days: int = 365, force_refresh: bool = False) -
     else:
         dims_to_fetch = dimension_names
 
-    # Phase 2: If all cached, return immediately (fast path)
-    if not dims_to_fetch:
-        return _assemble_macro_result(dimensions, DIMENSION_WEIGHTS, STATUS_MAP,
-                                      MacroLiquidityAnalyzer)
+    # Phase 2: Always fetch from analyzer to get series data for charts.
+    # Cached dimensions are used as fallback when fetch fails.
+    # Reuse global USD liquidity cache to avoid duplicate FRED requests.
+    liquidity_confidence = None
+    liquidity_velocity = None
+    liquidity_acceleration = None
+    try:
+        usd_liq = get_global_usd_liquidity()
+        liquidity_confidence = usd_liq.get('confidence')
+        liquidity_velocity = usd_liq.get('velocity')
+        liquidity_acceleration = usd_liq.get('acceleration')
+    except Exception:
+        pass
 
-    # Phase 3: Fetch missing/expired dimensions via analyzer
     try:
         analyzer = MacroLiquidityAnalyzer()
-        result = analyzer.analyze(lookback_days)
+        result = analyzer.analyze(
+            lookback_days,
+            liquidity_confidence=liquidity_confidence,
+            liquidity_velocity=liquidity_velocity,
+            liquidity_acceleration=liquidity_acceleration,
+        )
     except Exception as e:
         logger.error(f"宏观流动性分析失败: {e}")
         if dimensions:
-            # Some cached dims available, return partial result
+            # All cached, no series but at least show scores
             return _assemble_macro_result(dimensions, DIMENSION_WEIGHTS, STATUS_MAP,
-                                          MacroLiquidityAnalyzer)
+                                          MacroLiquidityAnalyzer, THRESHOLDS)
         return {'error': str(e)}
 
     fetched_dims = result.get('dimensions', {})
 
-    # Phase 4: Merge fetched results, cache successes, fallback on failures
+    # Phase 3: Merge fetched results, cache successes, fallback on failures
     for dim_name in dimension_names:
         fetched = fetched_dims.get(dim_name)
         is_error = (fetched is None or
                     (isinstance(fetched, dict) and 'error' in fetched))
 
         if not is_error:
-            # Fresh data — cache it
+            # Fresh data — cache non-series fields
             cache_data = {k: v for k, v in fetched.items() if k != 'series'}
             cache.set(CACHE_PROVIDER, CACHE_API_TYPE, dim_name,
                       cache_data, lookback_days=lookback_days)
             dimensions[dim_name] = fetched
-        elif dim_name not in dimensions:
+        elif dim_name in dimensions:
+            # Fetch failed but have cache — keep cached scores, no series
+            pass
+        else:
             # Failed and no cache — use error result
             dimensions[dim_name] = fetched or {'error': '数据不可用', 'risk_score': 50}
 
     return _assemble_macro_result(dimensions, DIMENSION_WEIGHTS, STATUS_MAP,
-                                  MacroLiquidityAnalyzer)
+                                  MacroLiquidityAnalyzer, THRESHOLDS)
 
 
-def _assemble_macro_result(dimensions, weights, status_map, analyzer_cls):
+def _assemble_macro_result(dimensions, weights, status_map, analyzer_cls, thresholds=None):
     """从维度数据组装最终结果（重算加权分、状态、信号）"""
     signals = []
     dimension_scores = {}
@@ -796,8 +595,8 @@ def _assemble_macro_result(dimensions, weights, status_map, analyzer_cls):
         'dimension_scores': dimension_scores,
         'signals': signals,
         'series': series,
-        'thresholds': result.get('thresholds', {}),
-        'analyzed_at': result.get('analyzed_at', ''),
+        'thresholds': thresholds or {},
+        'analyzed_at': datetime.now().isoformat(),
     }
 
 
@@ -821,136 +620,6 @@ def get_china_market_signals(lookback_days: int = 60) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"A股/港股市场信号分析失败: {e}")
         return {'error': str(e)}
-
-
-# ==================== ETF 排行服务 ====================
-
-# ETF 分类映射（基于 ts_code 前缀 / 名称关键词）
-_ETF_CATEGORY_KEYWORDS = {
-    '宽基': ['沪深300', '中证500', '中证1000', '上证50', '创业板', '科创50', 'A50', '中证100', '红利'],
-    '科技': ['芯片', '半导体', '5G', '通信', '人工智能', 'AI', '科技', '信息', '计算机', '软件', '传媒', '大数据', '云计算', '机器人'],
-    '新能源': ['新能源', '光伏', '锂电', '电力', '电池', '风电', '储能', '电网', '碳中和'],
-    '资源': ['黄金', '有色', '煤炭', '钢铁', '石油', '油气', '铜', '豆粕', '能源化工', '稀土'],
-    '军工制造': ['军工', '航天', '航空', '国防', '船舶', '工业母机', '机械', '高端装备'],
-    '消费医药': ['消费', '食品', '饮料', '白酒', '医药', '医疗', '生物', '创新药', '中药', '家电', '农业', '养殖'],
-    '金融地产': ['银行', '证券', '保险', '金融', '房地产', '地产', '基建'],
-    '海外': ['纳斯达克', '纳指', '标普', '恒生', '港股', '中概', '日经', '德国', '美国', '香港'],
-}
-
-
-def _classify_etf(name: str) -> str:
-    """根据 ETF 名称推断分类"""
-    for category, keywords in _ETF_CATEGORY_KEYWORDS.items():
-        for kw in keywords:
-            if kw in name:
-                return category
-    return '其他'
-
-
-@st.cache_data(ttl=86400, show_spinner=False)
-def get_etf_pool(source: str = "default", top_n: int = 50) -> pd.DataFrame:
-    """
-    获取 ETF 池
-
-    Args:
-        source: "default" 使用精选池(25只), "tushare" 从 Tushare 拉取热门 ETF
-        top_n: Tushare 模式下取成交额 Top N
-
-    Returns:
-        DataFrame(columns=['ts_code', 'name', 'category'])
-    """
-    if source == "default":
-        from quant.strategies.etf_rotation_strategy import DEFAULT_ETF_POOL
-        rows = [
-            {'ts_code': code, 'name': name, 'category': _classify_etf(name)}
-            for code, name in DEFAULT_ETF_POOL.items()
-        ]
-        return pd.DataFrame(rows)
-
-    # Tushare 模式：拉取全量 ETF 并按成交额过滤
-    try:
-        provider = get_provider()
-        df_basic = provider.get_fund_basic(market='E', status='L')
-        if df_basic is None or df_basic.empty:
-            logger.warning("Tushare fund_basic 返回空数据，回退到默认池")
-            return get_etf_pool(source="default")
-
-        # 只取股票型 ETF（被动指数型 + 增强指数型）
-        df_equity = df_basic[df_basic['fund_type'] == '股票型'].copy()
-        if df_equity.empty:
-            return get_etf_pool(source="default")
-
-        # 获取最近交易日的成交额来筛选活跃 ETF
-        from datetime import datetime, timedelta
-        end = datetime.now().strftime('%Y%m%d')
-        start = (datetime.now() - timedelta(days=10)).strftime('%Y%m%d')
-
-        vol_records = []
-        # 批量抽样检查成交额（取前 200 只按上市日期排序的）
-        candidates = df_equity.sort_values('list_date').tail(500)  # 取最近上市的500只
-        # 也要保留上市时间长的大基金
-        old_funds = df_equity.sort_values('list_date').head(200)
-        candidates = pd.concat([old_funds, candidates]).drop_duplicates(subset='ts_code')
-
-        for ts_code in candidates['ts_code'].tolist():
-            try:
-                fund_df = provider.get_fund_data(ts_code, start, end)
-                if fund_df is not None and not fund_df.empty and 'amount' in fund_df.columns:
-                    avg_amount = fund_df['amount'].mean()
-                    vol_records.append({'ts_code': ts_code, 'avg_amount': avg_amount})
-            except Exception:
-                continue
-
-        if not vol_records:
-            return get_etf_pool(source="default")
-
-        df_vol = pd.DataFrame(vol_records).sort_values('avg_amount', ascending=False).head(top_n)
-
-        # 合并名称
-        df_result = df_vol.merge(df_equity[['ts_code', 'name']], on='ts_code', how='left')
-        df_result['category'] = df_result['name'].apply(_classify_etf)
-        return df_result[['ts_code', 'name', 'category']].reset_index(drop=True)
-
-    except Exception as e:
-        logger.error(f"Tushare ETF 池加载失败: {e}")
-        return get_etf_pool(source="default")
-
-
-@st.cache_data(ttl=600, show_spinner=False)
-def rank_etfs(etf_pool: str = "default", top_n: int = 50) -> pd.DataFrame:
-    """
-    对 ETF 池进行轮动排名，返回带评分和信号的 DataFrame。
-
-    Args:
-        etf_pool: "default" 或 "tushare"
-        top_n: Tushare 模式下的池大小
-
-    Returns:
-        DataFrame with columns: ts_code, name, category, ret_20d, ret_60d,
-                                score, tier, signal, ret_20d_pct, ret_60d_pct
-    """
-    pool_df = get_etf_pool(source=etf_pool, top_n=top_n)
-    if pool_df.empty:
-        return pd.DataFrame()
-
-    # 构建 etf_pool dict
-    etf_dict = dict(zip(pool_df['ts_code'], pool_df['name']))
-    category_map = dict(zip(pool_df['ts_code'], pool_df['category']))
-
-    # 使用 ETFRotationStrategy 计算排名和信号
-    from quant.strategies.etf_rotation_strategy import ETFRotationStrategy
-    provider = get_provider()
-    strategy = ETFRotationStrategy(provider, etf_pool=etf_dict, request_sleep=0.1)
-    result = strategy.run()
-
-    if result.ranking.empty:
-        return pd.DataFrame()
-
-    df = result.ranking.copy()
-    df['category'] = df['ts_code'].map(category_map).fillna('其他')
-    df['signal'] = df['ts_code'].map(result.signals).fillna('无明显信号')
-
-    return df
 
 
 # ==================== LLM 宏观流动性总结 ====================
@@ -1027,3 +696,134 @@ def get_macro_liquidity_summary(
     except Exception as e:
         logger.warning(f"LLM summary generation failed: {e}")
         return ""
+
+
+def get_global_usd_liquidity(
+    display_days: int = 365,
+    force_refresh: bool = False,
+) -> Dict[str, Any]:
+    """
+    获取全球美元流动性置信度（带缓存）
+
+    缓存策略：缓存完整分析结果（不含 series），12 小时过期。
+    总是尝试获取最新数据，缓存作为 fallback。
+    """
+    from quant.analysis.indicators.global_usd_liquidity import (
+        GlobalUsdLiquidityAnalyzer,
+    )
+    from quant.data.cache_manager import get_cache_manager
+
+    cache = get_cache_manager()
+    CACHE_PROVIDER = 'global_usd_liquidity'
+    CACHE_API_TYPE = 'result'
+    CACHE_SYMBOL = 'composite'
+    CACHE_EXPIRY_HOURS = 12
+
+    # Try to load cached result as fallback
+    cached_result = None
+    if not force_refresh:
+        cached_result = cache.get(
+            CACHE_PROVIDER, CACHE_API_TYPE, CACHE_SYMBOL,
+            expiry_hours=CACHE_EXPIRY_HOURS,
+        )
+
+    # Always try fresh data (need series for charts)
+    try:
+        analyzer = GlobalUsdLiquidityAnalyzer()
+        result = analyzer.analyze(display_days=display_days)
+
+        # Cache non-series fields
+        cache_data = {
+            'confidence': result['confidence'],
+            'wow_change': result['wow_change'],
+            'velocity': result.get('velocity'),
+            'acceleration': result.get('acceleration'),
+            'inflection_points': result.get('inflection_points', []),
+            'groups': {
+                k: {kk: vv for kk, vv in v.items() if kk != 'indicators'}
+                for k, v in result['groups'].items()
+            },
+            'indicators': {
+                k: {kk: vv for kk, vv in v.items() if kk != 'series'}
+                for k, v in result['indicators'].items()
+            },
+            'analyzed_at': result['analyzed_at'],
+        }
+        cache.set(CACHE_PROVIDER, CACHE_API_TYPE, CACHE_SYMBOL, cache_data)
+
+        return result
+    except Exception as e:
+        logger.error(f"全球美元流动性分析失败: {e}")
+        if cached_result:
+            cached_result['from_cache'] = True
+            return cached_result
+        return {'error': str(e)}
+
+
+@st.cache_data(ttl=14400, show_spinner=False)  # 4 hour cache — macro data is daily frequency
+def get_leading_indicators(lookback_days: int = 365) -> Dict[str, Any]:
+    """
+    获取三个领先指标分析结果（VIX / 信用利差 / 融资余额）。
+    数据层与分析层解耦：margin 数据从 TushareProvider 获取后传入 analyzer。
+    """
+    from quant.analysis.indicators.leading_indicators import LeadingIndicatorsAnalyzer
+
+    analyzer = LeadingIndicatorsAnalyzer()
+
+    # 获取融资融券数据（数据层）
+    margin_df = None
+    try:
+        provider = get_provider()
+        margin_df = provider.get_margin_data(lookback_days=90)
+    except Exception as e:
+        logger.warning(f"融资融券数据获取失败: {e}")
+
+    # 分析（能力层）
+    result = analyzer.analyze_all(margin_df=margin_df, lookback_days=lookback_days)
+
+    # 过滤掉 series 数据（不能被 st.cache_data 序列化为 hashable）
+    for key in result:
+        if isinstance(result[key], dict):
+            result[key].pop("series", None)
+            delta = result[key].get("delta")
+            if isinstance(delta, dict):
+                delta.pop("velocity_series", None)
+
+    return result
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_dashboard_summary() -> Dict[str, Any]:
+    """
+    Aggregate dashboard data: macro status + watchlist alerts + top signals.
+    Returns dict with keys: macro, watchlist_alerts, top_signals
+    """
+    summary = {}
+
+    # 1. Macro status
+    macro = {}
+    try:
+        usd_liq = get_global_usd_liquidity()
+        macro['usd_liquidity'] = {
+            'confidence': usd_liq.get('confidence'),
+            'wow_change': usd_liq.get('wow_change'),
+        }
+    except Exception:
+        macro['usd_liquidity'] = {'confidence': None}
+
+    try:
+        macro_liq = get_macro_liquidity(lookback_days=365)
+        macro['macro_status'] = macro_liq.get('status', 'Unknown')
+        macro['macro_score'] = macro_liq.get('weighted_score', 50)
+    except Exception:
+        macro['macro_status'] = 'Unknown'
+        macro['macro_score'] = 50
+
+    try:
+        china = get_china_market_signals(lookback_days=60)
+        macro['china_sentiment'] = china.get('status', 'Unknown')
+    except Exception:
+        macro['china_sentiment'] = 'Unknown'
+
+    summary['macro'] = macro
+    return summary

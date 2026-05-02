@@ -63,23 +63,16 @@ def handle_strategy_backtest(args):
     print(f"时间: {args.start} - {args.end}")
     
     try:
-        from quant import create_data_provider, BacktestEngine, STRATEGY_REGISTRY, get_config
+        from quant.services import StrategyBacktestRequest, StrategyService
         
-        # 检查策略是否存在
-        if args.strategy_name not in STRATEGY_REGISTRY:
+        service = StrategyService()
+        strategy_names = [item["name"] for item in service.list_strategies()]
+        if args.strategy_name not in strategy_names:
             print(f"❌ 策略不存在: {args.strategy_name}")
-            print(f"可用策略: {', '.join(STRATEGY_REGISTRY.keys())}")
+            print(f"可用策略: {', '.join(strategy_names)}")
             sys.exit(1)
-        
-        # 获取配置
-        config = get_config()
-        
-        # 创建数据提供器
-        provider = create_data_provider('auto', config.get_providers_config())
-        
-        # 创建策略
-        strategy_class = STRATEGY_REGISTRY[args.strategy_name]
-        strategy_config = config.get_strategy_config(args.strategy_name) if args.config is None else args.config
+
+        strategy_config = service.get_strategy_config(args.strategy_name) if args.config is None else args.config
         
         # 如果是金字塔定投策略，处理命令行参数
         if args.strategy_name in ['pyramid_dca', 'pyramid']:
@@ -97,17 +90,19 @@ def handle_strategy_backtest(args):
                 strategy_config['base_invest_amount'] = args.base_invest_amount
             if hasattr(args, 'invest_interval_days') and args.invest_interval_days:
                 strategy_config['invest_interval_days'] = args.invest_interval_days
-        
-        strategy = strategy_class(args.symbol, strategy_config)
-        
-        # 创建回测引擎
-        engine = BacktestEngine('auto')
 
         # 运行回测
         print("\n正在运行回测...")
-        result = engine.runBacktest(args.symbol, args.start, args.end,
-                                    initialCapital=100000, strategyConfig=strategy_config,
-                                    strategy=strategy)
+        result = service.run_backtest(
+            StrategyBacktestRequest(
+                strategy_name=args.strategy_name,
+                symbol=args.symbol,
+                start=args.start,
+                end=args.end,
+                initial_capital=100000,
+                strategy_config=strategy_config,
+            )
+        )
         
         # 显示结果
         perf = result.get('performance', {})
@@ -134,18 +129,18 @@ def handle_strategy_list(args):
     print("=" * 80)
     
     try:
-        from quant import STRATEGY_REGISTRY
-        
-        if not STRATEGY_REGISTRY:
+        from quant.services import StrategyService
+
+        strategies = StrategyService().list_strategies()
+
+        if not strategies:
             print("未找到注册的策略")
             return
         
-        for name, strategy_class in STRATEGY_REGISTRY.items():
-            doc = strategy_class.__doc__ or "无描述"
-            print(f"\n📦 {name}")
-            print(f"  {doc.strip().split(chr(10))[0]}")
+        for item in strategies:
+            print(f"\n📦 {item['name']}")
+            print(f"  {item['description']}")
         
     except Exception as e:
         print(f"❌ 读取策略失败: {e}")
         logger.error(f"读取策略错误: {e}", exc_info=True)
-

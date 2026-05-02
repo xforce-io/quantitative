@@ -5,16 +5,28 @@ Web UI Components
 
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 from typing import Tuple, Optional, Dict, Any
 
-from web.ui_theme import Colors, setup_matplotlib_style
+from web.ui_theme import Colors
 
-# 初始化样式
-setup_matplotlib_style()
+
+# ==================== 共享工具函数 ====================
+
+def alert_level(score: float) -> tuple:
+    """Map 0-100 score to alert level (label, color, emoji)."""
+    if score >= 85:
+        return "Strong Signal", "#e74c3c", "🔴"
+    elif score >= 75:
+        return "Signal", "#e67e22", "🟠"
+    elif score >= 60:
+        return "Warning", "#f1c40f", "🟡"
+    elif score >= 40:
+        return "Watch", "#95a5a6", "⚪"
+    else:
+        return "Quiet", "#2ecc71", "🟢"
 
 
 # ==================== 时间选择组件 ====================
@@ -119,281 +131,165 @@ def render_period_selector(
     return start_str, end_str
 
 
-def plot_trend_chart(
-    df: pd.DataFrame,
-    date_col: Optional[str] = 'trade_date',
-    inst_col: str = 'institutional_net',
-    retail_col: str = 'retail_net',
-    total_col: str = 'net_amount'
-) -> Tuple[Optional[plt.Figure], str]:
-    """
-    通用资金趋势绘图组件
-    
-    Args:
-        df: 数据表，需包含日期和金额列
-        date_col: 日期列名，如果为 None 则使用 index
-        inst_col: 机构净流入列名
-        retail_col: 散户净流入列名
-        total_col: 总净流入列名 (降级时使用)
-    
-    Returns:
-        (fig, summary_text): matplotlib Figure 和摘要文字
-    """
-    if df.empty:
-        return None, "无数据"
-    
-    # 确定日期来源
-    if date_col and date_col in df.columns:
-        dates = pd.to_datetime(df[date_col])
-    else:
-        dates = pd.to_datetime(df.index)
-    
-    fig, ax = plt.subplots(figsize=(6, 4))
-    width = 0.4
-    x = range(len(dates))
-    
-    # 检查是否有机构/散户明细数据
-    has_breakdown = (inst_col in df.columns and df[inst_col].abs().sum() > 0)
-    
-    if has_breakdown:
-        # 转换为亿元
-        inst_vals = df[inst_col] / 1e8
-        retail_vals = df[retail_col] / 1e8
-        total_net_raw = df[inst_col].sum()
-        
-        ax.bar([i - width/2 for i in x], inst_vals, width, label='机构', color=Colors.INSTITUTIONAL, alpha=0.8)
-        ax.bar([i + width/2 for i in x], retail_vals, width, label='散户', color=Colors.RETAIL, alpha=0.8)
-        ax.legend(fontsize=8, loc='upper left')
-        
-        trend_text = "🔴 主力大幅买入" if total_net_raw > 5e7 else ("🟢 主力大幅撤退" if total_net_raw < -5e7 else "⚪️ 资金震荡")
-        summary_text = f"{trend_text} | 机构净额: {total_net_raw/1e8:+.2f}亿"
-    else:
-        # 降级：只画总净流入
-        net_vals = df[total_col] / 1e8
-        total_net_raw = df[total_col].sum()
-        
-        # 不使用 label，避免误导性图例
-        ax.bar(x, net_vals, width * 1.5, color=[Colors.RISE if v > 0 else Colors.FALL for v in net_vals], alpha=0.8)
-        
-        trend_text = "🔥 资金抢筹" if total_net_raw > 0 else "🧊 资金流出"
-        summary_text = f"{trend_text} | 累计净额: {total_net_raw/1e8:+.2f}亿"
-    
-    ax.set_title(f"资金流向 ({len(dates)}日)", fontsize=10)
-    ax.set_ylabel("亿元", fontsize=8)
-    ax.tick_params(axis='x', rotation=45, labelsize=8)
-    ax.tick_params(axis='y', labelsize=8)
-    ax.grid(axis='y', linestyle='--', alpha=0.3)
-    
-    # 简化 X 轴标签
-    if len(dates) > 1:
-        step = max(1, len(dates) // 5)
-        ax.set_xticks([i for i in x[::step]])
-        ax.set_xticklabels([d.strftime('%m-%d') for d in dates[::step]])
-    else:
-        ax.set_xticks(list(x))
-        ax.set_xticklabels([d.strftime('%m-%d') for d in dates])
-    
-    plt.tight_layout()
-    return fig, summary_text
-
-
-def plot_comparison_bar(
-    df: pd.DataFrame,
-    name_col: str,
-    value_col: str,
-    title: str,
-    xlabel: str = "亿元"
-) -> plt.Figure:
-    """
-    横向对比柱状图 (用于资金排行)
-    
-    Args:
-        df: 数据表
-        name_col: 名称列
-        value_col: 数值列
-        title: 图表标题
-        xlabel: X轴标签
-    
-    Returns:
-        matplotlib Figure
-    """
-    df_sorted = df.sort_values(value_col, ascending=True)
-    
-    fig, ax = plt.subplots(figsize=(10, max(3, len(df) * 0.5 + 1)))
-    
-    y_pos = range(len(df_sorted))
-    values = df_sorted[value_col]
-    colors = [Colors.RISE if v > 0 else Colors.FALL for v in values]
-    
-    ax.barh(y_pos, values, color=colors, alpha=0.8)
-    ax.set_yticks(list(y_pos))
-    ax.set_yticklabels(df_sorted[name_col], fontsize=10)
-    ax.set_xlabel(xlabel)
-    ax.set_title(title)
-    ax.grid(axis='x', linestyle='--', alpha=0.3)
-    
-    # 添加数值标签
-    ax.bar_label(ax.containers[0], fmt='%.2f', padding=3)
-    
-    plt.tight_layout()
-    return fig
-
-
 def plot_technical_chart(
     df: pd.DataFrame,
     symbol: str = "",
     show_volume: bool = True,
     show_macd: bool = True,
     show_rsi: bool = False
-) -> Tuple[Optional[plt.Figure], dict]:
+) -> Tuple[Optional[go.Figure], dict]:
     """
-    专业技术分析图表 (K线 + 均线 + MACD/RSI)
-    
+    专业技术分析图表 (价格 + 均线 + MACD/RSI) — Plotly 交互式版本
+
     Args:
         df: OHLCV 数据，需包含 open/high/low/close/volume 及技术指标列
         symbol: 股票代码 (用于标题)
         show_volume: 是否显示成交量
         show_macd: 是否显示 MACD
         show_rsi: 是否显示 RSI
-    
+
     Returns:
-        (fig, analysis_dict): matplotlib Figure 和分析结果字典
+        (fig, analysis_dict): Plotly Figure 和分析结果字典
     """
     if df.empty or 'close' not in df.columns:
         return None, {"error": "数据不足"}
-    
+
     # 确保索引是日期
     if not isinstance(df.index, pd.DatetimeIndex):
         if 'trade_date' in df.columns:
             df = df.set_index('trade_date')
         df.index = pd.to_datetime(df.index)
-    
-    # 计算子图数量
-    n_subplots = 1  # 主图 (K线+均线)
-    if show_volume:
-        n_subplots += 1
-    if show_macd:
-        n_subplots += 1
-    if show_rsi:
-        n_subplots += 1
-    
-    # 设置子图高度比例
-    if n_subplots == 1:
-        height_ratios = [1]
-    elif n_subplots == 2:
-        height_ratios = [3, 1]
-    elif n_subplots == 3:
-        height_ratios = [3, 1, 1]
-    else:
-        height_ratios = [3, 1, 1, 1]
-    
-    fig, axes = plt.subplots(n_subplots, 1, figsize=(10, 2 + n_subplots * 2), 
-                              gridspec_kw={'height_ratios': height_ratios}, sharex=True)
-    
-    if n_subplots == 1:
-        axes = [axes]
-    
-    ax_idx = 0
+
     dates = df.index
-    x = range(len(dates))
-    
-    # ========== 主图：价格 + 均线 ==========
-    ax_price = axes[ax_idx]
-    ax_idx += 1
-    
-    # 绘制收盘价线
-    ax_price.plot(x, df['close'], color='#1a1a2e', linewidth=1.5, label='收盘价')
-    
-    # 绘制均线
+
+    # 确定子图行数和高度比例
+    row_specs = [[{"secondary_y": False}]]  # 主图 (价格)
+    row_heights = [0.5]
+    if show_volume and 'volume' in df.columns:
+        row_specs.append([{"secondary_y": False}])
+        row_heights.append(0.15)
+    if show_macd and 'MACD_DIF' in df.columns:
+        row_specs.append([{"secondary_y": False}])
+        row_heights.append(0.175)
+    if show_rsi and 'RSI' in df.columns:
+        row_specs.append([{"secondary_y": False}])
+        row_heights.append(0.175)
+
+    n_rows = len(row_specs)
+    fig = make_subplots(
+        rows=n_rows, cols=1,
+        shared_xaxes=True,
+        row_heights=row_heights,
+        vertical_spacing=0.04,
+        specs=row_specs
+    )
+
+    row = 1
+
+    # ========== 主图：收盘价 + 均线 ==========
+    fig.add_trace(go.Scatter(
+        x=dates, y=df['close'],
+        name="收盘价", mode='lines',
+        line=dict(color='#1a1a2e', width=1.5)
+    ), row=row, col=1)
+
     ma_colors = {'MA5': Colors.RISE, 'MA10': Colors.WARNING, 'MA20': Colors.FALL, 'MA60': Colors.INFO}
     for ma, color in ma_colors.items():
         if ma in df.columns:
-            ax_price.plot(x, df[ma], color=color, linewidth=1, alpha=0.8, label=ma)
-    
-    # 绘制布林带
+            fig.add_trace(go.Scatter(
+                x=dates, y=df[ma],
+                name=ma, mode='lines',
+                line=dict(color=color, width=1),
+                opacity=0.8
+            ), row=row, col=1)
+
     if 'BOLL_UP' in df.columns and 'BOLL_DOWN' in df.columns:
-        ax_price.fill_between(x, df['BOLL_UP'], df['BOLL_DOWN'], alpha=0.1, color=Colors.PRIMARY)
-        ax_price.plot(x, df['BOLL_UP'], color=Colors.PRIMARY, linewidth=0.8, linestyle='--', alpha=0.6)
-        ax_price.plot(x, df['BOLL_DOWN'], color=Colors.PRIMARY, linewidth=0.8, linestyle='--', alpha=0.6)
-    
-    ax_price.set_title(f"{symbol} 技术形态分析", fontsize=12, fontweight='bold')
-    ax_price.legend(loc='upper left', fontsize=7, ncol=3)
-    ax_price.set_ylabel("价格", fontsize=9)
-    ax_price.grid(True, linestyle='--', alpha=0.3)
-    
+        fig.add_trace(go.Scatter(
+            x=dates, y=df['BOLL_UP'],
+            name="布林上轨", mode='lines',
+            line=dict(color=Colors.PRIMARY, width=0.8, dash='dash'),
+            opacity=0.6
+        ), row=row, col=1)
+        fig.add_trace(go.Scatter(
+            x=dates, y=df['BOLL_DOWN'],
+            name="布林下轨", mode='lines',
+            line=dict(color=Colors.PRIMARY, width=0.8, dash='dash'),
+            opacity=0.6,
+            fill='tonexty',
+            fillcolor='rgba(100,100,200,0.07)'
+        ), row=row, col=1)
+
+    fig.update_yaxes(title_text="价格", row=row, col=1)
+    row += 1
+
     # ========== 成交量 ==========
     if show_volume and 'volume' in df.columns:
-        ax_vol = axes[ax_idx]
-        ax_idx += 1
-        
-        # 涨跌颜色
-        colors = [Colors.RISE if df['close'].iloc[i] >= df['open'].iloc[i] else Colors.FALL
-                  for i in range(len(df))]
-        ax_vol.bar(x, df['volume'] / 1e6, color=colors, alpha=0.7, width=0.8)
-        
-        # 添加图例：红色代表收盘价高于开盘价（收阳），绿色代表收盘价低于开盘价（收阴）
-        from matplotlib.patches import Patch
-        legend_elements = [
-            Patch(facecolor=Colors.RISE, alpha=0.7, label='收阳 (涨)'),
-            Patch(facecolor=Colors.FALL, alpha=0.7, label='收阴 (跌)')
+        vol_colors = [
+            Colors.RISE if df['close'].iloc[i] >= df['open'].iloc[i] else Colors.FALL
+            for i in range(len(df))
         ]
-        ax_vol.legend(handles=legend_elements, loc='upper left', fontsize=7, ncol=2)
-        
-        ax_vol.set_ylabel("成交量(百万)", fontsize=8)
-        ax_vol.grid(True, linestyle='--', alpha=0.3)
-    
+        fig.add_trace(go.Bar(
+            x=dates, y=df['volume'] / 1e6,
+            name="成交量", marker_color=vol_colors, opacity=0.7
+        ), row=row, col=1)
+        fig.update_yaxes(title_text="量(百万)", row=row, col=1)
+        row += 1
+
     # ========== MACD ==========
     if show_macd and 'MACD_DIF' in df.columns:
-        ax_macd = axes[ax_idx]
-        ax_idx += 1
-        
-        ax_macd.plot(x, df['MACD_DIF'], color=Colors.RISE, linewidth=1, label='DIF')
-        ax_macd.plot(x, df['MACD_DEA'], color=Colors.PRIMARY, linewidth=1, label='DEA')
-        
-        # MACD 柱状图
+        fig.add_trace(go.Scatter(
+            x=dates, y=df['MACD_DIF'],
+            name="DIF", mode='lines',
+            line=dict(color=Colors.RISE, width=1)
+        ), row=row, col=1)
+        fig.add_trace(go.Scatter(
+            x=dates, y=df['MACD_DEA'],
+            name="DEA", mode='lines',
+            line=dict(color=Colors.PRIMARY, width=1)
+        ), row=row, col=1)
         hist = df['MACD_HIST']
-        colors = [Colors.RISE if v >= 0 else Colors.FALL for v in hist]
-        ax_macd.bar(x, hist, color=colors, alpha=0.7, width=0.8)
-        
-        ax_macd.axhline(y=0, color='gray', linewidth=0.5)
-        ax_macd.set_ylabel("MACD", fontsize=8)
-        ax_macd.legend(loc='upper left', fontsize=7)
-        ax_macd.grid(True, linestyle='--', alpha=0.3)
-    
+        hist_colors = [Colors.RISE if v >= 0 else Colors.FALL for v in hist]
+        fig.add_trace(go.Bar(
+            x=dates, y=hist,
+            name="MACD柱", marker_color=hist_colors, opacity=0.7
+        ), row=row, col=1)
+        fig.update_yaxes(title_text="MACD", row=row, col=1)
+        row += 1
+
     # ========== RSI ==========
     if show_rsi and 'RSI' in df.columns:
-        ax_rsi = axes[ax_idx]
-        ax_idx += 1
-        
-        ax_rsi.plot(x, df['RSI'], color=Colors.INFO, linewidth=1)
-        ax_rsi.axhline(y=70, color=Colors.RISE, linewidth=0.8, linestyle='--', alpha=0.7)
-        ax_rsi.axhline(y=30, color=Colors.FALL, linewidth=0.8, linestyle='--', alpha=0.7)
-        ax_rsi.fill_between(x, 30, 70, alpha=0.1, color='gray')
-        ax_rsi.set_ylim(0, 100)
-        ax_rsi.set_ylabel("RSI", fontsize=8)
-        ax_rsi.grid(True, linestyle='--', alpha=0.3)
-    
-    # X 轴标签
-    step = max(1, len(dates) // 8)
-    axes[-1].set_xticks([i for i in x[::step]])
-    axes[-1].set_xticklabels([d.strftime('%m-%d') for d in dates[::step]], fontsize=8, rotation=45)
-    
-    plt.tight_layout()
-    
+        fig.add_trace(go.Scatter(
+            x=dates, y=df['RSI'],
+            name="RSI", mode='lines',
+            line=dict(color=Colors.INFO, width=1)
+        ), row=row, col=1)
+        fig.add_hline(y=70, line_color=Colors.RISE, line_dash='dash', line_width=0.8, row=row, col=1)
+        fig.add_hline(y=30, line_color=Colors.FALL, line_dash='dash', line_width=0.8, row=row, col=1)
+        fig.update_yaxes(title_text="RSI", range=[0, 100], row=row, col=1)
+
+    fig.update_layout(
+        title=f"{symbol} 技术形态分析",
+        template="plotly_white",
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(l=50, r=30, t=60, b=40),
+        height=250 + n_rows * 130,
+        barmode='relative'
+    )
+    fig.update_xaxes(showgrid=True, gridcolor='rgba(200,200,200,0.3)')
+
     # ========== 生成分析结果 ==========
     analysis = {}
-    interpretations = []  # 收集解读文字
-    
+    interpretations = []
+
     if len(df) > 0:
         latest = df.iloc[-1]
         analysis['latest_close'] = latest['close']
-        
-        # 均线趋势判断
+
         if 'MA5' in df.columns and 'MA20' in df.columns:
             ma5 = latest['MA5']
             ma20 = latest['MA20']
-            ma60 = latest.get('MA60', None)
-            
+
             if pd.notna(ma5) and pd.notna(ma20):
                 if ma5 > ma20:
                     analysis['ma_trend'] = '短期多头'
@@ -401,35 +297,32 @@ def plot_technical_chart(
                 else:
                     analysis['ma_trend'] = '短期空头'
                     interpretations.append("📉 短期均线向下，空头排列")
-                
-                # 价格相对均线位置
+
                 close = latest['close']
                 if close > ma5 > ma20:
                     interpretations.append("💪 价格站稳均线上方，趋势强劲")
                 elif close < ma5 < ma20:
                     interpretations.append("⚠️ 价格跌破均线，注意风险")
-        
-        # MACD 信号
+
         if 'MACD_DIF' in df.columns and 'MACD_DEA' in df.columns:
             dif = latest['MACD_DIF']
             dea = latest['MACD_DEA']
-            hist = latest.get('MACD_HIST', 0)
-            
+            hist_val = latest.get('MACD_HIST', 0)
+
             if pd.notna(dif) and pd.notna(dea):
                 if dif > dea:
                     analysis['macd_signal'] = '金叉/多头'
-                    if hist > 0:
+                    if hist_val > 0:
                         interpretations.append("🟢 MACD金叉且红柱放大，动能增强")
                     else:
                         interpretations.append("🟡 MACD金叉但动能不足")
                 else:
                     analysis['macd_signal'] = '死叉/空头'
-                    if hist < 0:
+                    if hist_val < 0:
                         interpretations.append("🔴 MACD死叉且绿柱放大，下跌动能强")
                     else:
                         interpretations.append("🟡 MACD死叉但跌势趋缓")
-        
-        # RSI 状态
+
         if 'RSI' in df.columns:
             rsi = latest['RSI']
             if pd.notna(rsi):
@@ -442,14 +335,13 @@ def plot_technical_chart(
                 else:
                     analysis['rsi_status'] = '中性'
                 analysis['rsi_value'] = round(rsi, 1)
-        
-        # 布林带位置
+
         if 'BOLL_UP' in df.columns and 'BOLL_DOWN' in df.columns:
             close = latest['close']
             boll_up = latest['BOLL_UP']
             boll_down = latest['BOLL_DOWN']
             boll_mid = latest.get('BOLL_MID', (boll_up + boll_down) / 2)
-            
+
             if pd.notna(boll_up) and pd.notna(boll_down):
                 if close > boll_up:
                     interpretations.append("🔺 价格突破布林上轨，超买状态")
@@ -459,11 +351,10 @@ def plot_technical_chart(
                     interpretations.append("📊 价格位于布林带上半区")
                 else:
                     interpretations.append("📊 价格位于布林带下半区")
-        
-        # 生成综合解读
+
         analysis['interpretation'] = " | ".join(interpretations[:3]) if interpretations else "暂无明显信号"
         analysis['interpretations'] = interpretations
-    
+
     return fig, analysis
 
 
@@ -746,8 +637,8 @@ def render_stock_detail_card(
                     # 优先尝试交互式图表
                     try:
                         # 尝试添加股价数据以增强展示
-                        from web.data_service import get_stock_price
-                        price_df = get_stock_price(symbol, start_str, end_str)
+                        from web.data_service import get_stock_technical_data
+                        price_df = get_stock_technical_data(symbol, start_str, end_str)
                         if not price_df.empty:
                             # 确保索引类型一致
                             price_df.index = pd.to_datetime(price_df.index)
@@ -769,16 +660,7 @@ def render_stock_detail_card(
                             render_trend_strength_card(trend_data, key_prefix=f"{key_prefix}flow_{symbol}_")
                         
                     except Exception as e:
-                        # 降级回 Matplotlib
-                        st.warning(f"交互图表加载失败，使用静态图表: {e}")
-                        fig, summary_text = plot_trend_chart(
-                            flow_df, date_col=None,
-                            inst_col='institutional_net', retail_col='retail_net'
-                        )
-                        if fig:
-                            st.pyplot(fig)
-                            st.caption(summary_text)
-                            plt.close(fig)
+                        st.warning(f"交互图表加载失败: {e}")
                 else:
                     st.info("暂无时序数据")
             else:
@@ -809,9 +691,8 @@ def render_stock_detail_card(
             tech_analysis_for_registry = analysis  # 用于注册
             
             if fig:
-                st.pyplot(fig)
-                plt.close(fig)
-            
+                st.plotly_chart(fig, use_container_width=True)
+
             # 显示分析结论
             st.divider()
             st.markdown("#### 📊 技术信号")
@@ -962,35 +843,41 @@ def render_stock_detail_card(
                     pct_df = pct_df.dropna(subset=['分位'])
 
                     if not pct_df.empty:
-                        fig, ax = plt.subplots(figsize=(8, 2.5))
-
-                        colors = []
+                        bar_colors = []
                         for pct in pct_df['分位']:
                             if pct < 20:
-                                colors.append(Colors.FALL)  # 低估-绿 (便宜)
+                                bar_colors.append(Colors.FALL)
                             elif pct < 40:
-                                colors.append('#82e0aa')
+                                bar_colors.append('#82e0aa')
                             elif pct < 60:
-                                colors.append('#f4d03f')  # 中性-黄
+                                bar_colors.append('#f4d03f')
                             elif pct < 80:
-                                colors.append('#e59866')
+                                bar_colors.append('#e59866')
                             else:
-                                colors.append(Colors.RISE)  # 高估-红 (贵)
+                                bar_colors.append(Colors.RISE)
 
-                        ax.barh(pct_df['指标'], pct_df['分位'], color=colors, alpha=0.8)
-                        ax.set_xlim(0, 100)
-                        ax.set_xlabel('历史分位 (%)')
-                        ax.axvline(x=50, color='gray', linestyle='--', alpha=0.5)
-
-                        # 添加数值标签
-                        for i, (idx, row) in enumerate(pct_df.iterrows()):
-                            ax.text(row['分位'] + 2, i, f"{row['分位']:.0f}% ({row['状态']})",
-                                    va='center', fontsize=9)
-
-                        ax.set_title(f"估值分位 (近{val_data.get('data_days', 250)}日)")
-                        plt.tight_layout()
-                        st.pyplot(fig)
-                        plt.close(fig)
+                        pct_labels = [
+                            f"{row['分位']:.0f}% ({row['状态']})"
+                            for _, row in pct_df.iterrows()
+                        ]
+                        val_fig = go.Figure(go.Bar(
+                            x=pct_df['分位'],
+                            y=pct_df['指标'],
+                            orientation='h',
+                            marker_color=bar_colors,
+                            opacity=0.85,
+                            text=pct_labels,
+                            textposition='outside'
+                        ))
+                        val_fig.add_vline(x=50, line_color='gray', line_dash='dash', opacity=0.5)
+                        val_fig.update_layout(
+                            title=f"估值分位 (近{val_data.get('data_days', 250)}日)",
+                            xaxis=dict(title='历史分位 (%)', range=[0, 115]),
+                            template='plotly_white',
+                            height=200,
+                            margin=dict(l=60, r=20, t=40, b=30)
+                        )
+                        st.plotly_chart(val_fig, use_container_width=True)
 
                         # 解读
                         st.markdown("#### 🤖 估值解读")
@@ -1023,18 +910,18 @@ def render_stock_detail_card(
         if is_hk_stock:
             st.info("⚠️ **港股暂不支持AI投委会分析**\n\n需要 A 股完整数据支持。")
         else:
-            # 延迟导入 IC Report 组件
-            from web.components_ic_report import render_investment_committee_tab
-            
-            # 渲染投资决策委员会报告
-            render_investment_committee_tab(
-                symbol=symbol,
-                name=name,
-                flow_data=flow_data_for_registry,
-                tech_data=tech_analysis_for_registry,
-                valuation_data=valuation_data_for_registry,
-                key_prefix=f"{key_prefix}ic_{symbol}_"
-            )
+            try:
+                from web.components_ic_report import render_investment_committee_tab
+                render_investment_committee_tab(
+                    symbol=symbol,
+                    name=name,
+                    flow_data=flow_data_for_registry,
+                    tech_data=tech_analysis_for_registry,
+                    valuation_data=valuation_data_for_registry,
+                    key_prefix=f"{key_prefix}ic_{symbol}_"
+                )
+            except ImportError:
+                st.info("⚠️ **AI投委会分析模块暂不可用**\n\n该功能正在重构中。")
     
     # ========== 数据注册（渲染即注册）==========
     # 将本次渲染获取的数据注册到 PageDataRegistry，供 AI 分析师工具读取

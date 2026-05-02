@@ -17,7 +17,7 @@ class TestHomeRendering:
         page.goto(app_url)
         streamlit_helper.wait_for_app_loaded()
 
-        title = page.get_by_text("Quantitative Trading Platform")
+        title = page.get_by_text("量化交易分析平台")
         expect(title.first).to_be_attached()
 
     def test_welcome_subtitle(self, page: Page, app_url: str, streamlit_helper):
@@ -25,19 +25,19 @@ class TestHomeRendering:
         page.goto(app_url)
         streamlit_helper.wait_for_app_loaded()
 
-        subtitle = page.get_by_text("欢迎使用量化交易分析平台")
+        subtitle = page.get_by_text("欢迎使用")
         expect(subtitle.first).to_be_attached()
 
 
 class TestHomeNavigationCards:
     """Quick entry cards linking to sub-pages."""
 
-    def test_money_flow_card_visible(self, page: Page, app_url: str, streamlit_helper):
-        """Money Flow navigation card should be visible."""
+    def test_dashboard_card_visible(self, page: Page, app_url: str, streamlit_helper):
+        """Dashboard navigation card should be visible."""
         page.goto(app_url)
         streamlit_helper.wait_for_app_loaded()
 
-        card = page.get_by_text("资金流向分析")
+        card = page.get_by_text("Dashboard")
         expect(card.first).to_be_attached()
 
     def test_watchlist_card_visible(self, page: Page, app_url: str, streamlit_helper):
@@ -45,23 +45,15 @@ class TestHomeNavigationCards:
         page.goto(app_url)
         streamlit_helper.wait_for_app_loaded()
 
-        card = page.get_by_text("自选股监控")
+        card = page.get_by_text("Watchlist")
         expect(card.first).to_be_attached()
 
-    def test_ranking_card_visible(self, page: Page, app_url: str, streamlit_helper):
-        """Ranking navigation card should be visible."""
+    def test_scanner_card_visible(self, page: Page, app_url: str, streamlit_helper):
+        """Scanner navigation card should be visible."""
         page.goto(app_url)
         streamlit_helper.wait_for_app_loaded()
 
-        card = page.get_by_text("风向排行榜")
-        expect(card.first).to_be_attached()
-
-    def test_event_graph_card_visible(self, page: Page, app_url: str, streamlit_helper):
-        """Event Graph navigation card should be visible."""
-        page.goto(app_url)
-        streamlit_helper.wait_for_app_loaded()
-
-        card = page.get_by_text("新闻事件概率图")
+        card = page.get_by_text("Scanner")
         expect(card.first).to_be_attached()
 
 

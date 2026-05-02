@@ -1,0 +1,62 @@
+# config/regime_thresholds.yaml
+# Regime classification thresholds per asset pool.
+# Each pool defines indicator thresholds for regime transitions.
+# "confirmation_days" prevents whipsaw on noisy data.
+
+a_shares:
+  confirmation_days: 2
+  indicators:
+    margin_debt_trend:
+      risk_on_above: 2.0
+      risk_off_below: -3.0
+    northbound_flow:
+      risk_on_above: 50.0
+      risk_off_below: -80.0
+    market_breadth:
+      risk_on_above: 60.0
+      risk_off_below: 30.0
+    china_risk_score:
+      risk_on_below: 40.0
+      risk_off_above: 70.0
+
+us_stocks:
+  confirmation_days: 2
+  indicators:
+    yield_curve_2s10s:
+      expansion_above: 0.0
+      contraction_below: -0.5
+    credit_spread:
+      expansion_below: 1.5
+      contraction_above: 2.5
+    vix:
+      expansion_below: 20.0
+      contraction_above: 30.0
+    macro_risk_score:
+      expansion_below: 40.0
+      contraction_above: 65.0
+
+gold:
+  confirmation_days: 2
+  indicators:
+    real_rate_10y:
+      bullish_below: 1.0
+      bearish_above: 2.5
+    dxy_trend:
+      bullish_below: -1.0
+      bearish_above: 2.0
+    gold_silver_ratio:
+      bullish_above: 85.0
+      bearish_below: 65.0
+
+commodities:
+  confirmation_days: 3
+  indicators:
+    copper_gold_ratio:
+      reflation_above: 0.0
+      deflation_below: -5.0
+    crude_oil_trend:
+      reflation_above: 5.0
+      deflation_below: -10.0
+    dxy_trend:
+      reflation_below: -1.0
+      deflation_above: 2.0

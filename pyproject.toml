@@ -28,14 +28,15 @@ dependencies = [
     "schedule>=1.2.0",
     "openai>=1.0.0",
     
-    # Dolphin Language SDK (for AI Agent)
-    "dolphin",
-    
     # Data processing
     "glob2>=0.7",
     
     # Scientific computing (for regression analysis)
     "scipy>=1.9.0",
+
+    # ML backend for regime scoring
+    "xgboost>=1.7.0",
+    "scikit-learn>=1.1.0",
 
     # Macro data (FRED API)
     "fredapi>=0.5.0",
@@ -50,17 +51,19 @@ dev = [
     "flake8>=6.0.0",
 ]
 ml = [
-    "scikit-learn>=1.1.0",
     "ta-lib>=0.4.24",
 ]
 jupyter = [
     "jupyter>=1.0.0",
     "seaborn>=0.11.0",
 ]
+agent = [
+    "kweaver-dolphin",
+]
 
 [project.scripts]
 # CLI entry points
-quant = "bin.run:main"
+quant = "quant.__main__:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -79,8 +82,8 @@ dev-dependencies = [
 ]
 
 [tool.uv.sources]
-# Dolphin SDK 路径配置（与 alfred 项目共享）
-dolphin = { path = "/Users/xupeng/dev/github/dolphin", editable = true }
+# Dolphin SDK for the optional AI agent integration.
+kweaver-dolphin = { git = "https://github.com/kweaver-ai/dolphin.git", rev = "14eb1d2bc91fb6b3d2377044ffbcd30605a76e26" }
 
 [tool.black]
 line-length = 100

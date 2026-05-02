@@ -1,0 +1,30 @@
+schema_version: 1
+updated_at: "2026-05-02"
+
+industry_etfs:
+  - { symbol: "510050.SH", name: "上证50ETF",     category: "大盘" }
+  - { symbol: "512000.SH", name: "券商ETF",       category: "金融" }
+  - { symbol: "512800.SH", name: "银行ETF",       category: "金融" }
+  - { symbol: "512170.SH", name: "医疗ETF",       category: "医药" }
+  - { symbol: "512010.SH", name: "医药ETF",       category: "医药" }
+  - { symbol: "159995.SZ", name: "芯片ETF",       category: "科技" }
+  - { symbol: "515050.SH", name: "5G ETF",        category: "科技" }
+  - { symbol: "512720.SH", name: "计算机ETF",     category: "科技" }
+  - { symbol: "159928.SZ", name: "消费ETF",       category: "消费" }
+  - { symbol: "159825.SZ", name: "农业ETF",       category: "消费" }
+  - { symbol: "512400.SH", name: "有色ETF",       category: "周期" }
+  - { symbol: "515220.SH", name: "煤炭ETF",       category: "周期" }
+  - { symbol: "515210.SH", name: "钢铁ETF",       category: "周期" }
+  - { symbol: "159611.SZ", name: "电力ETF",       category: "公用事业" }
+  - { symbol: "159930.SZ", name: "能源ETF",       category: "周期" }
+  - { symbol: "512660.SH", name: "军工ETF",       category: "军工" }
+  - { symbol: "515030.SH", name: "新能源车ETF",   category: "新能源" }
+  - { symbol: "515790.SH", name: "光伏ETF",       category: "新能源" }
+  - { symbol: "159870.SZ", name: "化工ETF",       category: "周期" }
+  - { symbol: "512200.SH", name: "房地产ETF",     category: "金融" }
+
+style_etfs:
+  - { symbol: "510880.SH", name: "红利ETF",       category: "风格-红利" }
+  - { symbol: "159949.SZ", name: "创业板50",      category: "风格-成长" }
+  - { symbol: "510310.SH", name: "沪深300",       category: "风格-大盘" }
+  - { symbol: "159922.SZ", name: "中证500",       category: "风格-中盘" }
