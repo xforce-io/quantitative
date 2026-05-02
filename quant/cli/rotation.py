@@ -47,6 +47,12 @@ def _add_common_args(parser):
     parser.add_argument("--transaction-cost", type=float, default=0.002, help="单边换仓成本，默认 0.2%%")
     parser.add_argument("--benchmark", default="000300.SH", help="overlay benchmark，默认沪深 300")
     parser.add_argument("--provider", default="auto", help="数据源，默认 auto")
+    parser.add_argument(
+        "--overlay",
+        choices=["simple", "cockpit"],
+        default="simple",
+        help="风险 overlay 选择，默认 simple；cockpit 用 RegimeDetector(a_shares)",
+    )
 
 
 def _build_request(args):
@@ -66,6 +72,7 @@ def _build_request(args):
         overlay_benchmark=args.benchmark,
         transaction_cost=args.transaction_cost,
         provider=args.provider,
+        overlay_type=args.overlay,
     )
 
 
@@ -73,7 +80,7 @@ def handle_rotation_backtest(args):
     """Run rotation backtest and print summary."""
     print("\n📊 A 股行业 ETF 轮动回测")
     print("=" * 80)
-    print(f"区间: {args.start} - {args.end}  benchmark: {args.benchmark}  top-K: {args.top_k}")
+    print(f"区间: {args.start} - {args.end}  benchmark: {args.benchmark}  top-K: {args.top_k}  overlay: {args.overlay}")
 
     try:
         from quant.services import RotationService
