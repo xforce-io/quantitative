@@ -129,6 +129,34 @@ class DataService:
             raise NotImplementedError("Money flow data is not supported by this provider")
         return data_provider.get_money_flow(symbol, start, end)
 
+    def get_margin_balance(
+        self,
+        start: str,
+        end: str,
+        provider: Any | None = None,
+        provider_name: str = "tushare",
+    ) -> pd.DataFrame:
+        """Return aggregated A-share margin balance through the canonical data service path."""
+        data_provider = provider or self._create_provider(provider_name)
+
+        if not hasattr(data_provider, "get_margin_balance"):
+            raise NotImplementedError("Margin balance is not supported by this provider")
+        return data_provider.get_margin_balance(start, end)
+
+    def get_northbound_flow(
+        self,
+        start: str,
+        end: str,
+        provider: Any | None = None,
+        provider_name: str = "tushare",
+    ) -> pd.DataFrame:
+        """Return daily northbound (HK→A) net inflow through the canonical data service path."""
+        data_provider = provider or self._create_provider(provider_name)
+
+        if not hasattr(data_provider, "get_northbound_flow"):
+            raise NotImplementedError("Northbound flow is not supported by this provider")
+        return data_provider.get_northbound_flow(start, end)
+
     def get_trading_days(
         self,
         start: str,

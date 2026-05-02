@@ -40,6 +40,28 @@ class FakeDataProvider:
         self.calls.append(("money_flow", symbol, start, end))
         return pd.DataFrame({"ts_code": [symbol], "net_mf_amount": [100.0]})
 
+    def get_margin_balance(self, start, end):
+        self.calls.append(("margin_balance", start, end))
+        return pd.DataFrame(
+            {
+                "trade_date": pd.to_datetime(["2024-01-02", "2024-01-03"]),
+                "rzye": [1.0e12, 1.05e12],
+                "rqye": [1.0e10, 1.1e10],
+                "total": [1.01e12, 1.061e12],
+            }
+        )
+
+    def get_northbound_flow(self, start, end):
+        self.calls.append(("northbound_flow", start, end))
+        return pd.DataFrame(
+            {
+                "trade_date": pd.to_datetime(["2024-01-02", "2024-01-03"]),
+                "hgt_net": [10.0, -5.0],
+                "sgt_net": [3.0, 2.0],
+                "total_net": [13.0, -3.0],
+            }
+        )
+
     def get_trading_days(self, start, end):
         self.calls.append(("trading_days", start, end))
         return ["20240102", "20240103"]
@@ -122,6 +144,36 @@ class TestDataService:
         assert fundamental.iloc[0]["pe_ttm"] == 12.3
         assert money_flow.iloc[0]["net_mf_amount"] == 100.0
         assert trading_days == ["20240102", "20240103"]
+
+    def test_get_margin_balance_delegates_to_provider(self):
+        provider = FakeDataProvider()
+        service = DataService()
+
+        df = service.get_margin_balance("20240101", "20240131", provider)
+
+        assert provider.calls[-1] == ("margin_balance", "20240101", "20240131")
+        assert df.iloc[0]["total"] == 1.01e12
+
+    def test_get_northbound_flow_delegates_to_provider(self):
+        provider = FakeDataProvider()
+        service = DataService()
+
+        df = service.get_northbound_flow("20240101", "20240131", provider)
+
+        assert provider.calls[-1] == ("northbound_flow", "20240101", "20240131")
+        assert df.iloc[0]["total_net"] == 13.0
+
+    def test_get_margin_balance_raises_when_provider_missing_method(self):
+        class BareProvider:
+            pass
+
+        service = DataService()
+        try:
+            service.get_margin_balance("20240101", "20240131", BareProvider())
+        except NotImplementedError as exc:
+            assert "Margin balance" in str(exc)
+        else:
+            raise AssertionError("Expected NotImplementedError")
 
 
 class TestSystemService:
