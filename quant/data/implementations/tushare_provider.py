@@ -180,7 +180,40 @@ class TushareProvider(BaseDataProvider):
     def get_hsgt_top10(self, trade_date: str, market: str = 'SH') -> pd.DataFrame:
         """Get HSGT top 10 traded stocks for a specific date."""
         return self._legacy.getHSGTTop10(trade_date, market)
-    
+
+    def get_northbound_flow(self, start: str, end: str) -> pd.DataFrame:
+        """Daily HK→A net inflow via Stock Connect, normalized columns.
+
+        Returns DataFrame with columns:
+          - trade_date (pd.Timestamp)
+          - hgt_net    (沪股通净买入, 亿元)
+          - sgt_net    (深股通净买入, 亿元)
+          - total_net  (hgt_net + sgt_net)
+        """
+        raw = self._legacy.getHSGTFlow(start, end)
+        if raw is None or raw.empty:
+            return pd.DataFrame(columns=["trade_date", "hgt_net", "sgt_net", "total_net"])
+
+        df = raw.copy()
+        if "trade_date" in df.columns:
+            df["trade_date"] = pd.to_datetime(df["trade_date"])
+        elif df.index.name == "trade_date":
+            df = df.reset_index()
+            df["trade_date"] = pd.to_datetime(df["trade_date"])
+        else:
+            df["trade_date"] = pd.to_datetime(df.index)
+
+        # tushare returns north_money / south_money or hgt / sgt depending on version;
+        # normalize whichever is present. Values come back in 万元 — convert to 亿元.
+        hgt_col = "hgt" if "hgt" in df.columns else ("north_money" if "north_money" in df.columns else None)
+        sgt_col = "sgt" if "sgt" in df.columns else None
+
+        df["hgt_net"] = (df[hgt_col].astype(float) / 10000.0) if hgt_col else 0.0
+        df["sgt_net"] = (df[sgt_col].astype(float) / 10000.0) if sgt_col else 0.0
+        df["total_net"] = df["hgt_net"] + df["sgt_net"]
+
+        return df[["trade_date", "hgt_net", "sgt_net", "total_net"]].sort_values("trade_date").reset_index(drop=True)
+
     def get_stock_list(
         self,
         exchange: str = '',
@@ -447,6 +480,39 @@ class TushareProvider(BaseDataProvider):
         except Exception as e:
             logger.error(f"获取融资融券数据失败: {e}")
             return pd.DataFrame()
+
+    def get_margin_balance(self, start: str, end: str) -> pd.DataFrame:
+        """Aggregate margin balance across SSE+SZSE for the given date range.
+
+        Returns DataFrame with columns:
+          - trade_date (pd.Timestamp)
+          - rzye       (融资余额, 元)
+          - rqye       (融券余额, 元)
+          - total      (rzye + rqye)
+        """
+        frames = []
+        for exchange in ("SSE", "SZSE"):
+            try:
+                df = self.pro.margin(
+                    exchange_id=exchange,
+                    start_date=start,
+                    end_date=end,
+                )
+            except Exception as exc:
+                logger.warning(f"margin fetch failed for {exchange}: {exc}")
+                continue
+            if df is None or df.empty:
+                continue
+            frames.append(df[["trade_date", "rzye", "rqye"]])
+
+        if not frames:
+            return pd.DataFrame(columns=["trade_date", "rzye", "rqye", "total"])
+
+        combined = pd.concat(frames, ignore_index=True)
+        grouped = combined.groupby("trade_date", as_index=False).sum()
+        grouped["trade_date"] = pd.to_datetime(grouped["trade_date"], format="%Y%m%d")
+        grouped["total"] = grouped["rzye"] + grouped["rqye"]
+        return grouped.sort_values("trade_date").reset_index(drop=True)
 
 
 # Backward compatibility alias
