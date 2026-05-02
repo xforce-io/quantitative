@@ -122,3 +122,37 @@ def test_regime_history_property_exposes_drivers():
     assert {"regime", "confidence", "multiplier", "drivers"}.issubset(history.columns)
     assert (history["regime"] == "risk-on").all()
     assert (history["multiplier"] == 1.0).all()
+
+
+def test_empty_panel_results_in_empty_multipliers_and_history():
+    """When AshareHistoricalIndicators returns an empty panel (e.g. both
+    sources failed), overlay should produce an empty multipliers series
+    and an empty regime_history without crashing."""
+    overlay = CockpitRegimeOverlay(
+        data_service=None,
+        regime_detector=_StubDetector("risk-on"),
+        indicators=_StubIndicators(pd.DataFrame()),
+    )
+    overlay.precompute("20240101", "20240131")
+    assert overlay.multipliers.empty
+    assert overlay.regime_history.empty
+    # multiplier_at on empty series → 0.0 (most-conservative fallback)
+    assert overlay.multiplier_at(pd.Timestamp("2024-01-15")) == 0.0
+
+
+def test_multiplier_at_returns_value_for_mid_series_date():
+    """Core 'latest ≤ date' search behavior — query a date between two
+    panel entries, expect the earlier entry's multiplier."""
+    # Panel covers 2024-01-02 .. 2024-01-06 (5 days, freq=D).
+    # Indicator values matter only for stub determinism.
+    overlay = CockpitRegimeOverlay(
+        data_service=None,
+        regime_detector=_StubDetector("transition"),
+        indicators=_StubIndicators(_make_panel(5, start="2024-01-02")),
+    )
+    overlay.precompute("20240101", "20240131")
+
+    # Query a date that exists in the panel exactly
+    assert overlay.multiplier_at(pd.Timestamp("2024-01-04")) == 0.5
+    # Query a date AFTER the panel range — searchsorted - 1 should give last entry
+    assert overlay.multiplier_at(pd.Timestamp("2024-01-15")) == 0.5
