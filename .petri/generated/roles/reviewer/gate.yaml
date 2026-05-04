@@ -1,0 +1,16 @@
+id: reviewer-approved
+evidence:
+  path: "review/reviewer/verdict.json"
+  check:
+    - field: approved
+      equals: true
+    - field: results.long_proxy_coverage_years
+      gte: 10
+    - field: results.best_oos_annual_return
+      gte: 0.12
+    - field: results.best_oos_max_drawdown
+      gte: -0.20
+    - field: results.return_improvement_vs_baseline
+      gte: 0.01
+    - field: results.real_etf_modes_validated_count
+      gte: 1

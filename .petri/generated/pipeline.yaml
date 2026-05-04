@@ -1,0 +1,14 @@
+name: cross-asset-etf-strategy-discovery
+description: 跨资产/跨风格 ETF 配置策略发现管线，通过迭代反馈循环测试多袖底策略，直至满足长期样本外收益 ≥12% 且最大回撤 ≥-20% 的目标
+stages:
+  - repeat:
+      name: design-backtest-review-loop
+      max_iterations: 6
+      until: reviewer-approved
+      stages:
+        - name: design
+          roles: [strategy_designer]
+        - name: backtest
+          roles: [backtester]
+        - name: review
+          roles: [reviewer]

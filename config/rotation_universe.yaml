@@ -28,3 +28,10 @@ style_etfs:
   - { symbol: "159949.SZ", name: "创业板50",      category: "风格-成长" }
   - { symbol: "510310.SH", name: "沪深300",       category: "风格-大盘" }
   - { symbol: "159922.SZ", name: "中证500",       category: "风格-中盘" }
+
+defensive_global_etfs:
+  - { symbol: "512890.SH", name: "红利低波ETF",   category: "防守-红利低波" }
+  - { symbol: "518880.SH", name: "黄金ETF",       category: "防守-商品" }
+  - { symbol: "513100.SH", name: "纳指ETF",       category: "全球-科技" }
+  - { symbol: "511260.SH", name: "十年国债ETF",   category: "防守-固收" }
+
