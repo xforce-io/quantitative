@@ -167,9 +167,13 @@ def handle_rotation_precheck(args):
         if not sidecar.exists():
             print("❌ 未找到 .quant_cache/latest_targets.json，请先运行 `quant rotation latest`")
             sys.exit(1)
-        with sidecar.open(encoding="utf-8") as fh:
-            data = json.load(fh)
-        targets = {k: float(v) for k, v in data.get("final_positions", {}).items()}
+        try:
+            with sidecar.open(encoding="utf-8") as fh:
+                data = json.load(fh)
+            targets = {k: float(v) for k, v in data.get("final_positions", {}).items()}
+        except (json.JSONDecodeError, ValueError, KeyError) as exc:
+            print(f"❌ 读取 latest_targets.json 失败: {exc}")
+            sys.exit(1)
         print(f"来源: latest ({data.get('as_of', '未知日期')})")
     elif getattr(args, "targets", None):
         try:
