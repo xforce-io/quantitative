@@ -38,6 +38,7 @@ def test_volume_filter_disabled_passes_all():
 
     result = ranker.rank(prices, pd.Timestamp("2024-08-31"))
     assert set(result.keys()) <= set(SYMBOLS)
+    assert len(result) > 0
 
 
 def test_volume_filter_excludes_low_volume_industry_etf():
@@ -102,3 +103,27 @@ def test_volume_filter_uses_trailing_window():
 
     result = ranker.rank(prices, pd.Timestamp("2024-08-31"))
     assert "512800.SH" not in result  # trailing 3M is low
+
+
+def test_filter_method_directly():
+    """Call _filter directly; do not depend on inner ranker output."""
+    volumes = _make_volumes(SYMBOLS, DATES, fill=2_000_000)
+    volumes["159930.SZ"] = 50_000
+    cfg = VolumeFilterConfig(enabled=True, min_avg_monthly_volume_shares=1_000_000, lookback_months=3)
+    ranker = VolumeFilteredRanker(_ranker(), volumes, cfg, INDUSTRY)
+    passed = ranker._filter(SYMBOLS, pd.Timestamp("2024-08-31"))
+    assert "159930.SZ" not in passed
+    assert "512800.SH" in passed
+
+
+def test_filter_with_misaligned_volume_date():
+    """Volume index ends before rebalance_date; searchsorted finds preceding row."""
+    # Volume data ends at 2024-07-31, price rebalance is 2024-08-31
+    early_dates = DATES[:-1]  # all except last ("2024-08-31")
+    volumes = _make_volumes(["512800.SH"], early_dates, fill=2_000_000)
+    prices = _make_prices(["512800.SH"], DATES)
+    prices.iloc[-1] = 110.0
+    cfg = VolumeFilterConfig(enabled=True, min_avg_monthly_volume_shares=1_000_000, lookback_months=3)
+    ranker = VolumeFilteredRanker(_ranker(), volumes, cfg, {"512800.SH"})
+    passed = ranker._filter(["512800.SH"], pd.Timestamp("2024-08-31"))
+    assert "512800.SH" in passed  # 2M >> 1M threshold, should pass despite date gap

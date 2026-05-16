@@ -1,11 +1,14 @@
 """Cross-sectional momentum ranker for rotation universe."""
 from __future__ import annotations
 
+import logging as _logging
 from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
 import pandas as pd
+
+_vol_logger = _logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -348,13 +351,9 @@ class MultiFactorRanker:
 # Volume-filter decorator
 # ---------------------------------------------------------------------------
 
-import logging as _logging
-
-_vol_logger = _logging.getLogger(__name__)
-
 
 class VolumeFilteredRanker:
-    """Wraps any ranker and pre-filters symbols by trailing monthly volume.
+    """Wraps any ranker and pre-filters symbols by trailing average monthly volume.
 
     Only symbols in ``industry_symbols`` are subject to the filter.
     Style and defensive ETFs pass through unconditionally.
