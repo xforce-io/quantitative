@@ -74,3 +74,65 @@ def test_load_universe_default_path_loads() -> None:
         code, suffix = e.symbol.split(".")
         assert code.isdigit() and len(code) == 6
         assert suffix in {"SH", "SZ"}
+
+
+# ---------------------------------------------------------------------------
+# VolumeFilterConfig tests
+# ---------------------------------------------------------------------------
+from quant.analysis.rotation.universe import load_volume_filter_config, VolumeFilterConfig  # noqa: E402
+
+
+def test_load_volume_filter_config_defaults(tmp_path: Path) -> None:
+    """YAML without volume_filter block returns disabled default config."""
+    yaml_content = """
+industry_etfs:
+  - {symbol: "512800.SH", name: "银行ETF", category: "金融"}
+"""
+    p = tmp_path / "universe.yaml"
+    p.write_text(yaml_content)
+    cfg, industry_syms = load_volume_filter_config(p)
+    assert cfg.enabled is False
+    assert cfg.min_avg_monthly_volume_shares == 1_000_000
+    assert cfg.lookback_months == 3
+    assert "512800.SH" in industry_syms
+
+
+def test_load_volume_filter_config_from_yaml(tmp_path: Path) -> None:
+    """volume_filter block is parsed correctly."""
+    yaml_content = """
+volume_filter:
+  enabled: true
+  min_avg_monthly_volume_shares: 2000000
+  lookback_months: 6
+industry_etfs:
+  - {symbol: "159930.SZ", name: "能源ETF", category: "周期", min_avg_monthly_volume_shares: 500000}
+  - {symbol: "512800.SH", name: "银行ETF", category: "金融"}
+style_etfs:
+  - {symbol: "510880.SH", name: "红利ETF", category: "风格-红利"}
+defensive_global_etfs:
+  - {symbol: "513100.SH", name: "纳指ETF", category: "全球-科技"}
+"""
+    p = tmp_path / "universe.yaml"
+    p.write_text(yaml_content)
+    cfg, industry_syms = load_volume_filter_config(p)
+    assert cfg.enabled is True
+    assert cfg.min_avg_monthly_volume_shares == 2_000_000
+    assert cfg.lookback_months == 6
+    assert industry_syms == {"159930.SZ", "512800.SH"}
+    assert "510880.SH" not in industry_syms
+    assert "513100.SH" not in industry_syms
+
+
+def test_load_universe_per_etf_volume_threshold(tmp_path: Path) -> None:
+    """EtfEntry.volume_threshold picks up per-ETF override."""
+    yaml_content = """
+industry_etfs:
+  - {symbol: "159930.SZ", name: "能源ETF", category: "周期", min_avg_monthly_volume_shares: 500000}
+  - {symbol: "512800.SH", name: "银行ETF", category: "金融"}
+"""
+    p = tmp_path / "universe.yaml"
+    p.write_text(yaml_content)
+    entries = load_universe(p)
+    by_sym = {e.symbol: e for e in entries}
+    assert by_sym["159930.SZ"].volume_threshold == 500_000
+    assert by_sym["512800.SH"].volume_threshold is None
