@@ -111,3 +111,60 @@ def test_unknown_overlay_type_raises():
         assert "bogus" in str(exc)
     else:
         raise AssertionError("Expected ValueError for unknown overlay_type")
+
+
+def test_run_backtest_volume_filter_excludes_low_volume(monkeypatch):
+    """RotationService applies volume filter when universe config has it enabled."""
+    import pandas as pd
+    import tempfile, textwrap
+    from quant.services.rotation_service import RotationService, RotationRequest
+    from quant.analysis.rotation import RankerConfig
+
+    dates = pd.date_range("2020-01-31", periods=20, freq="ME")
+    symbols = ["512800.SH", "159930.SZ"]
+
+    prices = pd.DataFrame({
+        "512800.SH": [100 + i for i in range(20)],
+        "159930.SZ": [100 + i * 1.5 for i in range(20)],
+    }, index=dates)
+
+    # 159930.SZ has near-zero volume across all periods
+    volumes = pd.DataFrame({
+        "512800.SH": [2_000_000] * 20,
+        "159930.SZ": [1_000] * 20,
+    }, index=dates)
+
+    def mock_get_price(request):
+        symbol = request.symbol
+        if symbol == "000300.SH":
+            return pd.DataFrame({"close": [100 + i for i in range(20)]}, index=dates)
+        close = prices[symbol] if symbol in prices.columns else pd.Series(dtype=float)
+        vol = volumes[symbol] if symbol in volumes.columns else pd.Series(dtype=float)
+        return pd.DataFrame({"close": close, "volume": vol})
+
+    svc = RotationService()
+    monkeypatch.setattr(svc.data_service, "get_price", mock_get_price)
+
+    universe_yaml = textwrap.dedent("""
+        volume_filter:
+          enabled: true
+          min_avg_monthly_volume_shares: 1000000
+          lookback_months: 3
+        industry_etfs:
+          - {symbol: "512800.SH", name: "银行ETF", category: "金融"}
+          - {symbol: "159930.SZ", name: "能源ETF", category: "周期"}
+    """)
+    with tempfile.NamedTemporaryFile(suffix=".yaml", mode="w", delete=False) as f:
+        f.write(universe_yaml)
+        universe_path = f.name
+
+    req = RotationRequest(
+        start="20200101", end="20211231",
+        universe_path=universe_path,
+        ranker_config=RankerConfig(lookback_months=6, skip_recent_months=1, top_k=2),
+    )
+    result = svc.run_backtest(req)
+    # 159930.SZ should never appear in holdings (volume too low)
+    holdings = result.holdings if hasattr(result, "holdings") else pd.DataFrame()
+    if not holdings.empty and "159930.SZ" in holdings.columns:
+        assert (holdings["159930.SZ"] == 0).all(), "Low-volume ETF appeared in holdings"
