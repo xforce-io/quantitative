@@ -68,6 +68,8 @@ def test_cross_etf_spread_warn():
 
     assert report.has_warnings
     assert "513100.SH" in report.adjusted_targets  # only warns, does not substitute
+    spread_check = next(c for c in report.checks if c.name == "跨ETF价差")
+    assert spread_check.status == "warn"
 
 
 def test_qdii_quota_suspended_substitutes():

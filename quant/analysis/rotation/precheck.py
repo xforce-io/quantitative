@@ -52,6 +52,7 @@ class PreTradeChecker:
 
     def run(self, targets: dict[str, float]) -> PreCheckReport:
         checks: list[CheckResult] = []
+        original = dict(targets)
         adjusted = dict(targets)
 
         if QDII_SYMBOL in targets:
@@ -66,7 +67,7 @@ class PreTradeChecker:
 
         return PreCheckReport(
             checks=checks,
-            original_targets=targets,
+            original_targets=original,
             adjusted_targets=adjusted,
         )
 
