@@ -22,6 +22,17 @@ def register_rotation_commands(subparsers):
     latest = sub.add_parser("latest", help="生成最近一个月末的目标持仓")
     _add_common_args(latest)
 
+    precheck = sub.add_parser("precheck", help="调仓日 T-1 实盘前置检查")
+    precheck.add_argument(
+        "--targets",
+        help='持仓字符串，格式 "513100.SH:0.33,511880.SH:0.33,512800.SH:0.34"',
+    )
+    precheck.add_argument(
+        "--from-latest",
+        action="store_true",
+        help="从 .quant_cache/latest_targets.json 读取 latest 输出作为输入",
+    )
+
     return parser
 
 
@@ -31,6 +42,8 @@ def handle_rotation_command(args):
         handle_rotation_backtest(args)
     elif args.rotation_action == "latest":
         handle_rotation_latest(args)
+    elif args.rotation_action == "precheck":
+        handle_rotation_precheck(args)
     else:
         print("❌ 未知的轮动操作")
         sys.exit(1)
@@ -136,4 +149,68 @@ def handle_rotation_latest(args):
     except Exception as e:
         print(f"❌ 生成目标持仓失败: {e}")
         logger.error("Rotation latest failed: %s", e, exc_info=True)
+        sys.exit(1)
+
+
+def handle_rotation_precheck(args):
+    """Run pre-trade checks and print a report."""
+    import json
+    from pathlib import Path
+
+    print("\n🔍 实盘前置检查（Pre-Trade Check）")
+    print("=" * 80)
+
+    targets: dict[str, float] = {}
+
+    if getattr(args, "from_latest", False):
+        sidecar = Path(__file__).resolve().parents[2] / ".quant_cache" / "latest_targets.json"
+        if not sidecar.exists():
+            print("❌ 未找到 .quant_cache/latest_targets.json，请先运行 `quant rotation latest`")
+            sys.exit(1)
+        with sidecar.open(encoding="utf-8") as fh:
+            data = json.load(fh)
+        targets = {k: float(v) for k, v in data.get("final_positions", {}).items()}
+        print(f"来源: latest ({data.get('as_of', '未知日期')})")
+    elif getattr(args, "targets", None):
+        try:
+            for part in args.targets.split(","):
+                sym, weight = part.strip().split(":")
+                targets[sym.strip()] = float(weight.strip())
+        except ValueError:
+            print('❌ --targets 格式错误，应为 "513100.SH:0.33,511880.SH:0.33"')
+            sys.exit(1)
+    else:
+        print("❌ 请指定 --targets 或 --from-latest")
+        sys.exit(1)
+
+    print(f"\n输入持仓: {', '.join(f'{s}={w:.2%}' for s, w in targets.items())}")
+    print()
+
+    try:
+        from quant.analysis.rotation.precheck import PreTradeChecker
+
+        report = PreTradeChecker().run(targets)
+
+        for check in report.checks:
+            icon = {"ok": "✅", "warn": "⚠️ ", "error": "❌"}.get(check.status, "?")
+            print(f"{icon} [{check.status.upper():5s}] {check.name}: {check.message}")
+
+        print("\n调整后建议持仓:")
+        if report.adjusted_targets:
+            for sym, w in sorted(report.adjusted_targets.items(), key=lambda kv: kv[1], reverse=True):
+                changed = " ← 已调整" if report.original_targets.get(sym) != w else ""
+                print(f"  {sym}: {w:.2%}{changed}")
+        else:
+            print("  （空持仓）")
+
+        if report.has_errors:
+            print("\n⚠️  存在 ERROR 项，建议确认后再下单。")
+        elif report.has_warnings:
+            print("\n💡 存在 WARN 项，请注意。")
+        else:
+            print("\n✅ 所有检查通过，可以下单。")
+
+    except Exception as e:
+        print(f"❌ 前置检查失败: {e}")
+        logger.error("Precheck failed: %s", e, exc_info=True)
         sys.exit(1)
