@@ -25,7 +25,8 @@ from quant.services.data_service import DataService, PriceRequest
 
 logger = logging.getLogger(__name__)
 
-_LATEST_SIDECAR = Path(".quant_cache/latest_targets.json")
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_LATEST_SIDECAR = _PROJECT_ROOT / ".quant_cache" / "latest_targets.json"
 
 
 @dataclass(frozen=True)
@@ -52,8 +53,7 @@ class RotationService:
         """Run the full backtest with the requested configuration."""
         universe = load_universe(request.universe_path)
         vol_config, industry_syms = load_volume_filter_config(request.universe_path)
-        monthly_prices = self._collect_monthly_prices(universe, request)
-        monthly_volumes = self._collect_monthly_volumes(universe, request)
+        monthly_prices, monthly_volumes = self._collect_monthly_prices_and_volumes(universe, request)
         benchmark_prices = self._fetch_benchmark_close(request)
         overlay = self._build_overlay(request)
 
@@ -82,8 +82,7 @@ class RotationService:
         """
         universe = load_universe(request.universe_path)
         vol_config, industry_syms = load_volume_filter_config(request.universe_path)
-        monthly_prices = self._collect_monthly_prices(universe, request)
-        monthly_volumes = self._collect_monthly_volumes(universe, request)
+        monthly_prices, monthly_volumes = self._collect_monthly_prices_and_volumes(universe, request)
         if monthly_prices.empty:
             raise ValueError("no monthly prices available; check date range and universe")
 
@@ -118,36 +117,17 @@ class RotationService:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _collect_monthly_prices(self, universe, request: RotationRequest) -> pd.DataFrame:
-        frames: dict[str, pd.Series] = {}
-        for entry in universe:
-            try:
-                df = self.data_service.get_price(
-                    PriceRequest(
-                        symbol=entry.symbol,
-                        start=request.start,
-                        end=request.end,
-                        asset_type="etf",
-                        provider=request.provider,
-                    )
-                )
-            except Exception:
-                continue
-            if df is None or df.empty or "close" not in df.columns:
-                continue
-            close = df["close"].astype(float)
-            close.name = entry.symbol
-            monthly = close.resample("ME").last().dropna()
-            if monthly.empty:
-                continue
-            frames[entry.symbol] = monthly
-        if not frames:
-            return pd.DataFrame()
-        return pd.DataFrame(frames).sort_index()
+    def _collect_monthly_prices_and_volumes(
+        self, universe, request: RotationRequest
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """Fetch price and volume data in a single pass per symbol.
 
-    def _collect_monthly_volumes(self, universe, request: RotationRequest) -> pd.DataFrame:
-        """Collect monthly total volume (sum of daily volumes) for each ETF."""
-        frames: dict[str, pd.Series] = {}
+        Returns (monthly_prices, monthly_volumes) where:
+        - monthly_prices: month-end close prices (resample last)
+        - monthly_volumes: monthly total volume (resample sum)
+        """
+        price_frames: dict[str, pd.Series] = {}
+        vol_frames: dict[str, pd.Series] = {}
         for entry in universe:
             try:
                 df = self.data_service.get_price(
@@ -161,17 +141,24 @@ class RotationService:
                 )
             except Exception:
                 continue
-            if df is None or df.empty or "volume" not in df.columns:
+            if df is None or df.empty:
                 continue
-            vol = df["volume"].astype(float)
-            vol.name = entry.symbol
-            monthly = vol.resample("ME").sum().dropna()
-            if monthly.empty:
-                continue
-            frames[entry.symbol] = monthly
-        if not frames:
-            return pd.DataFrame()
-        return pd.DataFrame(frames).sort_index()
+            if "close" in df.columns:
+                close = df["close"].astype(float)
+                close.name = entry.symbol
+                monthly_close = close.resample("ME").last().dropna()
+                if not monthly_close.empty:
+                    price_frames[entry.symbol] = monthly_close
+            if "volume" in df.columns:
+                vol = df["volume"].astype(float)
+                vol.name = entry.symbol
+                monthly_vol = vol.resample("ME").sum().dropna()
+                if not monthly_vol.empty:
+                    vol_frames[entry.symbol] = monthly_vol
+
+        monthly_prices = pd.DataFrame(price_frames).sort_index() if price_frames else pd.DataFrame()
+        monthly_volumes = pd.DataFrame(vol_frames).sort_index() if vol_frames else pd.DataFrame()
+        return monthly_prices, monthly_volumes
 
     def _per_etf_thresholds(self, universe) -> dict[str, int]:
         return {

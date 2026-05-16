@@ -113,15 +113,14 @@ def test_unknown_overlay_type_raises():
         raise AssertionError("Expected ValueError for unknown overlay_type")
 
 
-def test_run_backtest_volume_filter_excludes_low_volume(monkeypatch):
+def test_run_backtest_volume_filter_excludes_low_volume(monkeypatch, tmp_path):
     """RotationService applies volume filter when universe config has it enabled."""
     import pandas as pd
-    import tempfile, textwrap
+    import textwrap
     from quant.services.rotation_service import RotationService, RotationRequest
     from quant.analysis.rotation import RankerConfig
 
     dates = pd.date_range("2020-01-31", periods=20, freq="ME")
-    symbols = ["512800.SH", "159930.SZ"]
 
     prices = pd.DataFrame({
         "512800.SH": [100 + i for i in range(20)],
@@ -154,9 +153,9 @@ def test_run_backtest_volume_filter_excludes_low_volume(monkeypatch):
           - {symbol: "512800.SH", name: "银行ETF", category: "金融"}
           - {symbol: "159930.SZ", name: "能源ETF", category: "周期"}
     """)
-    with tempfile.NamedTemporaryFile(suffix=".yaml", mode="w", delete=False) as f:
-        f.write(universe_yaml)
-        universe_path = f.name
+    universe_file = tmp_path / "universe.yaml"
+    universe_file.write_text(universe_yaml, encoding="utf-8")
+    universe_path = str(universe_file)
 
     req = RotationRequest(
         start="20200101", end="20211231",
@@ -165,6 +164,7 @@ def test_run_backtest_volume_filter_excludes_low_volume(monkeypatch):
     )
     result = svc.run_backtest(req)
     # 159930.SZ should never appear in holdings (volume too low)
-    holdings = result.holdings if hasattr(result, "holdings") else pd.DataFrame()
-    if not holdings.empty and "159930.SZ" in holdings.columns:
-        assert (holdings["159930.SZ"] == 0).all(), "Low-volume ETF appeared in holdings"
+    assert hasattr(result, "holdings"), "RotationBacktestResult missing holdings attribute"
+    holdings = result.holdings
+    assert "159930.SZ" not in holdings.columns or (holdings["159930.SZ"] == 0).all(), \
+        "Low-volume ETF 159930.SZ appeared with nonzero weight in holdings"
