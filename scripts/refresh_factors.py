@@ -10,7 +10,7 @@ import argparse
 import sqlite3
 import sys
 import traceback
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -23,7 +23,7 @@ from quant.data.db import init_db
 from quant.data.fetchers.etf_shares import fetch_etf_shares
 from quant.data.fetchers.valuation import fetch_valuation
 from quant.data.fetchers.macro_pmi import fetch_pmi
-from quant.data.fetchers.proxy_ext import fetch_proxy_ext, EXT_PROXY_MAP
+from quant.data.fetchers.proxy_ext import fetch_proxy_ext
 
 DB_PATH = str(_ROOT / "data" / "factors.db")
 
@@ -65,8 +65,10 @@ def main() -> None:
 
     if args.update:
         today = date.today()
-        start_yyyymm = f"{today.year - (0 if today.month > 6 else 1)}{(today.month - 6) % 12 + 1 if today.month <= 6 else today.month - 6:02d}"
-        start_date = start_yyyymm + "01"
+        # Go back 6 months using timedelta approximation (6*30 days)
+        six_months_ago = today - timedelta(days=180)
+        start_yyyymm = six_months_ago.strftime("%Y%m")
+        start_date = six_months_ago.strftime("%Y%m%d")
         end_date = today.strftime("%Y%m%d")
     else:
         start_date = "20100101"
