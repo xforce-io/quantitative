@@ -21,8 +21,14 @@ def _fake_index_daily(ts_code, start_date, end_date, fields):
 
 def _fake_yfinance_download(tickers, start, end, auto_adjust):
     dates = pd.date_range('2026-01-02', '2026-04-30', freq='B')
-    closes = pd.Series([200.0 + i for i in range(len(dates))], index=dates)
-    return pd.DataFrame({'Close': closes})
+    ticker = tickers if isinstance(tickers, str) else tickers[0]
+    data = {'Close': {dates[i]: 200.0 + i for i in range(len(dates))}}
+    df = pd.DataFrame(data, index=dates)
+    # Simulate yfinance MultiIndex columns (real behavior in 0.2.65+)
+    df.columns = pd.MultiIndex.from_tuples(
+        [('Close', ticker)], names=['Price', 'Ticker']
+    )
+    return df
 
 
 def test_fetch_proxy_ext_inserts_tushare_rows():

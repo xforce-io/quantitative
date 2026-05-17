@@ -40,7 +40,10 @@ def _fetch_yahoo_monthly(proxy_symbol: str, start_date: str, end_date: str) -> p
     df = yf.download(proxy_symbol, start=start, end=end, auto_adjust=True)
     if df is None or df.empty:
         return pd.Series(dtype=float)
-    return df["Close"].resample("ME").last().dropna()
+    close = df["Close"]
+    if isinstance(close, pd.DataFrame):
+        close = close.iloc[:, 0]
+    return close.resample("ME").last().dropna()
 
 
 def fetch_proxy_ext(
