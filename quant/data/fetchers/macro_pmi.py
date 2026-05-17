@@ -21,6 +21,8 @@ def _month_end_trading_date(pro, yyyymm: str) -> str:
     df = pro.trade_cal(exchange="SSE", start_date=start, end_date=end, is_open="1", fields="cal_date")
     dates = pd.to_datetime(df["cal_date"], format="%Y%m%d")
     last = dates[dates.dt.strftime("%Y%m") == yyyymm].max()
+    if pd.isna(last):
+        raise ValueError(f"No trading days found for month {yyyymm}")
     return last.strftime("%Y-%m-%d")
 
 
