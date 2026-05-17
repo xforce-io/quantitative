@@ -70,17 +70,23 @@ def main() -> None:
         start_yyyymm = six_months_ago.strftime("%Y%m")
         start_date = six_months_ago.strftime("%Y%m%d")
         end_date = today.strftime("%Y%m%d")
+        # Valuation percentile needs a 5-year rolling window (min_periods=12).
+        # In --update mode the normal start is only 6 months back, which is
+        # too short.  Always look back 5 years so the percentile is valid.
+        val_start_date = (today - timedelta(days=5 * 365)).strftime("%Y%m%d")
     else:
         start_date = "20100101"
         end_date = date.today().strftime("%Y%m%d")
         start_yyyymm = "201001"
+        # Full mode already starts from 2010 — use the same start date.
+        val_start_date = start_date
 
     end_yyyymm = date.today().strftime("%Y%m")
     print(f"Refreshing factors: {start_date} → {end_date}\n")
 
     fetchers = [
         ("ETF shares",   lambda: fetch_etf_shares(ALL_ETF_SYMBOLS, start_date, end_date, DB_PATH)),
-        ("Valuation",    lambda: fetch_valuation(VALUATION_SYMBOLS, start_date, end_date, DB_PATH)),
+        ("Valuation",    lambda: fetch_valuation(VALUATION_SYMBOLS, val_start_date, end_date, DB_PATH)),
         ("PMI",          lambda: fetch_pmi(start_yyyymm, end_yyyymm, DB_PATH)),
         ("Proxy ext",    lambda: fetch_proxy_ext(start_date, end_date, DB_PATH)),
     ]
