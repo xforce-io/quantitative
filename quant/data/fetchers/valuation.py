@@ -61,7 +61,10 @@ def fetch_valuation(
             row = df[df["ts_code"] == symbol]
             if row.empty:
                 continue
-            records[symbol].append((dt_str, float(row["pe_ttm"].iloc[0]), float(row["pb"].iloc[0])))
+            pe_val = row["pe_ttm"].iloc[0]
+            pb_val = row["pb"].iloc[0]
+            if pd.notna(pe_val) and pd.notna(pb_val):
+                records[symbol].append((dt_str, float(pe_val), float(pb_val)))
 
     # Compute rolling percentile per symbol
     rows: list[tuple] = []
