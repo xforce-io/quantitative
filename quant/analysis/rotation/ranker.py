@@ -122,7 +122,10 @@ def _cross_sectional_percentile_rank(
         return {k: 1.0 for k in scores}
     symbols = list(scores.keys())
     values = np.array([scores[s] for s in symbols], dtype=float)
-    order = np.argsort(values)  # ascending: order[0] = index of smallest
+    # Stable sort: tied scores retain caller's insertion order (deterministic
+    # provided callers pass sorted/deterministic dicts). Default quicksort
+    # leaves tie order unspecified and produces drift across runs.
+    order = np.argsort(values, kind="stable")
     ranks = np.empty(n, dtype=float)
     for rank_pos, orig_idx in enumerate(order):
         ranks[orig_idx] = rank_pos / (n - 1)
@@ -202,12 +205,16 @@ class MultiFactorRanker:
         if not raw:
             return {}
 
-        # Only symbols present in ALL available factors
-        valid: set[str] = set(monthly_prices.columns)
+        # Only symbols present in ALL available factors. Iterate via a sorted
+        # list — set/dict iteration order would otherwise depend on
+        # PYTHONHASHSEED and propagate downstream through composite/filtered,
+        # making tied scores break differently across processes.
+        valid_set: set[str] = set(monthly_prices.columns)
         for scores in raw.values():
-            valid &= scores.keys()
-        if not valid:
+            valid_set &= scores.keys()
+        if not valid_set:
             return {}
+        valid = sorted(valid_set)
 
         weights = self._effective_weights(rebalance_date)
         composite: dict[str, float] = {s: 0.0 for s in valid}
