@@ -7,6 +7,85 @@
     "pre_boundary_last_keep_pre_rename": "run-030",
     "pre_boundary_archive_path": ".petri/runs.pre-cleanliness/"
   },
-  "experiments": [],
-  "total_experiments": 0
+  "_determinism_fix": {
+    "fixed_at": "2026-05-18",
+    "fix_commit": "23b5665",
+    "reason": "post-boundary run-001 ~ run-003 在 index_proxy 模式下每次结果都不同（10.92% / 12.18% / 11.72%）；定位到 MultiFactorRanker 两处非确定性（np.argsort 默认 quicksort + set 迭代顺序受 PYTHONHASHSEED 影响），run-004 起结果稳定（12.11%）。详见 docs/incidents/2026-05-ranker-non-determinism.md",
+    "first_deterministic_run": "run-004",
+    "verified_baseline_run": "run-005",
+    "verified_baseline_metrics": {
+      "index_proxy_annual_return": 0.1211,
+      "real_etf_subset_annual_return": 0.0022,
+      "real_etf_full_annual_return": 0.1753
+    },
+    "note": "experiments[0..2] (run-001/002/003) 的 index_proxy 数字属于非确定性 sample，不应作为对比基准；experiments[3..] 起为修复后的可信结果"
+  },
+  "experiments": [
+    {
+      "run_id": "run-001",
+      "started_at": "2026-05-18T18:04:08.000Z",
+      "decision": "KEEP",
+      "hypothesis": "在剔除污染 ETF 后的干净 universe 上重测 run-029 四因子策略，建立新基线",
+      "index_proxy_annual_return": 0.1092,
+      "index_proxy_mdd": -0.1989,
+      "real_etf_full_annual_return": 0.1753,
+      "real_etf_full_mdd": -0.1249,
+      "real_etf_subset_annual_return": 0.0022,
+      "real_etf_subset_mdd": -0.16,
+      "long_proxy_coverage_years": 16.0
+    },
+    {
+      "run_id": "run-002",
+      "started_at": "2026-05-18T18:39:56.000Z",
+      "decision": "KEEP",
+      "hypothesis": "用 run-001 完全相同的 spec 再跑一次，验证策略是否确定性产出",
+      "index_proxy_annual_return": 0.1218,
+      "index_proxy_mdd": -0.1989,
+      "real_etf_full_annual_return": 0.1753,
+      "real_etf_full_mdd": -0.1249,
+      "real_etf_subset_annual_return": 0.0022,
+      "real_etf_subset_mdd": -0.16,
+      "long_proxy_coverage_years": 16.0
+    },
+    {
+      "run_id": "run-003",
+      "started_at": "2026-05-18T19:23:24.000Z",
+      "decision": "KEEP",
+      "hypothesis": "PYTHONHASHSEED=0 消除 set 迭代顺序的非确定性后，index_proxy 应完全复现 run-001 的 10.92%",
+      "index_proxy_annual_return": 0.1172,
+      "index_proxy_mdd": -0.1989,
+      "real_etf_full_annual_return": 0.1753,
+      "real_etf_full_mdd": -0.1249,
+      "real_etf_subset_annual_return": 0.0022,
+      "real_etf_subset_mdd": -0.16,
+      "long_proxy_coverage_years": 16.0
+    },
+    {
+      "run_id": "run-004",
+      "started_at": "2026-05-18T19:50:00.000Z",
+      "decision": "KEEP",
+      "hypothesis": "修复 ranker.py 两处非确定性（set→sorted + quicksort→stable sort）后，index_proxy 三轮应完全收敛至相同数字",
+      "index_proxy_annual_return": 0.1211,
+      "index_proxy_mdd": -0.1989,
+      "real_etf_full_annual_return": 0.1753,
+      "real_etf_full_mdd": -0.1249,
+      "real_etf_subset_annual_return": 0.0022,
+      "real_etf_subset_mdd": -0.16,
+      "long_proxy_coverage_years": 16.0
+    },
+    {
+      "run_id": "run-005",
+      "started_at": "2026-05-18T19:42:26.000Z",
+      "decision": "KEEP",
+      "hypothesis": "run-004 修复 ranker.py 两处非确定性后 index_proxy 输出 12.11%；本轮用完全相同 spec 再跑一次，验证 index_proxy 与 run-004 偏差 ≤ 0.01pp，双重确认非确定性已彻底根治",
+      "index_proxy_annual_return": 0.1211,
+      "index_proxy_mdd": -0.1989,
+      "real_etf_full_annual_return": 0.1753,
+      "real_etf_full_mdd": -0.1249,
+      "real_etf_subset_annual_return": 0.0022,
+      "real_etf_subset_mdd": -0.16,
+      "long_proxy_coverage_years": 16.0
+    }
+  ],
+  "total_experiments": 5
 }
