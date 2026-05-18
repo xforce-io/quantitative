@@ -568,7 +568,26 @@ class TushareDataProvider(BaseDataProvider):
             
             if df.empty:
                 raise ValueError(f"No fund data found for symbol {symbol}")
-            
+
+            # Apply Tushare fund_adj (前复权) so historical NAV reflects share splits.
+            # fund_daily returns unadjusted prices; without this step, ETFs that
+            # split (e.g. 512010 -73.92% on 2021-06-28) show fake single-day jumps.
+            # See docs/incidents/2026-05-etf-split-data-anomaly.md.
+            try:
+                adj = self.pro.fund_adj(ts_code=symbol, start_date=startDate, end_date=endDate)
+                if adj is not None and not adj.empty and 'adj_factor' in adj.columns:
+                    latest = float(adj.sort_values('trade_date').iloc[-1]['adj_factor'])
+                    if latest > 0:
+                        ratio = adj.set_index('trade_date')['adj_factor'].astype(float) / latest
+                        df = df.set_index('trade_date')
+                        scale = ratio.reindex(df.index).ffill().bfill()
+                        for col in ('open', 'high', 'low', 'close', 'pre_close'):
+                            if col in df.columns:
+                                df[col] = df[col].astype(float) * scale
+                        df = df.reset_index()
+            except Exception as adj_e:
+                logger.warning(f"fund_adj failed for {symbol}: {adj_e}; using unadjusted prices")
+
             # Process data (same as stock data)
             df = self._processFundData(df)
             
