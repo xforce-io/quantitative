@@ -1,0 +1,124 @@
+{
+  "iteration": "run-007",
+  "audit_type": "shares_momentum_ablation_clean_baseline",
+  "hypothesis": "P1e 消融测试显示 shares_momentum 对三口径 alpha 贡献都在 1pp 以内,在 real_etf_subset 上甚至略有负贡献.正式删除该因子以简化策略实盘运维.",
+  "strategy_type": "multi_sleeve_rotation",
+  "strategy": {
+    "sleeves_count": 2,
+    "sleeves": [
+      {
+        "name": "risk_on",
+        "description": "顺风期行业ETF四因子动量轮动"
+      },
+      {
+        "name": "risk_off",
+        "description": "逆风期防守/全球资产动量轮转（含熔断）"
+      }
+    ]
+  },
+  "risk_on_rule": {
+    "benchmark": "000300.SH",
+    "method": "simple_threshold",
+    "lookback_months": 6,
+    "min_return": 0.0
+  },
+  "risk_on_allocation": {
+    "sleeve": "industry",
+    "lookback_months": 6,
+    "skip_months": 1,
+    "top_k": 3,
+    "min_hold_months": 1,
+    "rebalance_frequency": "monthly",
+    "momentum_score_method": "multi_factor_rank",
+    "multi_factor_config": {
+      "rank_normalization": "cross_sectional_percentile",
+      "composite_score": "weighted_average_of_ranks",
+      "factors": [
+        {
+          "name": "momentum",
+          "weight": 0.4,
+          "lookback_months": 6,
+          "skip_months": 1
+        },
+        {
+          "name": "low_volatility",
+          "weight": 0.32,
+          "lookback_months": 6
+        },
+        {
+          "name": "relative_strength",
+          "weight": 0.18,
+          "lookback_months": 6,
+          "benchmark": "000300.SH"
+        }
+      ]
+    }
+  },
+  "risk_off_allocation": {
+    "sleeve": "defensive_global",
+    "mode": "momentum_rotation",
+    "lookback_months": 6,
+    "skip_months": 0,
+    "top_k": 1,
+    "min_hold_months": 1,
+    "candidates": [
+      {
+        "role": "dividend_low_vol",
+        "real_etf": "510880.SH",
+        "proxy_index": "000015.SH"
+      },
+      {
+        "role": "gold",
+        "real_etf": "518880.SH",
+        "proxy_index": "AU9999.SGE"
+      },
+      {
+        "role": "ndx100",
+        "real_etf": "513100.SH",
+        "proxy_index": "NDX.GI"
+      },
+      {
+        "role": "short_bond",
+        "real_etf": "511880.SH",
+        "proxy_index": "H11006.CSI"
+      }
+    ],
+    "floor_rule": {
+      "enabled": true,
+      "condition": "all_candidates_6m_momentum_negative",
+      "fallback_asset": "511880.SH"
+    },
+    "portfolio_trailing_drawdown_circuit_breaker": {
+      "enabled": true,
+      "threshold": -0.25,
+      "action_on_trigger": "force 100% 511880.SH"
+    }
+  },
+  "data_modes": {
+    "index_proxy": {
+      "full_start": "20100101",
+      "full_end": "20251231"
+    },
+    "real_etf_subset": {
+      "full_start": "20160101",
+      "full_end": "20251231"
+    },
+    "real_etf_full": {
+      "full_start": "20180101",
+      "full_end": "20251231"
+    }
+  },
+  "change_from_prev": "从 4 因子降为 3 因子: 删除 shares_momentum (weight 0.10). 其它因子权重不变(自动 renorm: momentum 0.40/0.90, low_vol 0.32/0.90, relative_strength 0.18/0.90). 消除对 Tushare fund_share 实时数据的依赖.",
+  "rationale": "run-005 reviewer 已宣告非确定性彻底根治（KEEP），原计划进入参数调优。但 commit 614f798 发现此前 10/12 只 ETF 缺失前复权，导致 real_etf_full 仅有 27 只候选、real_etf_subset 仅 7 只，且 real_etf_subset 2021-H1 单折 MDD -16% 部分源自 512010+159928 拆分价格污染。在受污染 universe 上做参数调优将锁定错误基线，故必须先在干净数据上重跑同一 spec 建立真正基线，再启动参数搜索。run-005 的参考数字（index_proxy=12.11%，real_etf_subset=0.22%，real_etf_full=17.53%）将与本轮做逐项对比，若 real_etf_full 改善 ≥ 1pp，则将 history.json 验证基线从 run-005 更新至 run-006。",
+  "acceptance_criteria": {
+    "index_proxy_expected_annual_return": 0.1211,
+    "index_proxy_note": "消融测试已证实与 run-006 完全一致 (代理指数无 ETF 份额数据)",
+    "real_etf_subset_prev_annual_return": 0.0878,
+    "real_etf_subset_ablation_observed": 0.0974,
+    "real_etf_full_prev_annual_return": 0.2406,
+    "real_etf_full_ablation_observed": 0.2364,
+    "candidate_mdd_floor": -0.25,
+    "best_oos_annual_return_floor": 0.12,
+    "note": "消融结果已在 /tmp/p1e/run.json 验证.run-007 正式确认 3 因子版本为生产基线,后续实盘 advisor 基于此 spec."
+  }
+}

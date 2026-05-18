@@ -1,0 +1,75 @@
+{
+  "strategy_iteration": "run-007",
+  "hypothesis": "P1e 消融测试显示 shares_momentum 对三口径 alpha 贡献都在 1pp 以内,在 real_etf_subset 上甚至略有负贡献.正式删除该因子以简化策略实盘运维.",
+  "data_modes_run": 3,
+  "results": {
+    "index_proxy": {
+      "command": "python scripts/long_rotation_discovery.py --mode candidate --params-file .petri-input/run-007/strategy_spec.json --output .petri/artifacts/backtest/backtester/data/backtest_results/run_20260518_233409.json",
+      "exit_code": 0,
+      "source_output_path": ".petri/artifacts/backtest/backtester/data/backtest_results/run_20260518_233409.json",
+      "data_mode": "index_proxy",
+      "coverage_years": 16.0,
+      "n_folds": 28,
+      "baseline_metrics": {
+        "annual_return": 0.0686,
+        "max_drawdown": -0.1989
+      },
+      "candidate_metrics": {
+        "annual_return": 0.1211,
+        "max_drawdown": -0.1989,
+        "sharpe": 0.22
+      },
+      "return_improvement": 0.0525,
+      "status": "success"
+    },
+    "real_etf_subset": {
+      "command": "python scripts/long_rotation_discovery.py --mode candidate --params-file .petri-input/run-007/strategy_spec.json --output .petri/artifacts/backtest/backtester/data/backtest_results/run_20260518_233409.json",
+      "exit_code": 0,
+      "source_output_path": ".petri/artifacts/backtest/backtester/data/backtest_results/run_20260518_233409.json",
+      "data_mode": "real_etf_subset",
+      "coverage_years": 10.0,
+      "n_folds": 16,
+      "baseline_metrics": {
+        "annual_return": 0.0509,
+        "max_drawdown": -0.0955
+      },
+      "candidate_metrics": {
+        "annual_return": 0.0974,
+        "max_drawdown": -0.1874,
+        "sharpe": 0.157
+      },
+      "return_improvement": 0.0465,
+      "status": "success"
+    },
+    "real_etf_full": {
+      "command": "python scripts/long_rotation_discovery.py --mode candidate --params-file .petri-input/run-007/strategy_spec.json --output .petri/artifacts/backtest/backtester/data/backtest_results/run_20260518_233409.json",
+      "exit_code": 0,
+      "source_output_path": ".petri/artifacts/backtest/backtester/data/backtest_results/run_20260518_233409.json",
+      "data_mode": "real_etf_full",
+      "coverage_years": 8.0,
+      "n_folds": 12,
+      "baseline_metrics": {
+        "annual_return": 0.1056,
+        "max_drawdown": -0.105
+      },
+      "candidate_metrics": {
+        "annual_return": 0.2364,
+        "max_drawdown": -0.1052,
+        "sharpe": 0.447
+      },
+      "return_improvement": 0.1308,
+      "status": "success"
+    }
+  },
+  "best_mode": "real_etf_full",
+  "gate_failures": [],
+  "acceptance_criteria_check": {
+    "index_proxy_expected_12.11pct": "PASS (actual=12.11%)",
+    "real_etf_subset_ablation_expected_9.74pct": "PASS (actual=9.74%, within ±0.5pp)",
+    "real_etf_full_ablation_expected_23.64pct": "PASS (actual=23.64%, within ±0.5pp)",
+    "index_proxy_coverage_ge_10yr": "PASS (16.0yr)",
+    "candidate_mdd_floor_neg25pct": "PASS (all modes MDD > -25%)",
+    "best_oos_annual_return_ge_12pct": "PASS (real_etf_full=23.64%)"
+  },
+  "notes": "run-007: 正式删除 shares_momentum 因子，建立 3 因子生产基线。三口径结果与 P1e 消融完全一致（容忍度 ±0.5pp 内）。index_proxy 口径 16yr OOS 覆盖，全部 gate 通过。exit_code=0，无 gate_failures。"
+}

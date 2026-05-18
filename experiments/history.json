@@ -98,7 +98,20 @@
       "real_etf_subset_annual_return": 0.0878,
       "real_etf_subset_mdd": -0.1874,
       "long_proxy_coverage_years": 16.0
+    },
+    {
+      "run_id": "run-007",
+      "started_at": "2026-05-18T23:34:09.000Z",
+      "decision": "KEEP",
+      "hypothesis": "正式删除 shares_momentum 因子建立 3 因子生产基线，消除 Tushare fund_share T+1~T+3 实盘数据延迟依赖；消融已证实该因子为装饰性",
+      "index_proxy_annual_return": 0.1211,
+      "index_proxy_mdd": -0.1989,
+      "real_etf_full_annual_return": 0.2364,
+      "real_etf_full_mdd": -0.1052,
+      "real_etf_subset_annual_return": 0.0974,
+      "real_etf_subset_mdd": -0.1874,
+      "long_proxy_coverage_years": 16.0
     }
   ],
-  "total_experiments": 6
+  "total_experiments": 7
 }

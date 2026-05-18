@@ -1,0 +1,12 @@
+{
+  "provider": "claude_code",
+  "model": "sonnet",
+  "command": "cat \"/Users/xupeng/lab/quantitative_trading/.petri/artifacts/backtest/backtester/_prompt.md\" | \"/Users/xupeng/.local/bin/claude\" -p --model sonnet --output-format json --dangerously-skip-permissions",
+  "cwd": "/Users/xupeng/lab/quantitative_trading/.petri/artifacts/backtest/backtester",
+  "stdout_path": "/Users/xupeng/lab/quantitative_trading/.petri/artifacts/backtest/backtester/_claude_stdout.json",
+  "exit_code": 0,
+  "timed_out": false,
+  "started_at": "2026-05-18T15:33:28.747Z",
+  "finished_at": "2026-05-18T15:36:37.177Z",
+  "duration_ms": 188430
+}
