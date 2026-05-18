@@ -51,6 +51,13 @@ WARMUP_MONTHS = 15  # >= lookback(9) + skip(1) + buffer
 
 SUBSET_CUTOFF_TS = pd.Timestamp("2014-12-31")
 
+# Single-day |return| threshold above which an ETF's price series is presumed
+# contaminated by a share split / merger that the data provider failed to
+# adjust (前复权). Diversified ETFs cannot move > ±25% in one day under any
+# real market scenario, so this is a hard data-integrity floor.
+# See docs/incidents/2026-05-etf-split-data-anomaly.md for the root cause.
+MAX_SINGLE_DAY_ABS_RET = 0.25
+
 BASELINE_PARAMS = {
     "lookback_months": 6,
     "skip_months": 1,
@@ -465,6 +472,15 @@ def fetch_etf_monthly_prices(
                 continue
             close = df["close"].astype(float)
             close.name = entry.symbol
+            daily_ret = close.pct_change()
+            max_jump = daily_ret.abs().max()
+            if pd.notna(max_jump) and max_jump > MAX_SINGLE_DAY_ABS_RET:
+                bad_dt = daily_ret.abs().idxmax()
+                print(
+                    f"  [SKIP anomaly] {entry.symbol}: |daily ret|={max_jump:.2%} on "
+                    f"{bad_dt.date()} — unadjusted split/merger suspected"
+                )
+                continue
             monthly = close.resample("ME").last().dropna()
             if monthly.empty:
                 continue
