@@ -26,7 +26,6 @@ evidence:
       gte: -0.25
     - field: results.per_mode_comparison.real_etf_full.candidate_mdd
       gte: -0.25
-    # TODO(P0-2): real_etf_subset 受 2021-01~06 单折 -71.83% 异常影响（pre-existing），
-    # MDD 长期挂在 -48.72%。P0-2 修复（数据/ETF 上市过滤）完成后再启用本检查。
-    # - field: results.per_mode_comparison.real_etf_subset.candidate_mdd
-    #   gte: -0.25
+    # Enabled after fund_adj fix (614f798): run-006 subset MDD = -18.74% ≥ -25%.
+    - field: results.per_mode_comparison.real_etf_subset.candidate_mdd
+      gte: -0.25

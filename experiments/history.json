@@ -12,13 +12,13 @@
     "fix_commit": "23b5665",
     "reason": "post-boundary run-001 ~ run-003 在 index_proxy 模式下每次结果都不同（10.92% / 12.18% / 11.72%）；定位到 MultiFactorRanker 两处非确定性（np.argsort 默认 quicksort + set 迭代顺序受 PYTHONHASHSEED 影响），run-004 起结果稳定（12.11%）。详见 docs/incidents/2026-05-ranker-non-determinism.md",
     "first_deterministic_run": "run-004",
-    "verified_baseline_run": "run-005",
+    "verified_baseline_run": "run-006",
     "verified_baseline_metrics": {
       "index_proxy_annual_return": 0.1211,
-      "real_etf_subset_annual_return": 0.0022,
-      "real_etf_full_annual_return": 0.1753
+      "real_etf_subset_annual_return": 0.0878,
+      "real_etf_full_annual_return": 0.2406
     },
-    "note": "experiments[0..2] (run-001/002/003) 的 index_proxy 数字属于非确定性 sample，不应作为对比基准；experiments[3..] 起为修复后的可信结果"
+    "note": "experiments[0..2] (run-001/002/003) 的 index_proxy 数字属于非确定性 sample，不应作为对比基准；experiments[3..] 起为修复后的可信结果。run-006 在 fund_adj 修复后 real_etf_full 改善 +6.53pp（24.06% vs 17.53%），已超 1pp 阈值，更新 verified_baseline_run 至 run-006。"
   },
   "experiments": [
     {
@@ -85,7 +85,20 @@
       "real_etf_subset_annual_return": 0.0022,
       "real_etf_subset_mdd": -0.16,
       "long_proxy_coverage_years": 16.0
+    },
+    {
+      "run_id": "run-006",
+      "started_at": "2026-05-18T20:00:40.000Z",
+      "decision": "KEEP",
+      "hypothesis": "commit 614f798 fund_adj 前复权修复后，用相同 spec 重测建立真正最终基线；real_etf_full universe 从 27 恢复至 30 只（anomaly filter 剔除 3），real_etf_subset 从 7 恢复至 10 只",
+      "index_proxy_annual_return": 0.1211,
+      "index_proxy_mdd": -0.1989,
+      "real_etf_full_annual_return": 0.2406,
+      "real_etf_full_mdd": -0.0914,
+      "real_etf_subset_annual_return": 0.0878,
+      "real_etf_subset_mdd": -0.1874,
+      "long_proxy_coverage_years": 16.0
     }
   ],
-  "total_experiments": 5
+  "total_experiments": 6
 }
