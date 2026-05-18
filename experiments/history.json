@@ -2,9 +2,10 @@
   "_cleanliness_boundary": {
     "reset_at": "2026-05-18",
     "reset_after_commit": "a9d7bad",
-    "reason": "run-001 ~ run-030 的 real_etf_subset / real_etf_full 指标基于 12 只未复权 ETF 的污染数据；从下一个 run 开始，universe 已自动剔除异常 ETF，新基线从零重建。详见 docs/incidents/2026-05-etf-split-data-anomaly.md",
-    "pre_boundary_runs_count": 18,
-    "pre_boundary_last_keep": "run-030"
+    "reason": "原 run-001 ~ run-030 的 real_etf_subset / real_etf_full 指标基于 12 只未复权 ETF 的污染数据；universe 已自动剔除异常 ETF，编号从 run-001 重新开始。详见 docs/incidents/2026-05-etf-split-data-anomaly.md",
+    "pre_boundary_runs_count": 30,
+    "pre_boundary_last_keep_pre_rename": "run-030",
+    "pre_boundary_archive_path": ".petri/runs.pre-cleanliness/"
   },
   "experiments": [],
   "total_experiments": 0
