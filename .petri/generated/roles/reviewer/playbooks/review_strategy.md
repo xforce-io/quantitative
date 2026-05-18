@@ -25,6 +25,8 @@
 
 若 history.json 为空或没有任何 KEEP 记录（首轮基线），将 `last_keep_real_etf_full_annual_return` 视为 None。
 
+**关于 `_cleanliness_boundary` 字段**：history.json 顶层可能有 `_cleanliness_boundary` 元数据（记录数据质量边界、上一次清零原因）。该字段不参与查找，直接忽略；如果存在该字段且 `experiments` 数组为空，按"首轮基线"处理。新增 experiment 条目时**保留**该字段不动。
+
 ### 2. 计算汇总指标
 
 **long_proxy_coverage_years**：`results.index_proxy.coverage_years`；若 status != "success" 则为 0。

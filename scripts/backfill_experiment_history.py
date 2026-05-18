@@ -10,6 +10,7 @@ Idempotent: rewrites history.json from scratch each invocation.
 """
 from __future__ import annotations
 
+import argparse
 import json
 import re
 from pathlib import Path
@@ -86,8 +87,39 @@ def build_history() -> dict:
     return {"experiments": entries, "total_experiments": len(entries)}
 
 
+def _existing_boundary() -> dict | None:
+    if not HISTORY_PATH.is_file():
+        return None
+    try:
+        existing = json.loads(HISTORY_PATH.read_text())
+    except json.JSONDecodeError:
+        return None
+    return existing.get("_cleanliness_boundary")
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Backfill experiments/history.json")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite history.json even if a _cleanliness_boundary is present "
+             "(use only if you know past runs are still data-trustworthy).",
+    )
+    args = parser.parse_args()
+
+    boundary = _existing_boundary()
+    if boundary and not args.force:
+        print(
+            f"refusing to rebuild: history.json has _cleanliness_boundary "
+            f"(reset_at={boundary.get('reset_at')}, "
+            f"reason: {boundary.get('reason','')[:80]}...). "
+            f"Pass --force to override."
+        )
+        return
+
     history = build_history()
+    if boundary:
+        history = {"_cleanliness_boundary": boundary, **history}
     HISTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
     HISTORY_PATH.write_text(json.dumps(history, indent=2, ensure_ascii=False) + "\n")
     keep_count = sum(1 for e in history["experiments"] if e["decision"] == "KEEP")
