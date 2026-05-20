@@ -1,0 +1,182 @@
+# 投资组合配置文件 - 包含预定义组合和用户真实组合
+# Portfolio Configuration - Including Default and User Real Portfolios
+
+portfolios:
+  # 默认组合
+  DEFAULT:
+    600036.SH: {symbol: 600036.SH, name: 招商银行, market: A股, sector: 金融, volatility: low, liquidity: excellent}
+    002594.SZ: {symbol: 002594.SZ, name: 比亚迪, market: A股, sector: 汽车, volatility: high, liquidity: excellent}
+    601899.SH: {symbol: 601899.SH, name: 紫金矿业, market: A股, sector: 资源, volatility: medium, liquidity: good}
+    159665.SZ: {symbol: 159665.SZ, name: 半导体龙头ETF, market: ETF, sector: 半导体, volatility: high, liquidity: good}
+    588000.SH: {symbol: 588000.SH, name: 科创50ETF, market: ETF, sector: 科技创新, volatility: high, liquidity: good}
+    020422.OF: {symbol: 020422.OF, name: 中证港股通内地金融ETF, market: 公募基金, sector: 金融, volatility: medium, liquidity: good}
+    516160.SH: {symbol: 516160.SH, name: 中证新能源ETF, market: ETF, sector: 新能源, volatility: high, liquidity: good}
+    000300.SH: {symbol: 000300.SH, name: 沪深300指数, market: 指数, sector: 综合, volatility: medium, liquidity: excellent}
+    IXIC: {symbol: IXIC, name: 纳斯达克综合指数, market: 指数, sector: 科技, volatility: high, liquidity: excellent}
+    HKTECH: {symbol: HKTECH, name: 恒生科技指数, market: 指数, sector: 科技, volatility: high, liquidity: excellent}
+    518880.SH: {symbol: 518880.SH, name: 黄金ETF, market: ETF, sector: 贵金属, volatility: medium, liquidity: excellent}
+    159992.SZ: {symbol: 159992.SZ, name: 创新药ETF, market: ETF, sector: 医药, volatility: high, liquidity: good}
+    513050.SH: {symbol: 513050.SH, name: 中概互联ETF, market: ETF, sector: 互联网, volatility: high, liquidity: excellent}
+
+  # 平衡型Sleeve示例组合
+  BALANCED_SLEEVES:
+    "002594.SZ": {symbol: "002594.SZ", name: "比亚迪", market: "A股", sector: "新能源汽车", volatility: "high", liquidity: "excellent"}
+    "600036.SH": {symbol: "600036.SH", name: "招商银行", market: "A股", sector: "金融", volatility: "medium", liquidity: "excellent"}
+    "600519.SH": {symbol: "600519.SH", name: "贵州茅台", market: "A股", sector: "消费", volatility: "medium", liquidity: "good"}
+    "000858.SZ": {symbol: "000858.SZ", name: "五粮液", market: "A股", sector: "消费", volatility: "medium", liquidity: "good"}
+    "510300.SH": {symbol: "510300.SH", name: "沪深300ETF", market: "A股", sector: "指数基金", volatility: "low", liquidity: "excellent"}
+    "159665.SZ": {symbol: "159665.SZ", name: "半导体龙头ETF", market: "ETF", sector: "半导体", volatility: "high", liquidity: "good"}
+
+  # 用户真实投资组合 (169.5万)
+  USER_REAL_PORTFOLIO:
+
+    # 债券类 (1%目标组合)
+    "015716.OF": {symbol: "015716.OF", name: "华夏稳享", market: "公募基金", sector: "债券基金", volatility: "low", liquidity: "good"}
+    "019391.OF": {symbol: "019391.OF", name: "招商双债增强债券", market: "公募基金", sector: "债券基金", volatility: "low", liquidity: "good"}
+    "510300.SH": {symbol: "510300.SH", name: "沪深300ETF", market: "A股", sector: "指数基金", volatility: "medium", liquidity: "excellent"}
+
+    # 防守组合 (4%目标)
+    "513110.SH": {symbol: "513110.SH", name: "纳斯达克100ETF", market: "海外", sector: "科技指数", volatility: "high", liquidity: "good"}
+    "515100.SH": {symbol: "515100.SH", name: "中证低波红利ETF", market: "A股", sector: "红利指数", volatility: "low", liquidity: "good"}
+    "600036.SH": {symbol: "600036.SH", name: "招商银行", market: "A股", sector: "银行", volatility: "medium", liquidity: "excellent"}
+    "600900.SH": {symbol: "600900.SH", name: "长江电力", market: "A股", sector: "公用事业", volatility: "low", liquidity: "good"}
+    "164824.SZ": {symbol: "164824.SZ", name: "印度基金", market: "海外", sector: "新兴市场", volatility: "high", liquidity: "fair"}
+    "020422.OF": {symbol: "020422.OF", name: "中证港股通内地金融ETF", market: "公募基金", sector: "金融", volatility: "medium", liquidity: "good"}
+
+    # 进攻组合 (12%目标)
+    "513320.SH": {symbol: "513320.SH", name: "港股新经济ETF", market: "港股", sector: "新经济", volatility: "high", liquidity: "good"}
+    "588000.SH": {symbol: "588000.SH", name: "科创50ETF", market: "A股", sector: "科创板", volatility: "high", liquidity: "good"}
+    "512480.SH": {symbol: "512480.SH", name: "半导体ETF", market: "A股", sector: "半导体", volatility: "high", liquidity: "excellent"}
+    "513050.SH": {symbol: "513050.SH", name: "易方达中概互联ETF", market: "海外", sector: "中概股", volatility: "high", liquidity: "good"}
+    "159992.SZ": {symbol: "159992.SZ", name: "创新药ETF", market: "A股", sector: "医药", volatility: "high", liquidity: "good"}
+    "516160.SH": {symbol: "516160.SH", name: "中证新能源ETF", market: "A股", sector: "新能源", volatility: "high", liquidity: "excellent"}
+    "002594.SZ": {symbol: "002594.SZ", name: "比亚迪", market: "A股", sector: "新能源汽车", volatility: "high", liquidity: "excellent"}
+    "601899.SH": {symbol: "601899.SH", name: "紫金矿业", market: "A股", sector: "有色金属", volatility: "high", liquidity: "good"}
+
+# 投资组合元数据
+portfolio_meta:
+  DEFAULT:
+    description: 默认投资组合 - 代表性蓝筹股和主要指数
+    risk_level: medium
+    investment_style: balanced
+    suitable_for: 稳健型投资者
+    rebalance_frequency: monthly
+    type: portfolio
+    recommended_weights:
+      000300.SH: 0.10
+      518880.SH: 0.08
+      600036.SH: 0.06
+      020422.OF: 0.08
+      516160.SH: 0.05
+      IXIC: 0.18
+      HKTECH: 0.12
+      588000.SH: 0.07
+      159665.SZ: 0.05
+      002594.SZ: 0.06
+      601899.SH: 0.06
+      159992.SZ: 0.04
+      513050.SH: 0.05
+
+  BALANCED_SLEEVES:
+    description: "基于Sleeve配置的平衡型投资组合示例"
+    type: "portfolio"
+    risk_level: "medium"
+    investment_style: "balanced"
+    suitable_for: "中等风险承受能力的投资者"
+    rebalance_frequency: "quarterly"
+
+  USER_REAL_PORTFOLIO:
+    description: "用户真实投资组合 - 按现金/债券/防守/进攻四层结构"
+    type: "portfolio"
+    risk_level: "medium"
+    investment_style: "diversified"
+    suitable_for: "平衡型投资者"
+    rebalance_frequency: "monthly"
+    total_value: 1695000  # 169.5万元
+    currency: "CNY"
+
+# Sleeve分层配置
+portfolio_sleeves:
+  BALANCED_SLEEVES:
+    - name: "Conservative"
+      target_return: 0.01
+      risk_level: "conservative"
+      allocation_ratio: 0.10
+      description: "现金管理/货币基金等低风险资产"
+      symbols:
+        "510300.SH": 1.0
+
+    - name: "Income"
+      target_return: 0.04
+      risk_level: "income"
+      allocation_ratio: 0.30
+      description: "银行股等分红型资产"
+      symbols:
+        "600036.SH": 1.0
+
+    - name: "Growth"
+      target_return: 0.12
+      risk_level: "growth"
+      allocation_ratio: 0.40
+      description: "蓝筹消费股等成长型资产"
+      symbols:
+        "600519.SH": 0.6
+        "000858.SZ": 0.4
+
+    - name: "Aggressive"
+      target_return: 0.30
+      risk_level: "aggressive"
+      allocation_ratio: 0.20
+      description: "新能源/农业等高风险高收益资产"
+      symbols:
+        "002594.SZ": 0.7
+        "159665.SZ": 0.3
+
+  USER_REAL_PORTFOLIO:
+    - name: "债券组合"
+      target_return: 0.04  # 4%年化收益目标
+      risk_level: "conservative"
+      allocation_ratio: 0.224  # 38万/169.5万 = 22.4%
+      description: "债券基金等低风险资产"
+      symbols:
+        "015716.OF": 0.053  # 2万/38万 = 5.3%
+        "019391.OF": 0.211  # 8万/38万 = 21.1%
+        "510300.SH": 0.605  # 23万/38万 = 60.5%
+
+    - name: "防守组合"
+      target_return: 0.12  # 12%年化收益目标
+      risk_level: "income"
+      allocation_ratio: 0.385  # 65万/169.5万 = 38.3%
+      description: "分红股票、商品基金等收益型资产"
+      symbols:
+        "513110.SH": 0.154  # 10万/65万 = 15.4%
+        "515100.SH": 0.231  # 15万/65万 = 23.1%
+        "600036.SH": 0.077  # 5万/65万 = 7.7%
+        "600900.SH": 0.077  # 5万/65万 = 7.7%
+        "164824.SZ": 0.046  # 3万/65万 = 4.6%
+        "020422.OF": 0.031  # 2万/65万 = 3.1%
+
+    - name: "进攻组合"
+      target_return: 0.30  # 30%年化收益目标
+      risk_level: "growth"
+      allocation_ratio: 0.354  # 60万/169.5万 = 35.4%
+      description: "成长股、主题ETF等成长型资产"
+      symbols:
+        "513320.SH": 0.133  # 8万/60万 = 13.3%
+        "588000.SH": 0.133  # 8万/60万 = 13.3%
+        "512480.SH": 0.100  # 6万/60万 = 10.0%
+        "513050.SH": 0.033  # 2万/60万 = 3.3%
+        "159992.SZ": 0.033  # 2万/60万 = 3.3%
+        "516160.SH": 0.033  # 2万/60万 = 3.3%
+        "002594.SZ": 0.433  # 26万/60万 = 43.3%
+        "601899.SH": 0.250  # 15万/60万 = 25.0%
+
+# 指数代理映射
+index_proxy_map:
+  IXIC: 513100.SH
+  NDX: 513100.SH
+  SPX: 513500.SH
+  SP500: 513500.SH
+  DJI: 513030.SH
+  HSI: 159920.SZ
+  HKTECH: 513330.SH

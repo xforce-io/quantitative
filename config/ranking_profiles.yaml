@@ -1,0 +1,85 @@
+# 股票排名权重配置 (Stock Ranking Profiles)
+#
+# 定义不同投资风格的因子权重
+# 四因子模型: money_flow (资金), technical (技术), valuation (估值), trend (趋势)
+# 所有权重之和应为 1.0
+
+profiles:
+  # 短线交易风格 - 重视资金流向和趋势动量
+  short_term:
+    name: "短线交易"
+    description: "适合短线交易者，重视资金流向和趋势动量"
+    weights:
+      money_flow: 0.35     # 资金流向权重
+      technical: 0.30      # 技术形态权重
+      valuation: 0.05      # 估值权重 (短线不看重)
+      trend: 0.30          # 趋势动量权重
+
+  # 均衡风格 - 各因子均衡考虑
+  balanced:
+    name: "均衡配置"
+    description: "适合稳健投资者，综合考虑各类因素"
+    weights:
+      money_flow: 0.25
+      technical: 0.25
+      valuation: 0.30      # 提升估值权重
+      trend: 0.20          # 略微降低趋势权重
+
+  # 价值投资风格 (巴菲特风格) - 极致重视估值
+  value:
+    name: "价值投资"
+    description: "巴菲特风格：极致重视估值和安全边际，忽略短期波动"
+    weights:
+      money_flow: 0.20     # 关注机构沉淀
+      technical: 0.05      # 几乎忽略技术面
+      valuation: 0.70      # 估值决定一切
+      trend: 0.05          # 几乎忽略短期趋势
+
+  # 趋势跟踪风格 - 重视趋势动量
+  trend:
+    name: "趋势跟踪"
+    description: "适合趋势交易者，跟随市场趋势和动量"
+    weights:
+      money_flow: 0.20
+      technical: 0.20
+      valuation: 0.10
+      trend: 0.50          # 趋势因子占主导
+
+  # 资金驱动风格 - 跟随主力资金和动量
+  momentum:
+    name: "资金驱动"
+    description: "跟随主力资金和市场热点"
+    weights:
+      money_flow: 0.40
+      technical: 0.15
+      valuation: 0.05
+      trend: 0.40
+
+# 默认配置
+default_profile: balanced
+
+# 因子说明
+factors:
+  money_flow:
+    name: "资金流向"
+    description: "主力资金净流入、大单趋势、资金一致性等"
+    analyzer: "capital_flow_analyzer"
+    higher_is_better: true
+
+  technical:
+    name: "技术形态"
+    description: "均线排列、RSI、成交量等静态技术指标"
+    analyzer: "technical_analyzer"
+    higher_is_better: true
+
+  valuation:
+    name: "估值水平"
+    description: "价格分位数、均值回归信号等"
+    analyzer: "price_valuation"
+    higher_is_better: true  # 注意：这里的分数已经做过反转，低估=高分
+
+  trend:
+    name: "趋势动量"
+    description: "多周期收益率、ADX趋势强度、相对强度RS、均线斜率等动态趋势指标"
+    analyzer: "momentum_analyzer"
+    higher_is_better: true

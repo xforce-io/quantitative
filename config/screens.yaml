@@ -1,0 +1,71 @@
+# 修正后的screens配置文件
+# 基于Tushare官方API验证，所有ETF代码和名称均为准确数据
+# 生成时间: 2025-10-03
+
+screens:
+  # 行业ETF篮子 - 已全面验证并修正
+  INDUSTRY_ETF:
+    # 半导体/芯片
+    512480.SH: {symbol: 512480.SH, name: 半导体ETF, market: ETF, sector: 半导体, volatility: high, liquidity: excellent}
+    159813.SZ: {symbol: 159813.SZ, name: 半导体ETF, market: ETF, sector: 半导体, volatility: high, liquidity: excellent}
+
+    # 科技
+    515000.SH: {symbol: 515000.SH, name: 科技ETF, market: ETF, sector: 科技, volatility: high, liquidity: excellent}
+    588000.SH: {symbol: 588000.SH, name: 科创50ETF, market: ETF, sector: 科创, volatility: high, liquidity: excellent}
+
+    # 新能源产业链
+    515220.SH: {symbol: 515220.SH, name: 煤炭ETF, market: ETF, sector: 能源, volatility: high, liquidity: good}
+    516850.SH: {symbol: 516850.SH, name: 新能源ETF, market: ETF, sector: 新能源, volatility: high, liquidity: excellent}
+    159806.SZ: {symbol: 159806.SZ, name: 新能源车ETF, market: ETF, sector: 新能源汽车, volatility: high, liquidity: excellent}
+    516290.SH: {symbol: 516290.SH, name: 光伏龙头ETF, market: ETF, sector: 光伏, volatility: high, liquidity: excellent}
+    159566.SZ: {symbol: 159566.SZ, name: 储能电池ETF, market: ETF, sector: 储能, volatility: high, liquidity: good}
+    159864.SZ: {symbol: 159864.SZ, name: 光伏50ETF, market: ETF, sector: 光伏, volatility: high, liquidity: good}
+
+    # 物联网/科技应用
+    516260.SH: {symbol: 516260.SH, name: 物联网50ETF, market: ETF, sector: 物联网, volatility: high, liquidity: excellent}
+
+    # 消费
+    159928.SZ: {symbol: 159928.SZ, name: 消费ETF, market: ETF, sector: 消费, volatility: medium, liquidity: excellent}
+    512690.SH: {symbol: 512690.SH, name: 酒ETF, market: ETF, sector: 白酒, volatility: medium, liquidity: excellent}
+    159736.SZ: {symbol: 159736.SZ, name: 食品饮料ETF, market: ETF, sector: 食品饮料, volatility: medium, liquidity: excellent}
+
+    # 医药
+    512010.SH: {symbol: 512010.SH, name: 医药ETF, market: ETF, sector: 医药, volatility: medium, liquidity: excellent}
+    159929.SZ: {symbol: 159929.SZ, name: 医药ETF, market: ETF, sector: 医药, volatility: medium, liquidity: excellent}
+
+    # 金融
+    512820.SH: {symbol: 512820.SH, name: 银行ETF, market: ETF, sector: 银行, volatility: low, liquidity: excellent}
+    159940.SZ: {symbol: 159940.SZ, name: 金融地产ETF, market: ETF, sector: 金融, volatility: low, liquidity: excellent}
+    512880.SH: {symbol: 512880.SH, name: 证券ETF, market: ETF, sector: 券商, volatility: high, liquidity: excellent}
+    515630.SH: {symbol: 515630.SH, name: 保险ETF, market: ETF, sector: 保险, volatility: medium, liquidity: good}
+
+    # 周期/材料
+    515210.SH: {symbol: 515210.SH, name: 钢铁ETF, market: ETF, sector: 钢铁, volatility: high, liquidity: good}
+    516150.SH: {symbol: 516150.SH, name: 稀土ETF, market: ETF, sector: 稀土, volatility: high, liquidity: good}
+    159745.SZ: {symbol: 159745.SZ, name: 建材ETF, market: ETF, sector: 建材, volatility: medium, liquidity: good}
+    516220.SH: {symbol: 516220.SH, name: 化工龙头ETF, market: ETF, sector: 化工, volatility: medium, liquidity: good}
+
+    # 制造/军工
+    516800.SH: {symbol: 516800.SH, name: 智能制造ETF, market: ETF, sector: 机械制造, volatility: medium, liquidity: good}
+    512660.SH: {symbol: 512660.SH, name: 军工ETF, market: ETF, sector: 军工, volatility: high, liquidity: good}
+
+    # 房地产/基建
+    512200.SH: {symbol: 512200.SH, name: 房地产ETF, market: ETF, sector: 房地产, volatility: high, liquidity: good}
+    508056.SH: {symbol: 508056.SH, name: 中金普洛斯REIT, market: ETF, sector: REITs, volatility: medium, liquidity: good}
+    159619.SZ: {symbol: 159619.SZ, name: 基建ETF, market: ETF, sector: 基建, volatility: medium, liquidity: good}
+
+    # 农业/交运
+    159825.SZ: {symbol: 159825.SZ, name: 农业ETF, market: ETF, sector: 农业, volatility: medium, liquidity: good}
+    159392.SZ: {symbol: 159392.SZ, name: 航空ETF, market: ETF, sector: 航空, volatility: high, liquidity: good}
+    159666.SZ: {symbol: 159666.SZ, name: 交通运输ETF, market: ETF, sector: 交通运输, volatility: medium, liquidity: good}
+
+screens_meta:
+  INDUSTRY_ETF:
+    description: 国内行业ETF选股篮子 - 全行业覆盖（已验证）
+    risk_level: medium_high
+    investment_style: sector_rotation
+    type: screen
+    update_schedule: monthly
+    verification_date: "2025-10-03"
+    verification_status: "VERIFIED_BY_TUSHARE_API"
+    data_quality: "HIGH"

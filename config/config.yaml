@@ -1,0 +1,177 @@
+# 量化交易系统统一配置文件
+# Unified Configuration for Quantitative Trading System
+
+# 系统基础配置
+system:
+  version: "1.0.0"
+  name: "Quantitative Trading System"
+  timezone: "Asia/Shanghai"
+  currency: "CNY"
+  locale: "zh_CN"
+
+  # 目录配置
+  data_dir: "data"
+  cache_dir: "cache"
+  logs_dir: "logs"
+  reports_dir: "reports"
+
+  # 性能配置
+  max_workers: 4
+  enable_parallel_processing: true
+
+# 数据提供者配置
+providers:
+  # 默认提供者
+  default: "tushare"
+
+  # Tushare配置
+  tushare:
+    enabled: true
+    api_token: "${TUSHARE_TOKEN}"
+    timeout: 30
+    retry_attempts: 3
+    cache_enabled: true
+    cache_expiry_hours: 24
+    rate_limits:
+      daily_limit: 500
+      minute_limit: 10
+
+  # Yahoo Finance配置
+  yahoo:
+    enabled: true
+    timeout: 20
+    retry_attempts: 2
+    cache_enabled: true
+    cache_expiry_hours: 12
+
+# 缓存配置
+cache:
+  enabled: true
+  backend: "file"
+  base_dir: "cache"
+  compression: true
+  max_size_mb: 1000
+
+  # 缓存策略
+  strategies:
+    price_data_ttl_hours: 1
+    news_data_ttl_hours: 24
+    analysis_results_ttl_hours: 12
+
+# 日志配置
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file_rotation: true
+  max_file_size: "10MB"
+  backup_count: 5
+
+# 错误处理
+error_handling:
+  retry_attempts: 3
+  retry_delay: 5
+  enable_graceful_degradation: true
+  fallback_strategy: "cache_first"
+
+# 数据验证配置
+validation:
+  enabled: true
+  price_data:
+    check_missing_values: true
+    check_outliers: true
+    outlier_threshold: 3.0
+
+# 交易策略配置
+strategies:
+  # 网格交易策略
+  unified_grid:
+    initial_capital: 100000
+    grid_levels: 10
+    grid_spacing: 0.02
+    base_position_ratio: 0.1
+    max_position_ratio: 0.8
+
+  # 移动平均策略
+  ma_crossover:
+    initial_capital: 100000
+    short_window: 5
+    long_window: 20
+    volume_threshold: 1.2
+
+  # 动量策略
+  momentum:
+    initial_capital: 100000
+    rsi_period: 14
+    rsi_oversold: 30
+    rsi_overbought: 70
+    stop_loss: 0.05
+    take_profit: 0.15
+
+# 回测配置
+backtesting:
+  commission: 0.0003
+  slippage: 0.0001
+  min_trade_amount: 100
+  benchmark: "000300.SH"
+
+# 性能监控
+monitoring:
+  enable_metrics: true
+  metrics_interval: 300
+  enable_profiling: false
+
+# Agent策略实验配置
+agent_experiments:
+  # 比亚迪多策略实验
+  byd_multi_strategy:
+    symbol: "002594.SZ"
+    name: "比亚迪多策略优化实验"
+    date_range: { start: "20190101", end: "20231231" }
+    initial_capital: 100000
+
+    agents:
+      grid_strategies:
+        enabled: true
+        count: 4
+        parameter_ranges:
+          gridLevels: [8, 10, 12]
+          gridSpacing: [0.015, 0.02, 0.025]
+          baseRatio: [0.3, 0.4]
+        risk_profile: "moderate"
+
+  # 快速测试配置
+  quick_test:
+    symbol: "000001.SZ"
+    name: "平安银行快速测试"
+    date_range: { start: "20240101", end: "20241201" }
+    initial_capital: 50000
+
+    agents:
+      grid_strategies:
+        enabled: true
+        count: 2
+        parameter_ranges:
+          gridLevels: [8, 10]
+          gridSpacing: [0.02, 0.025]
+          baseRatio: [0.3]
+        risk_profile: "moderate"
+
+# 风险配置文件
+risk_profiles:
+  conservative:
+    max_drawdown: 0.15
+    max_single_position: 0.3
+    preferred_strategies: ["dca", "grid"]
+
+  moderate:
+    max_drawdown: 0.20
+    max_single_position: 0.4
+    preferred_strategies: ["grid", "dca", "momentum"]
+
+  aggressive:
+    max_drawdown: 0.30
+    max_single_position: 0.5
+    preferred_strategies: ["momentum", "hybrid"]
+
+# AI Agent 配置 - 独立配置文件
+# 详见 config/dolphin.yaml

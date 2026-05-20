@@ -1,0 +1,51 @@
+# AI Agent 配置 (用于 AI 分析师对话)
+# 参考 alfred/config/dolphin.yaml 结构
+
+# 默认模型
+default: qwen-plus
+fast: qwen-turbo
+
+# 云服务提供商配置
+clouds:
+  default: aliyun
+  aliyun:
+    api: https://dashscope.aliyuncs.com/compatible-mode/v1
+    api_key: "${ALIYUN_API_KEY}"
+  deepseek:
+    api: https://api.deepseek.com/beta
+    api_key: "${DEEPSEEK_API_KEY}"
+
+# 模型配置
+llms:
+  qwen-plus:
+    cloud: aliyun
+    model_name: qwen-plus
+    type_api: openai
+  qwen-turbo:
+    cloud: aliyun
+    model_name: qwen-turbo-latest
+    type_api: openai
+  deepseek-chat:
+    cloud: deepseek
+    model_name: deepseek-chat
+    type_api: openai
+
+# AI 分析师配置
+analyst:
+  # 系统提示词模板
+  system_prompt: |
+    你是一位专业的量化投资分析师，擅长技术分析、基本面分析和投资策略制定。
+    请基于提供的市场数据和分析结果，给出专业、客观的投资建议。
+
+  # 分析参数
+  analysis:
+    include_technical: true
+    include_fundamental: true
+    include_news: false
+    max_history_days: 365
+
+# Context 管理配置
+context:
+  max_input_tokens: 32000
+  reserve_output_tokens: 4096
+  preserve_system: true

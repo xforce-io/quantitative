@@ -1,0 +1,78 @@
+# ETF 分类配置
+# 用于 ETFMomentumScreener 的默认 ETF 列表
+
+etf_categories:
+  broad_market:
+    name: "宽基指数"
+    etfs:
+      - code: "510300.SH"
+        name: "沪深300ETF"
+        benchmark: "沪深300"
+      - code: "159919.SZ"
+        name: "沪深300ETF"
+        benchmark: "沪深300"
+      - code: "510500.SH"
+        name: "中证500ETF"
+        benchmark: "中证500"
+      - code: "159915.SZ"
+        name: "创业板ETF"
+        benchmark: "创业板指"
+
+  sector:
+    name: "行业ETF"
+    etfs:
+      - code: "512480.SH"
+        name: "半导体ETF"
+        benchmark: "中华半导体芯片指数"
+      - code: "512660.SH"
+        name: "军工ETF"
+        benchmark: "中证军工指数"
+      - code: "512200.SH"
+        name: "房地产ETF"
+        benchmark: "中证房地产指数"
+      - code: "515220.SH"
+        name: "煤炭ETF"
+        benchmark: "中证煤炭指数"
+
+  thematic:
+    name: "主题ETF"
+    etfs:
+      - code: "515050.SH"
+        name: "5G ETF"
+        benchmark: "中证5G通信主题指数"
+      - code: "516950.SH"
+        name: "新能源ETF"
+        benchmark: "中证新能源指数"
+      - code: "588000.SH"
+        name: "科创50ETF"
+        benchmark: "科创50指数"
+
+  bonds:
+    name: "债券ETF"
+    etfs:
+      - code: "511010.SH"
+        name: "国债ETF"
+        benchmark: "上证国债指数"
+      - code: "511880.SH"
+        name: "银行间债ETF"
+        benchmark: "中债银行间债券指数"
+
+  commodities:
+    name: "商品ETF"
+    etfs:
+      - code: "159930.SZ"
+        name: "能源化工ETF"
+        benchmark: "能源化工指数"
+      - code: "518880.SH"
+        name: "黄金ETF"
+        benchmark: "黄金价格"
+
+  international:
+    name: "海外ETF"
+    etfs:
+      - code: "513100.SH"
+        name: "纳指ETF"
+        benchmark: "纳斯达克100"
+      - code: "513050.SH"
+        name: "中概互联ETF"
+        benchmark: "中概互联指数"
