@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "current_sota_strategy": "run_007_production",
+  "strategy_path": "config/strategies/rotation/run_007_production.json",
+  "source": {
+    "system": "petri",
+    "line_id": "legacy-single-line",
+    "run_id": "run-007"
+  },
+  "published_at": "2026-05-20",
+  "reason": "run-007 is the current production baseline after shares_momentum ablation removed delayed fund_share dependency with minimal alpha loss."
+}

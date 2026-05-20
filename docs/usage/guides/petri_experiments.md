@@ -13,6 +13,9 @@ Petri experiments should run outside this repository's Git worktree. This keeps 
 
 ~/lab/petri/quantitative_trading/<experiment>
   Petri configuration, roles, inputs, runs, and artifacts for one experiment.
+
+~/lab/petri/quantitative_trading/lines/<line>/runs/<run>
+  Temporary optimization-line convention for independent strategy search lines.
 ```
 
 ## One-Time Local Setup
@@ -42,6 +45,54 @@ Set `PETRI_EXPERIMENTS_DIR` to use another base directory:
 ```bash
 PETRI_EXPERIMENTS_DIR=~/tmp/petri ./scripts/create_petri_experiment.sh exp-001
 ```
+
+## Strategy Publication Boundary
+
+Petri runs are evidence, not production entry points. A winning Petri result should be promoted into the project configuration before production tools depend on it.
+
+Current published rotation SOTA:
+
+```text
+config/strategies/rotation/sota.json
+config/strategies/rotation/run_007_production.json
+```
+
+The live advisor defaults to the published SOTA:
+
+```bash
+python scripts/live_advisor.py --as-of 2026-04-30
+```
+
+Use `--spec` only when testing a candidate strategy:
+
+```bash
+python scripts/live_advisor.py \
+  --spec /path/to/candidate_strategy.json \
+  --as-of 2026-04-30
+```
+
+## Optimization Lines
+
+Until Petri supports strategy-search lines as a first-class concept, use this directory convention:
+
+```text
+~/lab/petri/quantitative_trading/lines/
+  line-001-factor-weight-search/
+    line.yaml
+    runs/
+      run-001/
+        petri.yaml
+        pipeline.yaml
+        inputs/
+        roles/
+```
+
+Rules:
+
+- A `line-*` directory is one independent optimization direction.
+- Runs are numbered independently inside each line.
+- `line.yaml` records the baseline, objective, search space, constraints, and acceptance criteria.
+- Only a validated winner should be promoted back to `config/strategies/rotation/`.
 
 ## Isolating Source Changes
 

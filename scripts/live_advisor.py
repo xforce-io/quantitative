@@ -7,10 +7,13 @@ current holdings to give explicit sell/buy actions.
 
 Usage:
     python scripts/live_advisor.py \\
-        --spec .petri-input/run-007/strategy_spec.json \\
         --as-of 2026-04-30 \\
         [--current-holdings my_portfolio.csv] \\
         [--output recommendation.json]
+
+    python scripts/live_advisor.py \\
+        --spec config/strategies/rotation/run_007_production.json \\
+        --as-of 2026-04-30
 
 Holdings CSV format (one of):
     symbol,weight
@@ -32,6 +35,8 @@ import pandas as pd
 
 _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT))
+
+_DEFAULT_SOTA_PATH = _ROOT / "config" / "strategies" / "rotation" / "sota.json"
 
 from quant.services.data_service import DataService  # noqa: E402
 
@@ -102,21 +107,38 @@ def spec_needs_volume(spec: dict) -> bool:
     return bool(names & {"shares_momentum", "low_crowding"})
 
 
+def resolve_spec_path(spec_arg: str | None) -> Path:
+    """Resolve the requested strategy spec or the published SOTA spec."""
+    if spec_arg:
+        path = Path(spec_arg).expanduser()
+        if not path.is_absolute():
+            path = Path.cwd() / path
+        return path
+
+    sota = json.loads(_DEFAULT_SOTA_PATH.read_text(encoding="utf-8"))
+    path = _ROOT / sota["strategy_path"]
+    return path
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--spec", required=True, help="strategy_spec.json")
+    p.add_argument(
+        "--spec",
+        help="strategy spec JSON; defaults to config/strategies/rotation/sota.json target",
+    )
     p.add_argument("--as-of", required=True, help="Decision date (month-end, YYYY-MM-DD)")
     p.add_argument("--current-holdings", help="CSV of current portfolio (optional)")
     p.add_argument("--output", help="Save recommendation as JSON (optional)")
     p.add_argument("--start-date", default="20180101", help="Earliest data fetch date (YYYYMMDD)")
     args = p.parse_args()
 
-    spec = json.load(open(args.spec))
+    spec_path = resolve_spec_path(args.spec)
+    spec = json.loads(spec_path.read_text(encoding="utf-8"))
     as_of_requested = pd.Timestamp(args.as_of)
     fetch_end = (as_of_requested + pd.offsets.MonthEnd(1)).strftime("%Y%m%d")
 
     print(f"=== Live Advisor ===")
-    print(f"Spec:      {args.spec}")
+    print(f"Spec:      {spec_path}")
     print(f"Strategy:  {spec.get('iteration', '(unnamed)')}")
     print(f"As of:     {as_of_requested.date()}")
     print()

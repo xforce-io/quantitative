@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "strategy_id": "run_007_production",
+  "status": "production_baseline",
+  "source": {
+    "system": "petri",
+    "line_id": "legacy-single-line",
+    "run_id": "run-007",
+    "archived_spec_path": "baks/petri_legacy_20260520/.petri-input/run-007/strategy_spec.json",
+    "history_path": "experiments/history.json"
+  },
+  "iteration": "run-007",
+  "audit_type": "shares_momentum_ablation_clean_baseline",
+  "hypothesis": "P1e ablation showed shares_momentum contributed less than 1pp alpha across validated data modes. The factor is removed to simplify live operations and avoid delayed fund_share dependencies.",
+  "strategy_type": "multi_sleeve_rotation",
+  "strategy": {
+    "sleeves_count": 2,
+    "sleeves": [
+      {
+        "name": "risk_on",
+        "description": "Risk-on industry ETF three-factor momentum rotation"
+      },
+      {
+        "name": "risk_off",
+        "description": "Risk-off defensive/global asset momentum rotation with circuit breaker"
+      }
+    ]
+  },
+  "risk_on_rule": {
+    "benchmark": "000300.SH",
+    "method": "simple_threshold",
+    "lookback_months": 6,
+    "min_return": 0.0
+  },
+  "risk_on_allocation": {
+    "sleeve": "industry",
+    "lookback_months": 6,
+    "skip_months": 1,
+    "top_k": 3,
+    "min_hold_months": 1,
+    "rebalance_frequency": "monthly",
+    "momentum_score_method": "multi_factor_rank",
+    "multi_factor_config": {
+      "rank_normalization": "cross_sectional_percentile",
+      "composite_score": "weighted_average_of_ranks",
+      "factors": [
+        {
+          "name": "momentum",
+          "weight": 0.4,
+          "lookback_months": 6,
+          "skip_months": 1
+        },
+        {
+          "name": "low_volatility",
+          "weight": 0.32,
+          "lookback_months": 6
+        },
+        {
+          "name": "relative_strength",
+          "weight": 0.18,
+          "lookback_months": 6,
+          "benchmark": "000300.SH"
+        }
+      ]
+    }
+  },
+  "risk_off_allocation": {
+    "sleeve": "defensive_global",
+    "mode": "momentum_rotation",
+    "lookback_months": 6,
+    "skip_months": 0,
+    "top_k": 1,
+    "min_hold_months": 1,
+    "candidates": [
+      {
+        "role": "dividend_low_vol",
+        "real_etf": "510880.SH",
+        "proxy_index": "000015.SH"
+      },
+      {
+        "role": "gold",
+        "real_etf": "518880.SH",
+        "proxy_index": "AU9999.SGE"
+      },
+      {
+        "role": "ndx100",
+        "real_etf": "513100.SH",
+        "proxy_index": "NDX.GI"
+      },
+      {
+        "role": "short_bond",
+        "real_etf": "511880.SH",
+        "proxy_index": "H11006.CSI"
+      }
+    ],
+    "floor_rule": {
+      "enabled": true,
+      "condition": "all_candidates_6m_momentum_negative",
+      "fallback_asset": "511880.SH"
+    },
+    "portfolio_trailing_drawdown_circuit_breaker": {
+      "enabled": true,
+      "threshold": -0.25,
+      "action_on_trigger": "force 100% 511880.SH"
+    }
+  },
+  "data_modes": {
+    "index_proxy": {
+      "full_start": "20100101",
+      "full_end": "20251231"
+    },
+    "real_etf_subset": {
+      "full_start": "20160101",
+      "full_end": "20251231"
+    },
+    "real_etf_full": {
+      "full_start": "20180101",
+      "full_end": "20251231"
+    }
+  },
+  "validation": {
+    "decision": "KEEP",
+    "metrics": {
+      "index_proxy": {
+        "annual_return": 0.1211,
+        "max_drawdown": -0.1989
+      },
+      "real_etf_subset": {
+        "annual_return": 0.0974,
+        "max_drawdown": -0.1874
+      },
+      "real_etf_full": {
+        "annual_return": 0.2364,
+        "max_drawdown": -0.1052
+      }
+    },
+    "notes": [
+      "Production baseline after removing shares_momentum.",
+      "Compared with run-006, real_etf_full annual return decreased by 0.42pp while removing delayed fund_share dependency."
+    ]
+  }
+}
