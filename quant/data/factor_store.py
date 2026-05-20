@@ -12,7 +12,7 @@ class FactorStore:
         return sqlite3.connect(self._db)
 
     def get_etf_shares(self, symbols: list[str], date: str) -> dict[str, float]:
-        """Return {symbol: shares(万份)} for the given month-end date."""
+        """Return {symbol: shares in ten-thousand units} for the given month-end date."""
         if not symbols:
             return {}
         placeholders = ",".join("?" * len(symbols))
@@ -41,6 +41,19 @@ class FactorStore:
         with self._conn() as conn:
             row = conn.execute(
                 "SELECT mfg_pmi FROM macro_pmi WHERE date=?", [date]
+            ).fetchone()
+        return float(row[0]) if row and row[0] is not None else None
+
+    def get_pmi_by_month(self, year_month: str) -> float | None:
+        """Return manufacturing PMI for the given YYYY-MM month prefix, or None.
+
+        PMI records may be stored on last business day rather than strict month-end,
+        so this searches by prefix to avoid exact-date misses.
+        """
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT mfg_pmi FROM macro_pmi WHERE date LIKE ? ORDER BY date DESC LIMIT 1",
+                [year_month + "%"],
             ).fetchone()
         return float(row[0]) if row and row[0] is not None else None
 

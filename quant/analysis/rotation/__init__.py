@@ -1,11 +1,11 @@
-"""A 股行业 ETF 轮动系统模块。"""
+"""A-share industry ETF rotation module."""
 from quant.analysis.rotation.backtest import (
     RotationBacktestConfig,
     RotationBacktestResult,
     RotationBacktester,
 )
 from quant.analysis.rotation.portfolio import PortfolioCombiner
-from quant.analysis.rotation.ranker import MomentumRanker, RankerConfig
+from quant.analysis.rotation.ranker import MomentumRanker, MultiFactorRanker, RankerConfig
 from quant.analysis.rotation.cockpit_overlay import (
     CockpitOverlayConfig,
     CockpitRegimeOverlay,
@@ -22,6 +22,7 @@ __all__ = [
     "CockpitRegimeOverlay",
     "EtfEntry",
     "MomentumRanker",
+    "MultiFactorRanker",
     "PortfolioCombiner",
     "PrecomputedRegimeOverlay",
     "RankerConfig",

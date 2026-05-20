@@ -27,6 +27,13 @@ industry_etfs:
   - { symbol: "515790.SH", name: "光伏ETF",       category: "新能源" }
   - { symbol: "159870.SZ", name: "化工ETF",       category: "周期" }
   - { symbol: "512200.SH", name: "房地产ETF",     category: "金融" }
+  - { symbol: "516220.SH", name: "物联网ETF",     category: "科技" }
+  - { symbol: "561910.SH", name: "储能ETF",       category: "新能源" }
+  - { symbol: "159201.SZ", name: "自由现金流ETF", category: "风格-红利" }
+  - { symbol: "159732.SZ", name: "消费电子ETF",   category: "科技" }
+  - { symbol: "159992.SZ", name: "创新药ETF",     category: "医药" }
+  - { symbol: "512050.SH", name: "中证A500ETF",   category: "大盘" }
+  - { symbol: "513180.SH", name: "恒生科技ETF",   category: "港股" }
 
 style_etfs:
   - { symbol: "510880.SH", name: "红利ETF",       category: "风格-红利" }

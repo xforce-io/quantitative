@@ -151,10 +151,12 @@ class MultiFactorRanker:
         risk_on_allocation: dict,
         monthly_volumes: Optional[pd.DataFrame] = None,
         monthly_benchmark: Optional[pd.Series] = None,
+        factor_store=None,
     ) -> None:
         self._alloc = risk_on_allocation
         self._volumes = monthly_volumes
         self._benchmark = monthly_benchmark
+        self._factor_store = factor_store
         cfg = risk_on_allocation.get("multi_factor_config", {})
         self._factors: list[dict] = cfg.get("factors", [])
         self._cg: dict = cfg.get("conditional_gating", {})
@@ -256,6 +258,8 @@ class MultiFactorRanker:
             return self._low_crowding(factor, monthly_prices, loc)
         if name == "relative_strength":
             return self._relative_strength(factor, monthly_prices, loc)
+        if name == "shares_momentum":
+            return self._shares_momentum(factor, monthly_prices, loc)
         return {}
 
     def _momentum(self, factor: dict, prices: pd.DataFrame, loc: int) -> dict[str, float]:
@@ -327,6 +331,34 @@ class MultiFactorRanker:
                 continue
             scores[sym] = float(p1 / p0 - 1.0) - bench_ret
         return scores
+
+    def _shares_momentum(self, factor: dict, monthly_prices: pd.DataFrame, loc: int) -> dict[str, float]:
+        """Return ETF shares change over the configured lookback window.
+
+        An empty mapping is returned when coverage is below min_coverage_ratio
+        to avoid shrinking the cross-section during factor composition.
+        """
+        if self._factor_store is None:
+            return {}
+        lookback = int(factor.get("lookback_months", 3))
+        if loc < lookback:
+            return {}
+        current_date = monthly_prices.index[loc].strftime("%Y-%m-%d")
+        past_date = monthly_prices.index[loc - lookback].strftime("%Y-%m-%d")
+        symbols = list(monthly_prices.columns)
+        current_shares = self._factor_store.get_etf_shares(symbols, current_date)
+        past_shares = self._factor_store.get_etf_shares(symbols, past_date)
+        result: dict[str, float] = {}
+        for sym in symbols:
+            if sym in current_shares and sym in past_shares:
+                past = past_shares[sym]
+                if past > 0:
+                    result[sym] = float(current_shares[sym]) / past - 1.0
+        # Return empty dict when coverage is too sparse to avoid universe collapse via intersection
+        min_cov = float(factor.get("min_coverage_ratio", 0.6))
+        if len(symbols) > 0 and len(result) / len(symbols) < min_cov:
+            return {}
+        return result
 
     def _low_crowding(self, factor: dict, prices: pd.DataFrame, loc: int) -> dict[str, float]:
         if self._volumes is None:

@@ -29,11 +29,17 @@ DB_PATH = str(_ROOT / "data" / "factors.db")
 
 # All ETF candidates: existing 15 + 7 extended
 ALL_ETF_SYMBOLS = [
+    # Original 15 ETFs.
     "512010.SH", "512660.SH", "512800.SH", "510880.SH", "159869.SZ",
     "512980.SH", "515050.SH", "159995.SZ", "159776.SZ", "512480.SH",
     "159605.SZ", "516160.SH", "512880.SH", "510050.SH", "510300.SH",
+    # Seven ETFs added by run-022.
     "516220.SH", "561910.SH", "159201.SZ", "159732.SZ", "159992.SZ",
     "512050.SH", "513180.SH",
+    # Remaining ETFs from rotation_universe.yaml to complete the candidate pool.
+    "159611.SZ", "159825.SZ", "159870.SZ", "159928.SZ", "159930.SZ",
+    "512000.SH", "512170.SH", "512200.SH", "512400.SH", "512720.SH",
+    "515030.SH", "515210.SH", "515220.SH", "515790.SH",
 ]
 
 # Industry index proxies for valuation (from existing PROXY_MAP + new)
