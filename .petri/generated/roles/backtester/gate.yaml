@@ -1,6 +1,0 @@
-id: backtest-complete
-evidence:
-  path: "backtest/backtester/backtest_results.json"
-  check:
-    field: data_modes_run
-    gte: 1

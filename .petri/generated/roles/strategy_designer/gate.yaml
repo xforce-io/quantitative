@@ -1,6 +1,0 @@
-id: strategy-designed
-evidence:
-  path: "design/strategy_designer/strategy_spec.json"
-  check:
-    field: strategy.sleeves_count
-    gte: 2

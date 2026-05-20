@@ -47,27 +47,31 @@ venv.bak/
 # pytest
 .pytest_cache/
 .coverage
+.benchmarks/
 
 # Logs
 *.log
-log/
-logs/
+/log/
+/logs/
+*.pid
+.web.pid
 
 # Cache
-cache/
-.cache/
+/cache/
+/.cache/
 *.cache
+.quant_cache/
 
 # Data (generated / large datasets)
-data/
+/data/
 
 # Reports (generated content)
-reports/*/
-!reports/.gitkeep
+/reports/*/
+!/reports/.gitkeep
 
 # Temporary files
-tmp/
-temp/
+/tmp/
+/temp/
 *.tmp
 *.temp
 *_backup.*
@@ -109,23 +113,40 @@ models/
 *.joblib
 
 # Generated reports (keep structure)
-reports/*.json
-reports/*.csv
-reports/*.png
-reports/*.pdf
-reports/daily/
-reports/2*/
+/reports/*.json
+/reports/*.csv
+/reports/*.png
+/reports/*.pdf
+/reports/daily/
+/reports/2*/
 
 # Cache directories
-cache/tushare/
-cache/yahoo/
-cache/news_analysis/
+/cache/tushare/
+/cache/yahoo/
+/cache/news_analysis/
 
 # Backup files
 *.bak
 *.backup
 
 # Local configuration
-config/local/
+/config/local/
 local_config.yaml
 personal_settings.json
+
+# Local agent/tool state
+.petri/
+.petri-input/
+petri.yaml
+pipeline.yaml
+roles/
+.superpowers/
+.worktrees/
+
+# Local archives
+/baks/petri_legacy_*/
+
+# Local generated artifacts
+quant/analysis/cache/
+quant/log/
+tests/web/screenshots/

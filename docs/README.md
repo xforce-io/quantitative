@@ -37,6 +37,7 @@ docs/
     │   └── GETTING_STARTED.md          # 5-minute quick start guide
     ├── guides/
     │   ├── AGENT_MANAGER_V2_MIGRATION.md
+    │   ├── petri_experiments.md
     │   ├── TRADING_GUIDE.md
     │   └── USER_PORTFOLIO_GUIDE.md
     ├── configuration/
@@ -55,6 +56,7 @@ docs/
 ### For Developers / 开发者
 
 - [Agent Manager v2.0 Migration](usage/guides/AGENT_MANAGER_V2_MIGRATION.md) - Dolphin SDK v2.0 integration
+- [Petri Experiments](usage/guides/petri_experiments.md) - Run Petri outside the project worktree
 - [Trading Guide](usage/guides/TRADING_GUIDE.md) - Trading strategies and backtesting
 - [User Portfolio Guide](usage/guides/USER_PORTFOLIO_GUIDE.md) - Portfolio management
 
@@ -82,6 +84,7 @@ Learn how to configure the system:
 Step-by-step guides for common tasks:
 - [Trading Guide](usage/guides/TRADING_GUIDE.md) - Trading strategies
 - [Portfolio Guide](usage/guides/USER_PORTFOLIO_GUIDE.md) - Portfolio management
+- [Petri Experiments](usage/guides/petri_experiments.md) - Isolated experiment workspaces
 
 ### 4. Migration Guides / 迁移指南
 
