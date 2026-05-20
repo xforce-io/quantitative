@@ -145,6 +145,7 @@ roles/
 
 # Local archives
 /baks/petri_legacy_*/
+/baks/local_cleanup_*/
 
 # Local generated artifacts
 quant/analysis/cache/
