@@ -25,13 +25,15 @@ docs/
 ├── README.md                           # This file / 本文件
 ├── ARCHITECTURE.md                     # System architecture overview
 ├── DIRECTORY_STRUCTURE.md              # Project directory layout
+├── REORGANIZATION_SUMMARY.md           # Reorganization history
 ├── design/                             # Design documents (Chinese)
-│   ├── AI_ANALYST_RIGHT_PANEL_AGENT_DESIGN.md
-│   ├── AI_PANEL_FIX_VERIFICATION.md
-│   ├── AI_PANEL_OUTPUT_FIX.md
-│   ├── AI_PANEL_TECHNICAL_REVIEW.md
+│   ├── ARCHITECTURE_DECOUPLING_PLAN.md
+│   ├── FASTAPI_MIGRATION_PLAN.md
+│   ├── NEWS_EVENT_INVESTMENT_PROBABILITY_GRAPH_DESIGN.md
 │   ├── PORTFOLIO_VALUATION_FEATURE.md
+│   ├── STREAMING_OUTPUT_DIAGNOSIS.md
 │   └── WILLIAM_ONEIL_CANSLIM_ENHANCEMENT.md
+├── incidents/                          # Incident post-mortems
 └── usage/                              # Usage documentation (English)
     ├── quick_start/
     │   └── GETTING_STARTED.md          # 5-minute quick start guide
@@ -40,9 +42,8 @@ docs/
     │   ├── petri_experiments.md
     │   ├── TRADING_GUIDE.md
     │   └── USER_PORTFOLIO_GUIDE.md
-    ├── configuration/
-    │   └── CONFIGURATION.md            # Configuration reference
-    └── concepts/                       # Core concepts (to be added)
+    └── configuration/
+        └── CONFIGURATION.md            # Configuration reference
 ```
 
 ## 🚀 Quick Links / 快速链接
@@ -62,7 +63,8 @@ docs/
 
 ### For Project Contributors / 项目贡献者
 
-- [AI Analyst Design](design/AI_ANALYST_RIGHT_PANEL_AGENT_DESIGN.md) - AI analyst architecture
+- [Architecture Decoupling Plan](design/ARCHITECTURE_DECOUPLING_PLAN.md) - Architecture decoupling design
+- [FastAPI Migration Plan](design/FASTAPI_MIGRATION_PLAN.md) - Web backend migration design
 - [CANSLIM Enhancement](design/WILLIAM_ONEIL_CANSLIM_ENHANCEMENT.md) - CANSLIM strategy design
 - [Portfolio Valuation Feature](design/PORTFOLIO_VALUATION_FEATURE.md) - Valuation module design
 - [News Event Investment Probability Graph](design/NEWS_EVENT_INVESTMENT_PROBABILITY_GRAPH_DESIGN.md) - Event-driven investment inference design
@@ -94,9 +96,10 @@ Important updates and migrations:
 ### 5. Design Documents / 设计文档
 
 Technical design and architecture (Chinese):
-- [AI Analyst Design](design/AI_ANALYST_RIGHT_PANEL_AGENT_DESIGN.md)
-- [AI Panel Technical Review](design/AI_PANEL_TECHNICAL_REVIEW.md)
+- [Architecture Decoupling Plan](design/ARCHITECTURE_DECOUPLING_PLAN.md)
+- [FastAPI Migration Plan](design/FASTAPI_MIGRATION_PLAN.md)
 - [News Event Investment Probability Graph](design/NEWS_EVENT_INVESTMENT_PROBABILITY_GRAPH_DESIGN.md)
+- [Streaming Output Diagnosis](design/STREAMING_OUTPUT_DIAGNOSIS.md)
 
 ## 🛠️ Web Application / Web 应用
 
@@ -142,7 +145,7 @@ cd /Users/alice/my-project  # Hardcoded path
 - **Installation & Setup**: `usage/quick_start/GETTING_STARTED.md`
 - **Configuration**: `usage/configuration/CONFIGURATION.md`
 - **Trading Strategies**: `usage/guides/TRADING_GUIDE.md`
-- **Web Development**: `design/AI_ANALYST_RIGHT_PANEL_AGENT_DESIGN.md`
+- **Web Backend**: `design/FASTAPI_MIGRATION_PLAN.md`
 
 ### By Type / 按类型
 
@@ -171,5 +174,5 @@ See [AGENTS.md](../AGENTS.md) for detailed documentation standards.
 
 ---
 
-**Last Updated**: 2026-01-15
-**Documentation Version**: 2.3.0
+**Last Updated**: 2026-05-21
+**Documentation Version**: 2.4.0

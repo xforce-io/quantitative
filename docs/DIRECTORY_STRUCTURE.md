@@ -1,92 +1,102 @@
 # 项目目录结构说明
 
-本文档描述了量化交易项目的目录结构和各目录的用途。
+本文档描述量化交易项目的目录结构和各目录用途。架构详情见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
-## 顶级目录结构
+## 顶级结构
 
 ```
 quantitative_trading/
 ├── README.md              # 项目说明文档
-├── GEMINI.md              # Gemini AI助手配置
-├── CLAUDE.md              # Claude AI助手配置
-├── requirements.txt       # Python依赖包列表
-├── mypy.ini               # MyPy类型检查配置
-├── pytest.ini             # Pytest测试配置
+├── AGENTS.md              # 智能体协作规则（代码 / 文档规范）
+├── pyproject.toml         # 项目元数据与依赖
+├── requirements.txt       # pip 依赖清单
+├── uv.lock                # uv 依赖锁文件
+├── mypy.ini               # MyPy 类型检查配置
+├── pytest.ini             # Pytest 测试配置
+├── .env                   # 环境变量（API key，不进版本控制）
 │
-├── bin/                   # 脚本和工具目录
-│   ├── examples/          # 演示脚本
-│   └── *.py / *.sh        # CLI工具脚本
+├── quant/                 # 核心量化交易包（8 层架构）
+├── web/                   # Streamlit Web 平台
+├── bin/                   # 快捷脚本入口
+├── scripts/               # 运维与研究脚本
+├── tui/                   # 终端 UI
 │
-├── config/                # 配置文件目录
-│   ├── config.yaml        # 主配置文件
-│   ├── portfolios.yaml    # 投资组合配置
-│   └── ...                # 其他配置
+├── config/                # 配置文件
+├── docs/                  # 项目文档
+├── tests/                 # 测试（unit / integration / web）
 │
-├── quant/                 # 核心代码目录
-├── tests/                 # 单元测试目录
-├── docs/                  # 项目文档目录
-│
-├── data/                  # 数据存储目录
-├── cache/                 # API缓存目录
-├── logs/                  # 日志目录
-├── reports/               # 分析报告目录
-│
-└── venv/                  # Python虚拟环境
+├── data/                  # 市场数据存储（不进版本控制）
+├── cache/                 # API 缓存（不进版本控制）
+├── logs/ · log/           # 运行日志
+├── reports/               # 生成的分析报告
+├── experiments/           # 策略研究实验记录
+└── baks/                  # 阶段性 / 归档文档（逐步淘汰）
 ```
 
-## 各目录详细说明
+## 各目录说明
 
-### `/bin/` - 脚本和工具
-存放所有可执行脚本和工具：
-- **入口脚本**: `advisor.py`, `backtest.py`, `analyze_portfolio.py`
-- **分析工具**: `momentum_analyzer.py`, `screen_etfs.py`
-- **辅助工具**: `system_check.py`, `verify_etf_codes.py`, `calculate_returns.py`
-- **演示脚本**: `examples/` 子目录
+### `quant/` — 核心代码
 
-### `/config/` - 配置文件
-所有配置文件统一存放：
-- `config.yaml` - 系统主配置
-- `portfolios.yaml` - 投资组合配置
-- `screens.yaml` - 筛选器配置
-- `etf_categories.yaml` - ETF分类
-- `industry_taxonomy.yaml` - 行业分类
+按 8 层架构组织（详见 ARCHITECTURE.md）：
 
-### `/quant/` - 核心代码
-核心量化分析代码，按功能模块组织：
-- `agents/` - 智能代理
-- `analysis/` - 分析模块
-- `cli/` - 命令行接口
-- `config/` - 配置加载器
-- `core/` - 核心基础设施
-- `data_providers/` - 数据提供者
-- `engines/` - 执行引擎
-- `strategies/` - 交易策略
+- `__main__.py` — 统一 CLI 入口
+- `cli/` — 9 个 CLI 命令模块
+- `core/` — Layer 0 基础设施
+- `data/` — Layer 1 数据层（`data_providers/` 为旧版实现，保留兼容）
+- `analysis/` — Layer 2 分析层（估值、技术面、Alpha、轮动、事件推演等）
+- `portfolio/` — Layer 3 组合层
+- `risk/` — Layer 4 风控层
+- `strategies/` — Layer 5 策略层
+- `engines/` — Layer 6 执行引擎
+- `agents/` — Layer 7 智能体（可选）
+- `services/` — 服务层，封装跨层业务流程
+- `knowledge/` — 事件知识图谱
+- `environments/` · `skills/` — 交易环境与技能封装
 
-### `/docs/` - 项目文档
-所有项目文档：
-- 架构设计、使用指南、功能说明
-- 开发规范、任务计划
+### `web/` — Web 平台
 
-### `/tests/` - 单元测试
-项目测试代码。
+基于 Streamlit 的决策驾驶舱，`pages/` 下含 Dashboard / Watchlist / Scanner 三个页面，另含 `api/` FastAPI 服务。
 
-### `/data/` - 数据存储
-股价、ETF等市场数据。
+### `bin/` — 快捷脚本
 
-### `/cache/` - 缓存
-API响应缓存，避免重复调用。
+常用操作的入口脚本：`advisor.py`、`backtest.py`、`analyze_portfolio.py`、`screen_etfs.py`、`system_check.py` 等。
 
-### `/logs/` - 日志
-系统运行日志。
+### `scripts/` — 运维与研究脚本
 
-### `/reports/` - 报告
-生成的分析报告。
+`run_web.sh`（Web 平台管理）、`run_api.sh`（FastAPI 服务）、`refresh_factors.py`（因子刷新）、`long_rotation_discovery.py`、`live_advisor.py` 等。
 
-## 开发建议
+### `config/` — 配置文件
 
-- **新工具** → `bin/`
-- **演示脚本** → `bin/examples/`
-- **功能模块** → `quant/` 对应子目录
+`config.yaml`（主配置）、`portfolios.yaml`（组合）、`screens.yaml`（筛选篮子）、`ranking_profiles.yaml`（排名权重）、`rotation_universe.yaml`、`etf_categories.yaml`、`industry_taxonomy.yaml`、`regime_*`（市场状态）、`strategies/`（策略配置）、`candidates/`（候选标的）等。
+
+### `docs/` — 文档
+
+- `README.md` — 文档导航入口
+- `ARCHITECTURE.md` · `DIRECTORY_STRUCTURE.md` — 架构与目录
+- `usage/` — 使用文档（英文：quick_start / guides / configuration）
+- `design/` — 设计文档（中文）
+- `incidents/` — 故障复盘记录
+
+### `tests/` — 测试
+
+按类型分层：`unit/`（单元）、`integration/`（集成）、`web/`（端到端 Playwright）。统一入口 `tests/run_tests.sh`。
+
+### 数据与产物目录
+
+- `data/` · `cache/` — 市场数据与 API 缓存，不进版本控制
+- `logs/` · `log/` — 运行日志
+- `reports/` — 生成的分析报告（按类型 / 日期归档）
+- `experiments/` — 策略研究实验记录
+- `baks/` — 阶段性 / 归档文档，按 AGENTS.md 约定逐步淘汰
+
+## 开发约定
+
+- **新功能模块** → `quant/` 对应分层子目录
+- **快捷脚本** → `bin/`；**运维 / 研究脚本** → `scripts/`
 - **配置文件** → `config/`
-- **文档** → `docs/`
+- **稳定文档** → `docs/`；**阶段性文档** → `baks/`
 - 避免在根目录创建临时文件
+
+---
+
+**最后更新**: 2026-05-21
