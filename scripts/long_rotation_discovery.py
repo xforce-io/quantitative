@@ -40,7 +40,7 @@ from quant.analysis.rotation import (
     RotationBacktester,
     load_universe,
 )
-from quant.analysis.rotation.frequency import BacktestFrequency, months_to_bars
+from quant.analysis.rotation.frequency import BacktestFrequency, months_to_bars, resample_rule
 from quant.analysis.rotation.regime_overlay import PrecomputedRegimeOverlay
 from quant.data.factor_store import FactorStore
 from quant.services.data_service import DataService, PriceRequest
@@ -866,10 +866,13 @@ def _fetch_global_proxy_df(
 # Data fetching
 # ---------------------------------------------------------------------------
 
-def fetch_proxy_monthly_prices(
-    data_service: DataService, full_start: str, full_end: str
+def fetch_proxy_prices(
+    data_service: DataService,
+    full_start: str,
+    full_end: str,
+    frequency: BacktestFrequency = "monthly",
 ) -> tuple[pd.DataFrame, list[dict]]:
-    """Fetch index proxy prices for all ETFs; returns (monthly_df, proxy_mapping)."""
+    """Fetch index proxy prices for all ETFs; returns (resampled_df, proxy_mapping)."""
     universe = load_universe(str(UNIVERSE_YAML))
     frames: dict[str, pd.Series] = {}
     proxy_mapping: list[dict] = []
@@ -899,13 +902,13 @@ def fetch_proxy_monthly_prices(
                 continue
             close = df["close"].astype(float)
             close.name = etf_sym
-            monthly = close.resample("ME").last().dropna()
-            if monthly.empty:
+            resampled = close.resample(resample_rule(frequency)).last().dropna()
+            if resampled.empty:
                 continue
-            frames[etf_sym] = monthly
-            start_date = monthly.index[0].strftime("%Y-%m-%d")
-            end_date = monthly.index[-1].strftime("%Y-%m-%d")
-            cov = round((monthly.index[-1] - monthly.index[0]).days / 365.25, 2)
+            frames[etf_sym] = resampled
+            start_date = resampled.index[0].strftime("%Y-%m-%d")
+            end_date = resampled.index[-1].strftime("%Y-%m-%d")
+            cov = round((resampled.index[-1] - resampled.index[0]).days / 365.25, 2)
             proxy_mapping.append({
                 "etf_symbol": etf_sym,
                 "proxy_symbol": proxy_sym,
@@ -926,10 +929,21 @@ def fetch_proxy_monthly_prices(
     return df_all, proxy_mapping
 
 
-def fetch_etf_monthly_prices(
-    data_service: DataService, full_start: str, full_end: str, subset: bool = False
+def fetch_proxy_monthly_prices(
+    data_service: DataService, full_start: str, full_end: str
+) -> tuple[pd.DataFrame, list[dict]]:
+    """Deprecated: use fetch_proxy_prices(..., frequency='monthly')."""
+    return fetch_proxy_prices(data_service, full_start, full_end, frequency="monthly")
+
+
+def fetch_etf_prices(
+    data_service: DataService,
+    full_start: str,
+    full_end: str,
+    subset: bool = False,
+    frequency: BacktestFrequency = "monthly",
 ) -> tuple[pd.DataFrame, int]:
-    """Fetch actual ETF monthly prices; optionally filter to historical subset."""
+    """Fetch actual ETF prices resampled to frequency; optionally filter to historical subset."""
     universe = load_universe(str(UNIVERSE_YAML))
     frames: dict[str, pd.Series] = {}
 
@@ -945,6 +959,7 @@ def fetch_etf_monthly_prices(
                 continue
             close = df["close"].astype(float)
             close.name = entry.symbol
+            # Anomaly filter MUST remain at the DAILY level — do not move below resample.
             daily_ret = close.pct_change()
             max_jump = daily_ret.abs().max()
             if pd.notna(max_jump) and max_jump > MAX_SINGLE_DAY_ABS_RET:
@@ -954,15 +969,15 @@ def fetch_etf_monthly_prices(
                     f"{bad_dt.date()} — unadjusted split/merger suspected"
                 )
                 continue
-            monthly = close.resample("ME").last().dropna()
-            if monthly.empty:
+            resampled = close.resample(resample_rule(frequency)).last().dropna()
+            if resampled.empty:
                 continue
-            if subset and monthly.index[0] > SUBSET_CUTOFF_TS:
-                print(f"  [SKIP subset] {entry.symbol}: first={monthly.index[0].date()} > cutoff")
+            if subset and resampled.index[0] > SUBSET_CUTOFF_TS:
+                print(f"  [SKIP subset] {entry.symbol}: first={resampled.index[0].date()} > cutoff")
                 continue
-            frames[entry.symbol] = monthly
+            frames[entry.symbol] = resampled
             tag = "subset" if subset else "full"
-            print(f"  [OK {tag}] {entry.symbol}: {monthly.index[0].date()} ~ {monthly.index[-1].date()}")
+            print(f"  [OK {tag}] {entry.symbol}: {resampled.index[0].date()} ~ {resampled.index[-1].date()}")
         except Exception as exc:
             print(f"  [ERROR] {entry.symbol}: {exc}")
 
@@ -973,13 +988,21 @@ def fetch_etf_monthly_prices(
     return df_all, len(frames)
 
 
-def fetch_monthly_volumes(
+def fetch_etf_monthly_prices(
+    data_service: DataService, full_start: str, full_end: str, subset: bool = False
+) -> tuple[pd.DataFrame, int]:
+    """Deprecated: use fetch_etf_prices(..., frequency='monthly')."""
+    return fetch_etf_prices(data_service, full_start, full_end, subset=subset, frequency="monthly")
+
+
+def fetch_volumes(
     data_service: DataService,
     mode: str,
     full_start: str,
     full_end: str,
+    frequency: BacktestFrequency = "monthly",
 ) -> "pd.DataFrame | None":
-    """Fetch monthly aggregated trading volumes. Returns None if data too sparse."""
+    """Fetch aggregated trading volumes resampled to frequency. Returns None if data too sparse."""
     universe = load_universe(str(UNIVERSE_YAML))
     frames: dict[str, pd.Series] = {}
 
@@ -1000,10 +1023,10 @@ def fetch_monthly_volumes(
                     continue
                 vol = df["volume"].astype(float)
                 vol.name = etf_sym
-                monthly = vol.resample("ME").sum().dropna()
-                if monthly.empty:
+                resampled = vol.resample(resample_rule(frequency)).sum().dropna()
+                if resampled.empty:
                     continue
-                frames[etf_sym] = monthly
+                frames[etf_sym] = resampled
             except Exception as exc:
                 print(f"  [WARN vol] {etf_sym}: {exc}")
     else:
@@ -1020,12 +1043,12 @@ def fetch_monthly_volumes(
                     continue
                 vol = df["volume"].astype(float)
                 vol.name = entry.symbol
-                monthly = vol.resample("ME").sum().dropna()
-                if monthly.empty:
+                resampled = vol.resample(resample_rule(frequency)).sum().dropna()
+                if resampled.empty:
                     continue
-                if subset and monthly.index[0] > SUBSET_CUTOFF_TS:
+                if subset and resampled.index[0] > SUBSET_CUTOFF_TS:
                     continue
-                frames[entry.symbol] = monthly
+                frames[entry.symbol] = resampled
             except Exception as exc:
                 print(f"  [WARN vol] {entry.symbol}: {exc}")
 
@@ -1039,8 +1062,18 @@ def fetch_monthly_volumes(
         print(f"  [WARN] Volume data too sparse ({nan_ratio:.1%} NaN), low_crowding factor will be skipped")
         return None
 
-    print(f"  [OK vol] {len(df_all.columns)} symbols, {len(df_all)} months, NaN={nan_ratio:.1%}")
+    print(f"  [OK vol] {len(df_all.columns)} symbols, {len(df_all)} bars, NaN={nan_ratio:.1%}")
     return df_all
+
+
+def fetch_monthly_volumes(
+    data_service: DataService,
+    mode: str,
+    full_start: str,
+    full_end: str,
+) -> "pd.DataFrame | None":
+    """Deprecated: use fetch_volumes(..., frequency='monthly')."""
+    return fetch_volumes(data_service, mode, full_start, full_end, frequency="monthly")
 
 
 def build_overlay(data_service: DataService, full_start: str, full_end: str) -> object:
