@@ -28,7 +28,17 @@
       "note": "First exploratory preview at non-monthly frequencies; not walk-forward gated. Directional signal: weekly and biweekly do not improve over monthly on real_etf_full. Formal petri walk-forward gating of three candidates pending under branch rebalance-frequency-search.",
       "asymmetry_note": "Biweekly real_etf_full (3.17%) underperforms monthly by 20pp while weekly (22.70%) is within 1pp of monthly. The asymmetry is empirical (engine reproduces monthly bit-for-bit via golden test, so this is not a refactor regression). Hypothesis: 2W-FRI resample bars do not align with month-end fold boundaries the way monthly does, and biweekly may straddle factor-signal cycles unfavorably. Awaits formal walk-forward analysis under rebalance-frequency-search branch for root cause."
     },
-    "new_petri_branches": ["rebalance-frequency-search"]
+    "new_petri_branches": ["rebalance-frequency-search"],
+    "rebalance_frequency_search_result": {
+      "closed_at": "2026-05-24",
+      "status": "axis_exhausted_all_REJECT",
+      "candidates": [
+        {"id": "frequency-weekly",                "real_etf_full_annual_return": 0.2270, "delta_pp": -0.94,  "mdd": -0.1903, "decision": "REJECT", "reason": "return below SOTA + MDD breach"},
+        {"id": "frequency-biweekly",              "real_etf_full_annual_return": 0.0317, "delta_pp": -20.47, "mdd": -0.1577, "decision": "REJECT", "reason": "return far below SOTA + MDD breach"},
+        {"id": "frequency-weekly-skip-tightened", "real_etf_full_annual_return": 0.2530, "delta_pp": 1.66,   "mdd": -0.2016, "decision": "REJECT", "reason": "return improves +1.66pp but MDD -20.16% breaches floor -12.52%"}
+      ],
+      "headline_finding": "weekly+skip=0 IS a Pareto-improvement on return (+1.66pp) but at near-2x the drawdown. The MDD guardrail correctly rejects this risk/return tradeoff. The rebalance-frequency axis is exhausted; genuine improvement now requires structural change (new factors / new architecture)."
+    }
   },
   "_determinism_fix": {
     "fixed_at": "2026-05-18",
