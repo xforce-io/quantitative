@@ -167,12 +167,14 @@ def main() -> int:
         as_of = as_of_requested
 
     # Build ranker stack matching backtest logic
+    spec_freq = spec.get("risk_on_allocation", {}).get("rebalance_frequency", "monthly")
     sleeve_ranker = MultiSleeveRanker(
         monthly_benchmark,
         spec.get("risk_on_rule", {}),
         spec.get("risk_on_allocation", {}),
         spec.get("risk_off_allocation", {}),
-        monthly_volumes=monthly_volumes,
+        volumes=monthly_volumes,
+        frequency=spec_freq,
     )
 
     portfolio_cb_cfg = (spec.get("risk_off_allocation", {})
