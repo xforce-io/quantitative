@@ -61,7 +61,7 @@ petri 无论调度多少次，结果不会变化。**这是引擎能力问题，
 派生关系（避免硬编码到多个地方）：
 - `bars_per_year(freq)` → 12 / 26 / 52
 - `trading_days_per_bar(freq)` → 21 / 10 / 5（仅供因子日历窗口换算用，不参与 bar 切分）
-- `resample_rule(freq)` → pandas 重采样规则，分别为 `"M"` / `"2W-FRI"` / `"W-FRI"`
+- `resample_rule(freq)` → pandas 重采样规则，分别为 `"ME"` / `"2W-FRI"` / `"W-FRI"`（注：`"ME"` 是 pandas ≥ 2.2 的月末别名，等价于旧版的 `"M"`）
 
 ### 2. 因子日历窗口换算
 

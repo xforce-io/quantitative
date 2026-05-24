@@ -25,7 +25,8 @@
         "real_etf_full_annual_return": 0.2270,
         "real_etf_subset_annual_return": 0.1375
       },
-      "note": "First exploratory preview at non-monthly frequencies; not walk-forward gated. Directional signal: weekly and biweekly do not improve over monthly on real_etf_full. Formal petri walk-forward gating of three candidates pending under branch rebalance-frequency-search."
+      "note": "First exploratory preview at non-monthly frequencies; not walk-forward gated. Directional signal: weekly and biweekly do not improve over monthly on real_etf_full. Formal petri walk-forward gating of three candidates pending under branch rebalance-frequency-search.",
+      "asymmetry_note": "Biweekly real_etf_full (3.17%) underperforms monthly by 20pp while weekly (22.70%) is within 1pp of monthly. The asymmetry is empirical (engine reproduces monthly bit-for-bit via golden test, so this is not a refactor regression). Hypothesis: 2W-FRI resample bars do not align with month-end fold boundaries the way monthly does, and biweekly may straddle factor-signal cycles unfavorably. Awaits formal walk-forward analysis under rebalance-frequency-search branch for root cause."
     },
     "new_petri_branches": ["rebalance-frequency-search"]
   },

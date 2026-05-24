@@ -158,6 +158,10 @@ class MultiFactorRanker:
     ``monthly_benchmark`` enables conditional_gating: when CSI300 3m return
     exceeds the configured threshold, factor weights are temporarily overridden
     by gated_weights (e.g. momentum boosted to 0.9 in strong-trend periods).
+
+    The ``monthly_*`` parameter names are historical; both inputs are
+    frequency-agnostic and must be supplied at the engine's current frequency
+    (monthly bars at frequency='monthly', weekly bars at frequency='weekly', etc.).
     """
 
     def __init__(
