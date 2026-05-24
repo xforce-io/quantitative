@@ -8,6 +8,8 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
+from quant.analysis.rotation.frequency import BacktestFrequency, bars_per_year, months_to_bars
+
 _vol_logger = _logging.getLogger(__name__)
 
 
@@ -27,42 +29,54 @@ class RankerConfig:
 class MomentumRanker:
     """Rank universe by ``price[t-skip] / price[t-skip-lookback] - 1`` momentum."""
 
-    def __init__(self, config: RankerConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: RankerConfig | None = None,
+        frequency: BacktestFrequency = "monthly",
+    ) -> None:
         self.config = config or RankerConfig()
+        self.frequency = frequency
         if self.config.lookback_months <= 0:
             raise ValueError("lookback_months must be positive")
         if self.config.skip_recent_months < 0:
             raise ValueError("skip_recent_months must be non-negative")
         if self.config.top_k <= 0:
             raise ValueError("top_k must be positive")
+        self._lookback_bars = months_to_bars(self.config.lookback_months, frequency)
+        self._skip_bars = months_to_bars(self.config.skip_recent_months, frequency)
+        self._vol_lookback_bars = (
+            months_to_bars(self.config.vol_lookback_months, frequency)
+            if self.config.vol_lookback_months > 0 else 0
+        )
+        self._bars_per_year = bars_per_year(frequency)
 
     def rank(
         self,
-        monthly_prices: pd.DataFrame,
+        prices: pd.DataFrame,
         rebalance_date: pd.Timestamp,
     ) -> dict[str, float]:
         """Return ``{symbol: weight}`` for the rebalance date.
 
         Returns an empty dict when the cash filter triggers or no symbol has
-        enough history.  ``rebalance_date`` must exist in ``monthly_prices.index``.
+        enough history.  ``rebalance_date`` must exist in ``prices.index``.
         """
-        if rebalance_date not in monthly_prices.index:
+        if rebalance_date not in prices.index:
             raise KeyError(f"rebalance_date {rebalance_date} not in price index")
 
-        loc = monthly_prices.index.get_loc(rebalance_date)
-        skip = self.config.skip_recent_months
-        lookback = self.config.lookback_months
+        loc = prices.index.get_loc(rebalance_date)
+        skip = self._skip_bars
+        lookback = self._lookback_bars
 
         end_idx = loc - skip
         start_idx = end_idx - lookback
         if start_idx < 0 or end_idx < 0:
             return {}
 
-        end_row = monthly_prices.iloc[end_idx]
-        start_row = monthly_prices.iloc[start_idx]
+        end_row = prices.iloc[end_idx]
+        start_row = prices.iloc[start_idx]
 
         score: dict[str, float] = {}
-        for symbol in monthly_prices.columns:
+        for symbol in prices.columns:
             p_start = start_row[symbol]
             p_end = end_row[symbol]
             if pd.isna(p_start) or pd.isna(p_end) or p_start <= 0:
@@ -70,22 +84,22 @@ class MomentumRanker:
             mom = float(p_end / p_start - 1.0)
             if self.config.vol_penalty != 0.0:
                 if self.config.vol_formula == "linear_subtract":
-                    vol_lb = self.config.vol_lookback_months if self.config.vol_lookback_months > 0 else lookback
+                    vol_lb = self._vol_lookback_bars or lookback
                     vol_start_idx = max(0, end_idx - vol_lb)
-                    price_slice = monthly_prices[symbol].iloc[vol_start_idx: end_idx + 1].dropna()
+                    price_slice = prices[symbol].iloc[vol_start_idx: end_idx + 1].dropna()
                     if len(price_slice) >= 2:
-                        monthly_rets = price_slice.pct_change().dropna()
-                        vol_monthly = float(monthly_rets.std(ddof=1))
-                        vol_adj = vol_monthly * float(np.sqrt(12))
+                        period_rets = price_slice.pct_change().dropna()
+                        vol_period = float(period_rets.std(ddof=1))
+                        vol_adj = vol_period * float(np.sqrt(self._bars_per_year))
                     else:
                         vol_adj = 0.0
                     score[symbol] = mom - self.config.vol_penalty * vol_adj
                 else:
                     # Original exponent formula: score = mom / vol^vol_penalty
-                    price_slice = monthly_prices[symbol].iloc[start_idx: end_idx + 1].dropna()
+                    price_slice = prices[symbol].iloc[start_idx: end_idx + 1].dropna()
                     if len(price_slice) >= 2:
-                        monthly_rets = price_slice.pct_change().dropna()
-                        vol = float(monthly_rets.std(ddof=1))
+                        period_rets = price_slice.pct_change().dropna()
+                        vol = float(period_rets.std(ddof=1))
                     else:
                         vol = 0.0
                     adj_vol = max(vol, 1e-6) ** self.config.vol_penalty
