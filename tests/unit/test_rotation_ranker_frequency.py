@@ -50,3 +50,31 @@ def test_monthly_default_unchanged() -> None:
     ranker = MomentumRanker(RankerConfig(top_k=1, cash_threshold=-1.0))  # no frequency arg
     weights = ranker.rank(prices, prices.index[-1])
     assert set(weights) == {"A"}
+
+
+def test_multifactor_weekly_lookback() -> None:
+    """MultiFactorRanker honors frequency for per-factor lookback_months."""
+    from quant.analysis.rotation.ranker import MultiFactorRanker
+
+    weeks = pd.date_range("2023-01-06", periods=60, freq="W-FRI")
+    prices = pd.DataFrame(
+        {
+            "A": 100.0 * 1.01 ** np.arange(60),
+            "B": 100.0 * 1.005 ** np.arange(60),
+            "C": 100.0 * 0.995 ** np.arange(60),
+        },
+        index=weeks,
+    )
+    risk_on_alloc = {
+        "top_k": 1,
+        "multi_factor_config": {
+            "rank_normalization": "cross_sectional_percentile",
+            "composite_score": "weighted_average_of_ranks",
+            "factors": [
+                {"name": "momentum", "weight": 1.0, "lookback_months": 6, "skip_months": 1},
+            ],
+        },
+    }
+    ranker = MultiFactorRanker(risk_on_alloc, frequency="weekly")
+    weights = ranker.rank(prices, prices.index[-1])
+    assert set(weights) == {"A"}
