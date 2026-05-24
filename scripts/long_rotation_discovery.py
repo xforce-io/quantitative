@@ -40,6 +40,7 @@ from quant.analysis.rotation import (
     RotationBacktester,
     load_universe,
 )
+from quant.analysis.rotation.frequency import BacktestFrequency, months_to_bars
 from quant.analysis.rotation.regime_overlay import PrecomputedRegimeOverlay
 from quant.data.factor_store import FactorStore
 from quant.services.data_service import DataService, PriceRequest
@@ -177,21 +178,26 @@ class MinHoldRanker:
     Cash (empty portfolio) can always be exited immediately.
     """
 
-    def __init__(self, inner: MomentumRanker, min_hold_months: int = 1) -> None:
+    def __init__(
+        self,
+        inner: MomentumRanker,
+        min_hold_months: int = 1,
+        frequency: BacktestFrequency = "monthly",
+    ) -> None:
         self.inner = inner
-        self.min_hold = max(1, min_hold_months)
+        self.min_hold = max(1, months_to_bars(min_hold_months, frequency))
         self._current: dict[str, float] = {}
         self._last_change_loc: int | None = None
 
-    def rank(self, monthly_prices: pd.DataFrame, rebalance_date: pd.Timestamp) -> dict[str, float]:
-        loc = monthly_prices.index.get_loc(rebalance_date)
+    def rank(self, prices: pd.DataFrame, rebalance_date: pd.Timestamp) -> dict[str, float]:
+        loc = prices.index.get_loc(rebalance_date)
 
         # Enforce hold constraint only when currently invested
         if (self._current and self._last_change_loc is not None
                 and (loc - self._last_change_loc) < self.min_hold):
             return self._current
 
-        new = self.inner.rank(monthly_prices, rebalance_date)
+        new = self.inner.rank(prices, rebalance_date)
         if new != self._current:
             self._current = new
             self._last_change_loc = loc
@@ -208,36 +214,48 @@ class RegimeConditionedRanker:
     def __init__(
         self,
         inner,
-        monthly_benchmark: pd.Series,
+        benchmark: pd.Series,
         regime_filter: dict,
         defensive_mode: str = "cash",
         defensive_asset: str | None = None,
+        frequency: BacktestFrequency = "monthly",
     ) -> None:
         self.inner = inner
-        self.monthly_benchmark = monthly_benchmark.sort_index()
+        self.benchmark = benchmark.sort_index()
         self.regime_filter = {**DEFAULT_REGIME_FILTER, **(regime_filter or {})}
         self.defensive_mode = defensive_mode
         self.defensive_asset = defensive_asset
+        self.frequency = frequency
+        self._benchmark_lookback_bars = months_to_bars(
+            int(self.regime_filter["benchmark_lookback_months"]), frequency
+        )
+        self._industry_momentum_lookback_bars = months_to_bars(
+            int(self.regime_filter.get(
+                "industry_momentum_lookback_months",
+                self.regime_filter["benchmark_lookback_months"],
+            )),
+            frequency,
+        )
         self.stats = {"risk_on_periods": 0, "risk_off_periods": 0}
 
-    def rank(self, monthly_prices: pd.DataFrame, rebalance_date: pd.Timestamp) -> dict[str, float]:
+    def rank(self, prices: pd.DataFrame, rebalance_date: pd.Timestamp) -> dict[str, float]:
         if not self.regime_filter.get("enabled", False):
-            return self.inner.rank(monthly_prices, rebalance_date)
+            return self.inner.rank(prices, rebalance_date)
 
-        if self._is_risk_on(monthly_prices, rebalance_date):
+        if self._is_risk_on(prices, rebalance_date):
             self.stats["risk_on_periods"] += 1
-            return self.inner.rank(monthly_prices, rebalance_date)
+            return self.inner.rank(prices, rebalance_date)
 
         self.stats["risk_off_periods"] += 1
         if (self.defensive_mode == "broad_index"
                 and self.defensive_asset
-                and self.defensive_asset in monthly_prices.columns):
+                and self.defensive_asset in prices.columns):
             return {self.defensive_asset: 1.0}
         return {}  # cash
 
-    def _is_risk_on(self, monthly_prices: pd.DataFrame, rebalance_date: pd.Timestamp) -> bool:
-        loc = monthly_prices.index.get_loc(rebalance_date)
-        benchmark_lookback = int(self.regime_filter["benchmark_lookback_months"])
+    def _is_risk_on(self, prices: pd.DataFrame, rebalance_date: pd.Timestamp) -> bool:
+        loc = prices.index.get_loc(rebalance_date)
+        benchmark_lookback = self._benchmark_lookback_bars
 
         bench_ok = self._benchmark_return_ok(rebalance_date, benchmark_lookback)
         if not bench_ok:
@@ -248,15 +266,15 @@ class RegimeConditionedRanker:
         if threshold is None:
             return True
 
-        momentum_lookback = int(self.regime_filter.get("industry_momentum_lookback_months", benchmark_lookback))
-        return self._positive_ratio_ok(monthly_prices, loc, momentum_lookback, float(threshold))
+        momentum_lookback = self._industry_momentum_lookback_bars
+        return self._positive_ratio_ok(prices, loc, momentum_lookback, float(threshold))
 
-    def _benchmark_return_ok(self, rebalance_date: pd.Timestamp, lookback_months: int) -> bool:
-        bench = self.monthly_benchmark.reindex(self.monthly_benchmark.index.union([rebalance_date])).sort_index().ffill()
+    def _benchmark_return_ok(self, rebalance_date: pd.Timestamp, lookback_bars: int) -> bool:
+        bench = self.benchmark.reindex(self.benchmark.index.union([rebalance_date])).sort_index().ffill()
         if rebalance_date not in bench.index:
             return False
         loc = bench.index.get_loc(rebalance_date)
-        start_idx = loc - lookback_months
+        start_idx = loc - lookback_bars
         if start_idx < 0:
             return False
         p0 = bench.iloc[start_idx]
@@ -266,15 +284,15 @@ class RegimeConditionedRanker:
         ret = float(p1 / p0 - 1.0)
         return ret > float(self.regime_filter["benchmark_min_return"])
 
-    def _positive_ratio_ok(self, monthly_prices: pd.DataFrame, loc: int, lookback_months: int, threshold: float) -> bool:
-        start_idx = loc - lookback_months
+    def _positive_ratio_ok(self, prices: pd.DataFrame, loc: int, lookback_bars: int, threshold: float) -> bool:
+        start_idx = loc - lookback_bars
         if start_idx < 0:
             return False
-        start_row = monthly_prices.iloc[start_idx]
-        end_row = monthly_prices.iloc[loc]
+        start_row = prices.iloc[start_idx]
+        end_row = prices.iloc[loc]
         valid = 0
         positive = 0
-        for symbol in monthly_prices.columns:
+        for symbol in prices.columns:
             p0 = start_row[symbol]
             p1 = end_row[symbol]
             if pd.isna(p0) or pd.isna(p1) or p0 <= 0:
