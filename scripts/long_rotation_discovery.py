@@ -849,11 +849,15 @@ def _fetch_global_proxy_df(
             if legacy and hasattr(legacy, "getGlobalIndexData"):
                 df = legacy.getGlobalIndexData(proxy_sym, full_start, full_end)
                 if df is not None and not df.empty and "close" in df.columns:
-                    monthly_rows = len(df.resample("ME").last().dropna())
-                    if monthly_rows >= 12 * 5:
+                    df_dropped = df.dropna(subset=["close"])
+                    has_five_years = (
+                        len(df_dropped) >= 2
+                        and (df_dropped.index[-1] - df_dropped.index[0]) >= pd.Timedelta(days=365 * 5 - 30)
+                    )
+                    if has_five_years:
                         print(f"  [Tushare global] {proxy_sym}: {len(df)} daily rows")
                         return df
-                    print(f"  [WARN] Tushare global {proxy_sym}: only {monthly_rows}m rows, trying Yahoo")
+                    print(f"  [WARN] Tushare global {proxy_sym}: insufficient history, trying Yahoo")
         except Exception as exc:
             print(f"  [WARN] Tushare global index failed for {proxy_sym}: {exc}")
         yahoo_sym = _GLOBAL_TO_YAHOO_MAP.get(proxy_sym, proxy_sym)
@@ -1096,10 +1100,13 @@ def build_overlay(data_service: DataService, full_start: str, full_end: str) -> 
         return PassThrough()
 
 
-def fetch_monthly_benchmark(
-    data_service: DataService, full_start: str, full_end: str
+def fetch_benchmark(
+    data_service: DataService,
+    full_start: str,
+    full_end: str,
+    frequency: BacktestFrequency = "monthly",
 ) -> pd.Series:
-    """Return monthly close prices for CSI 300 as benchmark series."""
+    """Return CSI 300 close series resampled to the engine frequency."""
     try:
         df = data_service.get_price(PriceRequest(
             symbol="000300.SH",
@@ -1108,10 +1115,17 @@ def fetch_monthly_benchmark(
             asset_type="index",
         ))
         close = df["close"].astype(float)
-        return close.resample("ME").last().dropna()
+        return close.resample(resample_rule(frequency)).last().dropna()
     except Exception as exc:
         print(f"  [WARN] benchmark fetch failed: {exc}")
         return pd.Series(dtype=float)
+
+
+def fetch_monthly_benchmark(
+    data_service: DataService, full_start: str, full_end: str
+) -> pd.Series:
+    """Deprecated: use fetch_benchmark(..., frequency='monthly')."""
+    return fetch_benchmark(data_service, full_start, full_end, frequency="monthly")
 
 
 def make_ranker_cfg(params: dict) -> RankerConfig:
