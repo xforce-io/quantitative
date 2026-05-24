@@ -153,3 +153,27 @@ def test_turnover_l1_formula() -> None:
     result = bt.run(prices, benchmark, _AlternatingRanker(), _AlwaysFullOverlay(), PortfolioCombiner())
     assert pytest.approx(result.monthly_returns["turnover"].iloc[0], abs=1e-9) == 0.5
     assert pytest.approx(result.monthly_returns["turnover"].iloc[1], abs=1e-9) == 1.0
+
+
+def test_backtester_weekly_annualization() -> None:
+    """Annual return formula uses bars_per_year(freq), not hardcoded 12."""
+    import numpy as np
+    import pandas as pd
+    from quant.analysis.rotation.backtest import RotationBacktester, RotationBacktestConfig
+
+    weeks = pd.date_range("2024-01-05", periods=52, freq="W-FRI")
+    universe = pd.DataFrame({"A": 100.0 * 1.01 ** np.arange(52)}, index=weeks)
+    benchmark = pd.Series(100.0 * 1.005 ** np.arange(52), index=weeks)
+
+    class _Ranker:
+        def rank(self, prices, date): return {"A": 1.0}
+    class _Overlay:
+        def multiplier_at(self, date): return 1.0
+    class _Combiner:
+        def combine(self, weights, mult): return {k: v * mult for k, v in weights.items()}
+
+    cfg = RotationBacktestConfig(frequency="weekly", transaction_cost=0.0)
+    bt = RotationBacktester(cfg)
+    result = bt.run(universe, benchmark, _Ranker(), _Overlay(), _Combiner())
+    # 1% weekly compounded 52 weeks ≈ (1.01)^52 - 1 ≈ 0.6777
+    assert 0.65 < result.metrics["annual_return_strategy"] < 0.71

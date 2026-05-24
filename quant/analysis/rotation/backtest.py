@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-PERIODS_PER_YEAR = 12
+from quant.analysis.rotation.frequency import BacktestFrequency, bars_per_year
 
 
 @dataclass(frozen=True)
@@ -16,6 +16,7 @@ class RotationBacktestConfig:
 
     transaction_cost: float = 0.002
     risk_free: float = 0.03
+    frequency: BacktestFrequency = "monthly"
 
 
 @dataclass(frozen=True)
@@ -24,8 +25,12 @@ class RotationBacktestResult:
 
     metrics: dict
     equity_curve: pd.DataFrame
-    monthly_returns: pd.DataFrame
+    period_returns: pd.DataFrame
     holdings: pd.DataFrame
+
+    @property
+    def monthly_returns(self) -> pd.DataFrame:
+        return self.period_returns
 
 
 class RotationBacktester:
@@ -35,6 +40,7 @@ class RotationBacktester:
         self.config = config or RotationBacktestConfig()
         if self.config.transaction_cost < 0:
             raise ValueError("transaction_cost must be non-negative")
+        self._bars_per_year = bars_per_year(self.config.frequency)
 
     def run(
         self,
@@ -57,7 +63,7 @@ class RotationBacktester:
         turnovers: list[float] = []
         strategy_returns: list[float] = []
 
-        monthly_universe_ret = universe_prices.pct_change().fillna(0.0)
+        period_universe_ret = universe_prices.pct_change().fillna(0.0)
 
         for date in rebalance_dates:
             weights = ranker.rank(universe_prices, date)
@@ -72,8 +78,8 @@ class RotationBacktester:
             turnover = 0.5 * float((new_positions - prev_positions).abs().sum())
             turnovers.append(turnover)
 
-            this_month_ret = monthly_universe_ret.loc[date]
-            gross = float((prev_positions * this_month_ret).sum())
+            this_bar_ret = period_universe_ret.loc[date]
+            gross = float((prev_positions * this_bar_ret).sum())
             net = gross - turnover * self.config.transaction_cost
             strategy_returns.append(net)
 
@@ -81,7 +87,7 @@ class RotationBacktester:
             prev_positions = new_positions
 
         benchmark_ret = benchmark_prices.pct_change().reindex(rebalance_dates).fillna(0.0)
-        equal_weight_ret = monthly_universe_ret.mean(axis=1)
+        equal_weight_ret = period_universe_ret.mean(axis=1)
 
         strategy_series = pd.Series(strategy_returns, index=rebalance_dates, name="strategy")
         equity_curve = pd.DataFrame(
@@ -92,7 +98,7 @@ class RotationBacktester:
             },
             index=rebalance_dates,
         )
-        monthly_returns = pd.DataFrame(
+        period_returns = pd.DataFrame(
             {
                 "strategy": strategy_series,
                 "benchmark": benchmark_ret,
@@ -104,7 +110,7 @@ class RotationBacktester:
         holdings = pd.DataFrame(positions_history, index=rebalance_dates).fillna(0.0)
 
         metrics = self._metrics(strategy_series, benchmark_ret, equal_weight_ret, equity_curve)
-        return RotationBacktestResult(metrics, equity_curve, monthly_returns, holdings)
+        return RotationBacktestResult(metrics, equity_curve, period_returns=period_returns, holdings=holdings)
 
     def _metrics(
         self,
@@ -134,19 +140,17 @@ class RotationBacktester:
             return 0.0
         return round(float(equity.iloc[-1] / equity.iloc[0] - 1.0), 4)
 
-    @staticmethod
-    def _annual_return(returns: pd.Series) -> float:
+    def _annual_return(self, returns: pd.Series) -> float:
         n = len(returns)
         if n == 0:
             return 0.0
         total = float((1.0 + returns).prod())
-        return round(total ** (PERIODS_PER_YEAR / n) - 1.0, 4)
+        return round(total ** (self._bars_per_year / n) - 1.0, 4)
 
-    @staticmethod
-    def _annual_vol(returns: pd.Series) -> float:
+    def _annual_vol(self, returns: pd.Series) -> float:
         if len(returns) < 2:
             return 0.0
-        return round(float(returns.std(ddof=1) * math.sqrt(PERIODS_PER_YEAR)), 4)
+        return round(float(returns.std(ddof=1) * math.sqrt(self._bars_per_year)), 4)
 
     @staticmethod
     def _max_drawdown(equity: pd.Series) -> float:
@@ -161,5 +165,5 @@ class RotationBacktester:
         vol = returns.std(ddof=1)
         if vol == 0 or np.isnan(vol):
             return 0.0
-        rf_monthly = (1.0 + self.config.risk_free) ** (1.0 / PERIODS_PER_YEAR) - 1.0
-        return round(float((returns - rf_monthly).mean() / vol * math.sqrt(PERIODS_PER_YEAR)), 3)
+        rf_per_bar = (1.0 + self.config.risk_free) ** (1.0 / self._bars_per_year) - 1.0
+        return round(float((returns - rf_per_bar).mean() / vol * math.sqrt(self._bars_per_year)), 3)
