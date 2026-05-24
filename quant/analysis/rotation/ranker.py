@@ -419,9 +419,9 @@ class VolumeFilteredRanker:
     Style and defensive ETFs pass through unconditionally.
 
     Args:
-        inner: Any ranker with a ``rank(monthly_prices, rebalance_date)`` interface.
-        monthly_volumes: DataFrame indexed by month-end dates, columns = symbols,
-            values = monthly total volume in shares (sum of daily volumes).
+        inner: Any ranker with a ``rank(prices, rebalance_date)`` interface.
+        monthly_volumes: DataFrame indexed by period-end dates, columns = symbols,
+            values = period-aggregated total volume in shares (sum of daily volumes).
         config: VolumeFilterConfig parsed from universe YAML.
         industry_symbols: Set of symbols subject to the volume filter.
         per_etf_thresholds: Optional per-symbol override of the global threshold.
