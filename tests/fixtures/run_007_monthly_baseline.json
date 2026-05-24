@@ -1,0 +1,11 @@
+{
+  "run_id": "run-007",
+  "spec_path": "config/strategies/rotation/run_007_production.json",
+  "frequency": "monthly",
+  "expected_metrics": {
+    "index_proxy":     {"annual_return": 0.1211, "mdd": -0.1989},
+    "real_etf_full":   {"annual_return": 0.2364, "mdd": -0.1052},
+    "real_etf_subset": {"annual_return": 0.0974, "mdd": -0.1874}
+  },
+  "tolerance_pp": 0.01
+}
