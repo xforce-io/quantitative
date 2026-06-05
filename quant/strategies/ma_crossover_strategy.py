@@ -94,69 +94,57 @@ class MACrossoverStrategy(BaseStrategy):
         logger.info("  Commission: {self.commission:.2%}, slippage: {self.slippage:.2%}")
         logger.info("  Volume filters: ratio≥{self.min_volume_ratio:.1f}x, surge≥{self.volume_surge_threshold:.1f}x, correlation={self.price_volume_correlation}")
     
+    @property
+    def cash(self) -> float:
+        """Engine-facing alias for available cash (makeDecision contract)."""
+        return self.current_cash
+
+    @property
+    def position(self) -> int:
+        """Engine-facing alias for held position (makeDecision contract)."""
+        return self.current_position
+
     def makeDecision(self, market_state: MarketState) -> TradingDecision:
-        """统一的决策接口"""
+        """Unified decision interface.
+
+        The backtest engines never apply the returned decision themselves; they
+        read ``cash``/``position`` after each bar. So makeDecision must execute
+        the trade against the internal ledger here, reusing the tested
+        signal/execution path, and report what actually happened.
+        """
         current_price = market_state.currentPrice
         timestamp = market_state.timestamp
         volume = market_state.volume
-        
-        # 生成交易信号
+
+        position_before = self.current_position
         signal = self.generate_signal(timestamp, current_price, volume)
-        
-        if signal == 'buy' and self.current_cash > 0:
-            # 计算买入数量
-            available_cash = self.current_cash * self.position_size
-            shares = int(available_cash / (current_price * (1 + self.slippage)))
-            
-            # 根据最小股数要求调整
-            if self.min_shares > 1:
-                shares = (shares // self.min_shares) * self.min_shares  # 股票：100股整数倍
-            shares = max(shares, self.min_shares)  # 确保至少达到最小股数
-            
-            actual_cost = shares * current_price * (1 + self.slippage + self.commission)
-            
-            if actual_cost <= self.current_cash and shares >= self.min_shares:
-                ma_short = self.ma_short_history[-1] if self.ma_short_history else 0
-                ma_long = self.ma_long_history[-1] if self.ma_long_history else 0
-                
-                return TradingDecision(
-                    action='buy',
-                    amount=shares,
-                    reason=f'Golden cross: MA{self.ma_short}({ma_short:.2f}) > MA{self.ma_long}({ma_long:.2f})',
-                    confidence=0.8,
-                    metadata={
-                        'signal_type': 'golden_cross',
-                        'ma_short': ma_short,
-                        'ma_long': ma_long,
-                        'ma_short_period': self.ma_short,
-                        'ma_long_period': self.ma_long
-                    }
-                )
-        
-        elif signal == 'sell' and self.current_position > 0:
-            ma_short = self.ma_short_history[-1] if self.ma_short_history else 0
-            ma_long = self.ma_long_history[-1] if self.ma_long_history else 0
-            
+        if signal:
+            self.execute_trade(timestamp, current_price, signal, volume)
+        self.update_portfolio_value(current_price)
+
+        ma_short = self.ma_short_history[-1] if self.ma_short_history else 0
+        ma_long = self.ma_long_history[-1] if self.ma_long_history else 0
+        if self.current_position > position_before:
+            return TradingDecision(
+                action='buy',
+                amount=self.current_position - position_before,
+                reason=f'Golden cross: MA{self.ma_short}({ma_short:.2f}) > MA{self.ma_long}({ma_long:.2f})',
+                confidence=0.8,
+                metadata={'signal_type': 'golden_cross', 'ma_short': ma_short, 'ma_long': ma_long},
+            )
+        if self.current_position < position_before:
             return TradingDecision(
                 action='sell',
-                amount=self.current_position,
+                amount=position_before - self.current_position,
                 reason=f'Death cross: MA{self.ma_short}({ma_short:.2f}) < MA{self.ma_long}({ma_long:.2f})',
                 confidence=0.8,
-                metadata={
-                    'signal_type': 'death_cross',
-                    'ma_short': ma_short,
-                    'ma_long': ma_long,
-                    'ma_short_period': self.ma_short,
-                    'ma_long_period': self.ma_long
-                }
+                metadata={'signal_type': 'death_cross', 'ma_short': ma_short, 'ma_long': ma_long},
             )
-        
-        # 默认持有
         return TradingDecision(
             action='hold',
             amount=0,
             reason='No MA crossover signal or insufficient funds/position',
-            confidence=0.5
+            confidence=0.5,
         )
     
     def reset(self, initial_capital: float = 100000.0):

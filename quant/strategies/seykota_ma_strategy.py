@@ -86,33 +86,50 @@ class SeyKotaMAStrategy(BaseStrategy):
         logger.info("🚀 SeyKota MA Strategy initialized for {self.symbol}")
         logger.info("   MA: {self.ma_short}/{self.ma_long} | ATR: {self.atr_period} | Risk: {self.position_risk:.1%}")
     
+    @property
+    def cash(self) -> float:
+        """Engine-facing alias for available cash (makeDecision contract)."""
+        return self.current_cash
+
+    @property
+    def position(self) -> int:
+        """Engine-facing alias for held position (makeDecision contract)."""
+        return self.current_position
+
     def makeDecision(self, market_state: MarketState) -> TradingDecision:
-        """塞柯塔风格的决策制定"""
+        """塞柯塔风格的决策制定.
+
+        The backtest engines never apply the returned decision; they read
+        ``cash``/``position`` after each bar. So makeDecision executes the trade
+        against the internal ledger here before reporting it.
+        """
         current_price = market_state.currentPrice
         timestamp = market_state.timestamp
-        
+
         # 更新数据
         self._update_indicators(market_state)
-        
+
         # 检查止损
         if self.current_position > 0 and self.current_stop_loss > 0:
             if current_price <= self.current_stop_loss:
-                return TradingDecision(
+                decision = TradingDecision(
                     action='sell',
                     amount=self.current_position,
                     reason=f'ATR止损触发: 价格{current_price:.2f} ≤ 止损{self.current_stop_loss:.2f}',
                     confidence=0.95,
                     metadata={'signal_type': 'stop_loss', 'stop_price': self.current_stop_loss}
                 )
-        
+                self._execute_sell(timestamp, current_price, 'stop_loss')
+                return decision
+
         # 生成交易信号
         signal_info = self._generate_seykota_signal(current_price, market_state.volume)
-        
-        if signal_info['signal'] == 'buy' and self.current_cash > 0:
+
+        if signal_info['signal'] == 'buy' and self.current_cash > 0 and self.current_position == 0:
             # 计算仓位大小（基于ATR的风险管理）
             shares = self._calculate_position_size(current_price, signal_info['atr'])
-            
-            if shares > 0:
+
+            if shares > 0 and self._execute_buy(timestamp, current_price, shares, signal_info):
                 return TradingDecision(
                     action='buy',
                     amount=shares,
@@ -125,9 +142,9 @@ class SeyKotaMAStrategy(BaseStrategy):
                         'volume_confirm': signal_info['volume_confirm']
                     }
                 )
-        
+
         elif signal_info['signal'] == 'sell' and self.current_position > 0:
-            return TradingDecision(
+            decision = TradingDecision(
                 action='sell',
                 amount=self.current_position,
                 reason=signal_info['reason'],
@@ -137,8 +154,56 @@ class SeyKotaMAStrategy(BaseStrategy):
                     'trend_broken': True
                 }
             )
-        
+            self._execute_sell(timestamp, current_price, 'seykota_sell',
+                               volume_confirm=signal_info['volume_confirm'], atr=signal_info['atr'])
+            return decision
+
+        self.total_value = self.current_cash + self.current_position * current_price
         return TradingDecision(action='hold', amount=0, reason='无信号或条件不满足', confidence=0.5)
+
+    def _execute_buy(self, timestamp, price: float, shares: int, signal_info: Dict) -> bool:
+        """Execute a buy against the internal ledger; returns True if filled."""
+        actual_price = price * (1 + self.slippage)
+        commission = shares * actual_price * self.commission
+        total_cost = shares * actual_price + commission
+        if total_cost > self.current_cash:
+            return False
+        self.current_cash -= total_cost
+        self.current_position += shares
+        self.current_stop_loss = signal_info.get('stop_loss', 0.0)
+        self.last_signal = 'buy'
+        self.signal_count += 1
+        self.total_value = self.current_cash + self.current_position * price
+        self.trades.append(SeyKotaTrade(
+            timestamp=timestamp, action='buy', price=actual_price, shares=shares,
+            amount=shares * actual_price, commission=commission, balance=self.current_cash,
+            position=self.current_position, signal_type=signal_info.get('signal_type', 'seykota_buy'),
+            stop_loss=self.current_stop_loss, volume_confirm=signal_info.get('volume_confirm', False),
+            atr=signal_info.get('atr', 0.0),
+        ))
+        return True
+
+    def _execute_sell(self, timestamp, price: float, signal_type: str,
+                      volume_confirm: bool = False, atr: float = 0.0) -> None:
+        """Execute a full exit against the internal ledger."""
+        shares = self.current_position
+        if shares <= 0:
+            return
+        actual_price = price * (1 - self.slippage)
+        commission = shares * actual_price * self.commission
+        net_proceeds = shares * actual_price - commission
+        self.current_cash += net_proceeds
+        self.current_position = 0
+        self.current_stop_loss = 0.0
+        self.last_signal = 'sell'
+        self.signal_count += 1
+        self.total_value = self.current_cash
+        self.trades.append(SeyKotaTrade(
+            timestamp=timestamp, action='sell', price=actual_price, shares=shares,
+            amount=shares * actual_price, commission=commission, balance=self.current_cash,
+            position=0, signal_type=signal_type, stop_loss=0.0,
+            volume_confirm=volume_confirm, atr=atr,
+        ))
     
     def _update_indicators(self, market_state: MarketState):
         """更新技术指标"""

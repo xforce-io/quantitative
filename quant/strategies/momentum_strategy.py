@@ -121,7 +121,17 @@ class MomentumStrategy(BaseStrategy):
         self.last_trade_date = None
         
         logger.info("Momentum strategy reset with initial capital: ¥{initial_capital:,.2f}")
-    
+
+    @property
+    def cash(self) -> float:
+        """Engine-facing alias for available cash (makeDecision contract)."""
+        return self.current_cash
+
+    @property
+    def position(self) -> int:
+        """Engine-facing alias for held position (makeDecision contract)."""
+        return self.current_position
+
     def makeDecision(self, market_state: MarketState) -> TradingDecision:
         """统一的决策接口"""
         current_price = market_state.currentPrice
@@ -152,14 +162,21 @@ class MomentumStrategy(BaseStrategy):
         self.macd_signal_history.append(macd_signal)
         
         # 风险控制检查
-        risk_decision = self._check_risk_controls(current_price, timestamp)
-        if risk_decision:
-            return risk_decision
-        
-        # 生成交易信号
-        return self._generate_trading_signal(
-            current_price, timestamp, momentum_score, rsi, macd, macd_signal
-        )
+        decision = self._check_risk_controls(current_price, timestamp)
+        if decision is None:
+            # 生成交易信号
+            decision = self._generate_trading_signal(
+                current_price, timestamp, momentum_score, rsi, macd, macd_signal
+            )
+
+        # Execute against the internal ledger: the backtest engines never apply
+        # the returned decision themselves, they read cash/position after the bar.
+        if decision.action == 'buy':
+            self._execute_buy(decision, market_state)
+        elif decision.action == 'sell':
+            self._execute_sell(decision, market_state)
+        self.total_value = self.current_cash + self.current_position * current_price
+        return decision
     
     def _update_indicators(self, price: float, volume: float):
         """更新技术指标数据"""
