@@ -28,7 +28,7 @@ class BacktestEngine:
         if dataProvider is not None and not isinstance(dataProvider, str):
             # If someone passed an object instead of a string, extract the class name
             if hasattr(dataProvider, '__class__'):
-                logger.warning("Expected string but got {type(dataProvider)}. Using 'auto' instead.")
+                logger.warning(f"Expected string but got {type(dataProvider)}. Using 'auto' instead.")
                 dataProvider = 'auto'
             else:
                 dataProvider = str(dataProvider)
@@ -37,7 +37,7 @@ class BacktestEngine:
         
         # Ensure providerName is a string
         if not isinstance(providerName, str):
-            logger.warning("Config defaultProvider is not a string: {type(providerName)}. Using 'auto'.")
+            logger.warning(f"Config defaultProvider is not a string: {type(providerName)}. Using 'auto'.")
             providerName = 'auto'
         
         try:
@@ -47,10 +47,10 @@ class BacktestEngine:
                 providerConfig = Config.DATA_PROVIDER_CONFIG.get(providerName, {})
                 self.dataProvider = createDataProvider(providerName, providerConfig)
             
-            logger.info("Initialized backtest engine with {self.dataProvider.__class__.__name__}")
+            logger.info(f"Initialized backtest engine with {self.dataProvider.__class__.__name__}")
             
         except Exception as e:
-            logger.info("Failed to initialize data provider '{providerName}': {str(e)}")
+            logger.info(f"Failed to initialize data provider '{providerName}': {str(e)}")
             logger.info("Falling back to auto mode...")
             self.dataProvider = createDataProvider('auto', Config.DATA_PROVIDER_CONFIG)
         
@@ -72,9 +72,9 @@ class BacktestEngine:
         Returns:
             Dict: Backtest results
         """
-        logger.info("{'='*80}")
-        logger.info("🚀 开始回测 {symbol} | 期间: {startDate} - {endDate} | 初始资金: ¥{initialCapital:,.0f}")
-        logger.info("{'='*80}")
+        logger.info(f"{'='*80}")
+        logger.info(f"🚀 开始回测 {symbol} | 期间: {startDate} - {endDate} | 初始资金: ¥{initialCapital:,.0f}")
+        logger.info(f"{'='*80}")
         
         # Set default values
         if initialCapital is None:
@@ -128,7 +128,7 @@ class BacktestEngine:
         
         for timestamp, row in stockData.iterrows():
             currentPrice = row['close']
-            currentVolume = row.get('vol', 0)  # Get volume if available
+            currentVolume = row.get('volume', row.get('vol', 0))  # Volume column is 'volume'; fall back to 'vol'
             
             # Check if strategy uses the new BaseStrategy interface
             if hasattr(strategy, 'makeDecision'):
@@ -163,27 +163,36 @@ class BacktestEngine:
             # Record daily values
             portfolioValues.append(portfolio_value)
         
-        # Calculate final portfolio value
+        # Calculate final portfolio value. Prefer the engine's own marked-to-market
+        # series, which reflects an untraded base position even when a strategy does
+        # not refresh its internal totalValue each bar (e.g. grid in a trend).
         final_price = stockData['close'].iloc[-1]
-        if hasattr(strategy, 'totalValue'):
+        if portfolioValues:
+            final_value = portfolioValues[-1]
+        elif hasattr(strategy, 'totalValue'):
             final_value = strategy.totalValue
         else:
             final_value = strategy.cash + (strategy.position * final_price)
         
         # SAFETY CHECK: Validate final portfolio value
         if final_value <= 0:
-            logger.info("🚨 CRITICAL ERROR: Final portfolio value is 0 or negative: {final_value}")
-            logger.info("   Initial capital: {initialCapital}")
+            logger.info(f"🚨 CRITICAL ERROR: Final portfolio value is 0 or negative: {final_value}")
+            logger.info(f"   Initial capital: {initialCapital}")
             logger.info("   This indicates a serious calculation error.")
             # Set a reasonable minimum value
             final_value = max(initialCapital * 0.01, 1000)  # At least 1% of initial capital
         
         if final_value > initialCapital * 100:  # More than 10000% gain
-            logger.info("🚨 WARNING: Extremely high portfolio value: {final_value}")
-            logger.info("   Initial capital: {initialCapital}")
-            logger.info("   Gain: {(final_value / initialCapital - 1):.1%}")
+            logger.info(f"🚨 WARNING: Extremely high portfolio value: {final_value}")
+            logger.info(f"   Initial capital: {initialCapital}")
+            logger.info(f"   Gain: {(final_value / initialCapital - 1):.1%}")
             logger.info("   This may indicate a calculation error.")
         
+        # Close the book at market so strategy-side metrics agree with the engine's
+        # final value (covers an untraded base position that rode the trend).
+        if hasattr(strategy, 'totalValue'):
+            strategy.totalValue = final_value
+
         # Get performance metrics
         if hasattr(strategy, 'getPerformanceMetrics'):
             performanceMetrics = strategy.getPerformanceMetrics(initialCapital)
@@ -233,12 +242,12 @@ class BacktestEngine:
         
         optimization_method = strategyConfig.get('optimizationMethod') if strategyConfig else None
         method_tag = f" [{optimization_method}]" if optimization_method else ""
-        logger.info("✅ 回测完成{method_tag} {symbol} | 总收益: {performanceMetrics.get('totalReturn', 0):+.2%} | 交易: {performanceMetrics.get('totalTrades', 0)}次 | 胜率: {performanceMetrics.get('winRate', 0):.1%}")
+        logger.info(f"✅ 回测完成{method_tag} {symbol} | 总收益: {performanceMetrics.get('totalReturn', 0):+.2%} | 交易: {performanceMetrics.get('totalTrades', 0)}次 | 胜率: {performanceMetrics.get('winRate', 0):.1%}")
         if dynamicEnabled:
-            logger.info("📊 策略参数 | 动态调整: 启用 (阈值{adjustmentThreshold:.1%} 冷却{adjustmentCooldown}天) | 网格: {gridLevels}层 {gridSpacing:.1%}间距 | 基础仓位: {baseRatio:.1%} | 网格调整: {gridAdjustmentCount}次")
+            logger.info(f"📊 策略参数 | 动态调整: 启用 (阈值{adjustmentThreshold:.1%} 冷却{adjustmentCooldown}天) | 网格: {gridLevels}层 {gridSpacing:.1%}间距 | 基础仓位: {baseRatio:.1%} | 网格调整: {gridAdjustmentCount}次")
         else:
-            logger.info("📊 策略参数 | 动态调整: 禁用 | 网格: {gridLevels}层 {gridSpacing:.1%}间距 | 基础仓位: {baseRatio:.1%} | 网格调整: {gridAdjustmentCount}次")
-        logger.info("{'='*80}")
+            logger.info(f"📊 策略参数 | 动态调整: 禁用 | 网格: {gridLevels}层 {gridSpacing:.1%}间距 | 基础仓位: {baseRatio:.1%} | 网格调整: {gridAdjustmentCount}次")
+        logger.info(f"{'='*80}")
         
         return results
     
@@ -335,7 +344,7 @@ class BacktestEngine:
         Returns:
             Dict: Optimization results
         """
-        logger.info("Starting parameter optimization for {symbol}")
+        logger.info(f"Starting parameter optimization for {symbol}")
         
         bestPerformance = -float('inf')
         bestParams = None
@@ -345,7 +354,7 @@ class BacktestEngine:
         paramCombinations = self._generateParameterCombinations(parameterRanges)
         
         for i, params in enumerate(paramCombinations):
-            logger.info("Testing parameter set {i+1}/{len(paramCombinations)}: {params}")
+            logger.info(f"Testing parameter set {i+1}/{len(paramCombinations)}: {params}")
             
             try:
                 # Create custom config for this test
@@ -373,7 +382,7 @@ class BacktestEngine:
                     bestParams = params
                     
             except Exception as e:
-                logger.error("testing parameters {params}: {str(e)}")
+                logger.error(f"testing parameters {params}: {str(e)}")
                 continue
         
         optimizationResults = {
@@ -383,8 +392,8 @@ class BacktestEngine:
             'symbol': symbol
         }
         
-        logger.info("Optimization completed. Best performance: {bestPerformance:.2%}")
-        logger.info("Best parameters: {bestParams}")
+        logger.info(f"Optimization completed. Best performance: {bestPerformance:.2%}")
+        logger.info(f"Best parameters: {bestParams}")
         
         return optimizationResults
     
@@ -438,7 +447,7 @@ class BacktestEngine:
     def plotResults(self, symbol: str):
         """Plot backtest results using plotly"""
         if symbol not in self.results:
-            logger.info("No results found for {symbol}")
+            logger.info(f"No results found for {symbol}")
             return
         
         result = self.results[symbol]
@@ -550,7 +559,7 @@ class BacktestEngine:
     def exportResults(self, symbol: str, filename: str = None):
         """Export backtest results to Excel"""
         if symbol not in self.results:
-            logger.info("No results found for {symbol}")
+            logger.info(f"No results found for {symbol}")
             return
         
         result = self.results[symbol]
@@ -592,4 +601,4 @@ class BacktestEngine:
             })
             portfolioDF.to_excel(writer, sheet_name='Portfolio_Daily', index=False)
         
-        logger.info("Results exported to {filename}") 
+        logger.info(f"Results exported to {filename}") 
