@@ -1,17 +1,12 @@
-"""
-FastAPI 主服务入口
+"""FastAPI service entrypoint for quantitative trading APIs."""
 
-替代 Streamlit 的现代化 Web 服务。
-"""
-
-import os
 import sys
 import logging
 from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 # 确保项目根目录在 Python 路径中
@@ -41,38 +36,23 @@ def create_server() -> FastAPI:
     # 首页路由
     @api_app.get("/", response_class=HTMLResponse)
     async def index():
-        """首页 - 重定向到 AI 分析师页面"""
-        analyst_html = static_dir / "analyst.html"
-        if analyst_html.exists():
-            return FileResponse(analyst_html)
-        else:
-            return HTMLResponse("""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Quantitative Trading AI</title>
-                <meta charset="utf-8">
-            </head>
-            <body>
-                <h1>🚀 FastAPI Server Running</h1>
-                <p>静态页面尚未创建，请访问 API 文档：</p>
-                <ul>
-                    <li><a href="/docs">API 文档 (Swagger)</a></li>
-                    <li><a href="/api/analyst/health">AI 分析师健康检查</a></li>
-                    <li><a href="/api/stocks/health">股票 API 健康检查</a></li>
-                </ul>
-            </body>
-            </html>
-            """)
-    
-    @api_app.get("/analyst", response_class=HTMLResponse)
-    async def analyst_page():
-        """AI 分析师页面"""
-        analyst_html = static_dir / "analyst.html"
-        if analyst_html.exists():
-            return FileResponse(analyst_html)
-        else:
-            return HTMLResponse("<h1>analyst.html not found</h1>", status_code=404)
+        """API index page."""
+        return HTMLResponse("""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Quantitative Trading API</title>
+            <meta charset="utf-8">
+        </head>
+        <body>
+            <h1>Quantitative Trading API</h1>
+            <ul>
+                <li><a href="/docs">API 文档 (Swagger)</a></li>
+                <li><a href="/api/stocks/list">股票列表</a></li>
+            </ul>
+        </body>
+        </html>
+        """)
     
     return api_app
 
@@ -85,7 +65,7 @@ def main():
     """运行服务"""
     import argparse
     
-    parser = argparse.ArgumentParser(description="Quantitative Trading AI Server")
+    parser = argparse.ArgumentParser(description="Quantitative Trading API Server")
     parser.add_argument("--host", default="0.0.0.0", help="Host to bind")
     parser.add_argument("--port", type=int, default=8000, help="Port to bind")
     parser.add_argument("--reload", action="store_true", help="Enable auto-reload")

@@ -128,6 +128,8 @@ class RotationService:
         """
         price_frames: dict[str, pd.Series] = {}
         vol_frames: dict[str, pd.Series] = {}
+        start_ts = pd.to_datetime(request.start)
+        end_ts = pd.to_datetime(request.end)
         for entry in universe:
             try:
                 df = self.data_service.get_price(
@@ -143,16 +145,21 @@ class RotationService:
                 continue
             if df is None or df.empty:
                 continue
+            df = self._bound_price_frame(df, start_ts, end_ts)
+            if df.empty:
+                continue
             if "close" in df.columns:
                 close = df["close"].astype(float)
                 close.name = entry.symbol
                 monthly_close = close.resample("ME").last().dropna()
+                monthly_close = monthly_close[monthly_close.index <= end_ts]
                 if not monthly_close.empty:
                     price_frames[entry.symbol] = monthly_close
             if "volume" in df.columns:
                 vol = df["volume"].astype(float)
                 vol.name = entry.symbol
                 monthly_vol = vol.resample("ME").sum().dropna()
+                monthly_vol = monthly_vol[monthly_vol.index <= end_ts]
                 if not monthly_vol.empty:
                     vol_frames[entry.symbol] = monthly_vol
 
@@ -167,6 +174,21 @@ class RotationService:
             if e.volume_threshold is not None
         }
 
+    @staticmethod
+    def _bound_price_frame(
+        df: pd.DataFrame,
+        start_ts: pd.Timestamp,
+        end_ts: pd.Timestamp,
+    ) -> pd.DataFrame:
+        bounded = df.copy()
+        if not isinstance(bounded.index, pd.DatetimeIndex):
+            if "trade_date" in bounded.columns:
+                bounded.index = pd.to_datetime(bounded["trade_date"])
+            else:
+                bounded.index = pd.to_datetime(bounded.index)
+        bounded = bounded.sort_index()
+        return bounded[(bounded.index >= start_ts) & (bounded.index <= end_ts)]
+
     def _fetch_benchmark_close(self, request: RotationRequest) -> pd.Series:
         df = self.data_service.get_price(
             PriceRequest(
@@ -177,7 +199,11 @@ class RotationService:
                 provider=request.provider,
             )
         )
-        return df["close"].astype(float).resample("ME").last().dropna()
+        start_ts = pd.to_datetime(request.start)
+        end_ts = pd.to_datetime(request.end)
+        df = self._bound_price_frame(df, start_ts, end_ts)
+        close = df["close"].astype(float).resample("ME").last().dropna()
+        return close[close.index <= end_ts]
 
     def _build_overlay(self, request: RotationRequest):
         if request.overlay_type == "simple":
