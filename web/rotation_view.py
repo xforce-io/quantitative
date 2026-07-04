@@ -57,6 +57,7 @@ def get_latest_rotation_targets(
     start: str = "20180101",
     end: str | None = None,
     universe_path: str | Path = _DEFAULT_UNIVERSE,
+    top_k: int = 8,
 ) -> dict[str, Any]:
     """Fetch latest rotation targets through the backend service."""
     end = end or datetime.now().strftime("%Y%m%d")
@@ -64,7 +65,7 @@ def get_latest_rotation_targets(
         start=start,
         end=end,
         universe_path=str(universe_path),
-        ranker_config=RankerConfig(top_k=3),
+        ranker_config=RankerConfig(top_k=top_k),
     )
     return RotationService().latest_targets(request)
 

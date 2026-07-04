@@ -7,6 +7,7 @@ import pytest
 from web.rotation_view import (
     RotationViewModel,
     build_rotation_view_model,
+    get_latest_rotation_targets,
     render_rotation_details,
     render_rotation_summary,
 )
@@ -142,3 +143,24 @@ def test_render_rotation_details_shows_tables(monkeypatch) -> None:
     assert ("subheader", "🔁 行业 ETF 轮动") in fake_st.calls
     dataframe_calls = [call for call in fake_st.calls if call[0] == "dataframe"]
     assert len(dataframe_calls) == 2
+
+
+def test_get_latest_rotation_targets_requests_eight_targets_by_default(monkeypatch) -> None:
+    captured = {}
+
+    class FakeRotationService:
+        def latest_targets(self, request):
+            captured["top_k"] = request.ranker_config.top_k
+            return {
+                "as_of": "2026-06-30",
+                "multiplier": 1.0,
+                "weights": {},
+                "final_positions": {},
+                "top_momentum": [],
+            }
+
+    monkeypatch.setattr("web.rotation_view.RotationService", FakeRotationService)
+
+    get_latest_rotation_targets(end="20260704")
+
+    assert captured["top_k"] == 8
