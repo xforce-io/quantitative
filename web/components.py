@@ -580,13 +580,10 @@ def render_stock_detail_card(
     """
     渲染个股详情分析卡片 (可复用组件)
     
-    包含四个维度 Tab:
+    包含三个维度 Tab:
     - 💸 资金流向: 机构/散户净流入、趋势图
     - 📉 技术形态: K线+均线、MACD、RSI、智能解读
     - 💰 估值分析: PE/PB/PS 分位、估值状态
-    - 🧠 AI投委会: 五维专家分析、压力测试、评级触发条件
-    
-    注意：AI 分析师已移至页面右侧独立面板（参见 components_ai_panel.py）
     
     Args:
         symbol: 股票代码 (如 600519.SH)
@@ -604,12 +601,11 @@ def render_stock_detail_card(
     # 检测是否为港股
     is_hk_stock = symbol.endswith('.HK')
     
-    # 用于数据注册的变量
     flow_data_for_registry = None
     tech_analysis_for_registry = None
     valuation_data_for_registry = None
 
-    dim_tabs = st.tabs(["💸 资金流向", "📉 技术形态", "💰 估值分析", "🧠 AI投委会"])
+    dim_tabs = st.tabs(["💸 资金流向", "📉 技术形态", "💰 估值分析"])
 
     # ---------- 资金流向维度 ----------
     with dim_tabs[0]:
@@ -905,204 +901,3 @@ def render_stock_detail_card(
                 else:
                     st.info("分位数据不足（需要至少10个交易日数据）")
     
-    # ---------- AI投委会维度 ----------
-    with dim_tabs[3]:
-        if is_hk_stock:
-            st.info("⚠️ **港股暂不支持AI投委会分析**\n\n需要 A 股完整数据支持。")
-        else:
-            try:
-                from web.components_ic_report import render_investment_committee_tab
-                render_investment_committee_tab(
-                    symbol=symbol,
-                    name=name,
-                    flow_data=flow_data_for_registry,
-                    tech_data=tech_analysis_for_registry,
-                    valuation_data=valuation_data_for_registry,
-                    key_prefix=f"{key_prefix}ic_{symbol}_"
-                )
-            except ImportError:
-                st.info("⚠️ **AI投委会分析模块暂不可用**\n\n该功能正在重构中。")
-    
-    # ========== 数据注册（渲染即注册）==========
-    # 将本次渲染获取的数据注册到 PageDataRegistry，供 AI 分析师工具读取
-    try:
-        registry = st.session_state.get("page_registry")
-        if registry:
-            registry.register_stock(
-                symbol=symbol,
-                name=name,
-                money_flow=flow_data_for_registry,
-                technical=tech_analysis_for_registry,
-                valuation=valuation_data_for_registry
-            )
-    except Exception:
-        pass  # 注册失败不影响正常渲染
-
-
-def render_stock_chat(
-    symbol: str,
-    name: str,
-    start_str: str,
-    end_str: str,
-    key_prefix: str = ""
-):
-    """
-    渲染个股 AI 对话组件
-
-    Args:
-        symbol: 股票代码
-        name: 股票名称
-        start_str: 开始日期
-        end_str: 结束日期
-        key_prefix: widget key 前缀
-    """
-    import streamlit as st
-    from datetime import datetime, timedelta
-
-    # 初始化 session state
-    chat_key = f"{key_prefix}chat_{symbol}"
-    if chat_key not in st.session_state:
-        st.session_state[chat_key] = {
-            "messages": [],
-            "context_built": False,
-            "stock_context": None
-        }
-
-    chat_state = st.session_state[chat_key]
-
-    # 标题栏 + 清空按钮
-    col_title, col_clear = st.columns([4, 1])
-    with col_title:
-        st.markdown("#### 🤖 AI 股票分析师")
-        st.caption(f"基于 {name} ({symbol}) 的多维度分析数据进行智能对话")
-    
-    with col_clear:
-        if chat_state["messages"]:
-            if st.button("🗑️ 清空", key=f"{chat_key}_clear", help="清空当前对话历史"):
-                chat_state["messages"] = []
-                st.rerun()
-
-    # 检查 LLM 服务配置
-    from web.stock_chat_service import (
-        StockChatService, StockContext, build_stock_context, ChatMessage
-    )
-
-    # 创建服务实例
-    service = StockChatService()
-
-    # 构建/更新股票上下文
-    if not chat_state["context_built"]:
-        with st.spinner("正在构建分析上下文..."):
-            try:
-                from web.data_service import (
-                    get_stock_money_flow, get_stock_technical_data, get_stock_valuation
-                )
-
-                # 获取各维度数据
-                flow_data = get_stock_money_flow(symbol, start_str, end_str)
-
-                tech_start = (datetime.now() - timedelta(days=90)).strftime('%Y%m%d')
-                tech_end = datetime.now().strftime('%Y%m%d')
-                tech_df = get_stock_technical_data(symbol, tech_start, tech_end)
-
-                # 从技术图表获取分析结果
-                tech_analysis = {}
-                if tech_df is not None and not tech_df.empty:
-                    _, tech_analysis = plot_technical_chart(tech_df, symbol=name)
-
-                valuation_data = get_stock_valuation(symbol, days=250)
-
-                # 构建上下文
-                stock_context = build_stock_context(
-                    symbol=symbol,
-                    name=name,
-                    flow_data=flow_data,
-                    tech_analysis=tech_analysis,
-                    valuation_data=valuation_data
-                )
-
-                chat_state["stock_context"] = stock_context
-                chat_state["context_built"] = True
-
-            except Exception as e:
-                st.error(f"构建上下文失败: {e}")
-                return
-
-    # 显示上下文摘要
-    if chat_state["stock_context"]:
-        ctx = chat_state["stock_context"]
-        with st.expander("📊 已加载的分析数据", expanded=False):
-            st.markdown(ctx.to_context_string())
-
-    # 显示历史消息
-    for msg in chat_state["messages"]:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
-
-    # 处理新消息生成 (Pending State)
-    if "pending_prompt" in chat_state and chat_state["pending_prompt"]:
-        user_input = chat_state.pop("pending_prompt")
-        
-        # 显示用户刚才的提问
-        with st.chat_message("user"):
-            st.markdown(user_input)
-        
-        # 记录用户消息
-        chat_state["messages"].append({"role": "user", "content": user_input})
-
-        # 生成 AI 回复
-        with st.chat_message("assistant"):
-            message_placeholder = st.empty()
-            full_response = ""
-
-            try:
-                # 构建历史消息 (不包含刚追加的这一条 user message，因为 service 可能会处理)
-                # 注意：history 参数取决于 service.chat_stream 的预期。
-                # 通常我们传给 LLM 的是之前的历史。
-                history = [
-                    ChatMessage(role=m["role"], content=m["content"])
-                    for m in chat_state["messages"][:-1]
-                ]
-
-                # 流式输出
-                for chunk in service.chat_stream(
-                    message=user_input,
-                    context=chat_state["stock_context"],
-                    history=history
-                ):
-                    full_response += chunk
-                    message_placeholder.markdown(full_response + "▌")
-
-                message_placeholder.markdown(full_response)
-                chat_state["messages"].append({"role": "assistant", "content": full_response})
-
-            except Exception as e:
-                error_msg = f"对话失败: {str(e)}"
-                st.error(error_msg)
-                chat_state["messages"].append({"role": "assistant", "content": error_msg})
-        
-        # 生成完毕，刷新页面以显示完整历史并重置输入框
-        st.rerun()
-
-    # 预设问题 (仅在无历史且无 pending 时显示)
-    if not chat_state["messages"] and "pending_prompt" not in chat_state:
-        st.markdown("##### 💡 你可以问我：")
-        preset_questions = [
-            "这只股票目前的技术形态如何？",
-            "资金流向反映了什么信息？",
-            "从估值角度看，现在贵不贵？",
-            "综合分析一下这只股票的投资价值",
-        ]
-        cols = st.columns(2)
-        for i, q in enumerate(preset_questions):
-            if cols[i % 2].button(q, key=f"{chat_key}_preset_{i}", use_container_width=True):
-                chat_state["pending_prompt"] = q
-                st.rerun()
-
-    # 输入框 (始终显示在底部)
-    # 注意：在 Tab 中使用 st.chat_input 可能会退化为内联显示，
-    # 但通过上述 Rerun 逻辑，我们可以保证它始终在历史消息下方。
-    if prompt := st.chat_input("输入你的问题...", key=f"{chat_key}_chat_input"):
-        chat_state["pending_prompt"] = prompt
-        st.rerun()
-

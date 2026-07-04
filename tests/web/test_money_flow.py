@@ -17,12 +17,12 @@ class TestDashboardPageLoad:
 
         expect(page.get_by_text("决策驾驶舱").first).to_be_attached()
 
-    def test_ai_panel_present(self, page: Page, app_url: str, streamlit_helper):
-        """AI analysis panel should be present on the page."""
+    def test_ai_panel_removed(self, page: Page, app_url: str, streamlit_helper):
+        """Dashboard should not render the removed AI analyst panel."""
         page.goto(f"{app_url}/Dashboard")
         streamlit_helper.wait_for_app_loaded()
 
-        assert page.get_by_text("AI 分析师").count() > 0
+        assert page.get_by_text("AI 分析师").count() == 0
 
 
 class TestDashboardSections:

@@ -17,10 +17,10 @@ tests/
 │   ├── conftest.py                      # Integration-specific fixtures
 │   ├── test_data_pipeline.py            # Provider selection -> cache -> normalize
 │   └── test_strategy_backtest.py        # Strategy + backtest full cycle
-└── web/                                 # E2E tests (Playwright + Streamlit)
-    ├── conftest.py                      # Streamlit server fixture & helpers
-    ├── test_ai_panel.py                 # AI analyst panel interaction
-    └── test_page_navigation.py          # Page load & cross-page navigation
+	└── web/                                 # E2E tests (Playwright + Streamlit)
+	    ├── conftest.py                      # Streamlit server fixture & helpers
+	    ├── test_home.py                     # Home page rendering
+	    └── test_page_navigation.py          # Page load & cross-page navigation
 ```
 
 ## Install Dependencies

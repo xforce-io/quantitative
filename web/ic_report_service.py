@@ -370,7 +370,7 @@ class ICReportService:
     
     def _enhance_with_ai(self, report: ICReport):
         """使用 AI 增强分析（调用 Agent）"""
-        # TODO: 接入 agent_manager 生成更深入的分析
+        # TODO: 接入更深入的本地分析模型
         # 这里先保留为扩展点
         pass
     

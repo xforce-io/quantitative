@@ -13,12 +13,12 @@ class TestWatchlistPageLoad:
 
         expect(page.get_by_text("自选监控").first).to_be_attached()
 
-    def test_ai_panel_present(self, page: Page, app_url: str, streamlit_helper):
-        """AI panel should be integrated."""
+    def test_ai_panel_removed(self, page: Page, app_url: str, streamlit_helper):
+        """Watchlist should not render the removed AI analyst panel."""
         page.goto(f"{app_url}/Watchlist")
         streamlit_helper.wait_for_app_loaded()
 
-        assert page.get_by_text("AI 分析师").count() > 0
+        assert page.get_by_text("AI 分析师").count() == 0
 
 
 class TestWatchlistPoolTabs:
