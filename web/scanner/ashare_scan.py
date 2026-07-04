@@ -22,6 +22,7 @@ from web.data_service import (
     get_china_market_signals,
 )
 from web.components import render_stock_detail_card, render_period_selector
+from web.rotation_view import render_rotation_details
 from web.ui_theme import Colors
 from web.utils import add_to_watchlist
 
@@ -446,7 +447,10 @@ def render_ashare_scan(verdict: dict) -> None:
     """A-share scanning tab: box breakout + market signals."""
     _regime_badge(verdict)
 
-    tab_box, tab_signals = st.tabs(["📦 箱体突破", "📡 市场信号"])
+    tab_rotation, tab_box, tab_signals = st.tabs(["🔁 行业轮动", "📦 箱体突破", "📡 市场信号"])
+
+    with tab_rotation:
+        render_rotation_details()
 
     with tab_box:
         _render_box_breakout_section(verdict)

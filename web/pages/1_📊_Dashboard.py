@@ -18,6 +18,7 @@ from web.utils import load_watchlist, get_all_symbols
 from web.ui_theme import apply_custom_css
 from web.components_ai_panel import render_ai_right_panel, init_ai_panel_for_page, get_ai_panel_layout
 from web.page_registry import get_page_registry
+from web.rotation_view import render_rotation_summary
 
 
 # ==================== Constants ====================
@@ -386,6 +387,8 @@ def main():
         st.caption("打开就知道现在该干什么 — 总览姿态 · 资产池状态 · 持仓提示")
 
         _render_verdict_bar()
+        st.divider()
+        render_rotation_summary()
         st.divider()
         _render_transmission_alerts()
         st.divider()
