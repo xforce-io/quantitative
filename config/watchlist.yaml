@@ -11,6 +11,10 @@ a_shares:
     name: "中远海控"
   - symbol: "601899.SH"
     name: "紫金矿业"
+  - symbol: "300408.SZ"
+    name: "三环集团"
+  - symbol: "000636.SZ"
+    name: "风华高科"
 us_stocks: []
 gold: []
 commodities: []

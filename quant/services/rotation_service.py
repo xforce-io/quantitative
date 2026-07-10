@@ -17,6 +17,8 @@ from quant.analysis.rotation import (
     RotationBacktestResult,
     RotationBacktester,
     SimpleRegimeOverlay,
+    build_ranker_from_spec,
+    load_strategy_spec,
     load_universe,
 )
 from quant.analysis.rotation.ranker import VolumeFilteredRanker
@@ -29,9 +31,23 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _LATEST_SIDECAR = _PROJECT_ROOT / ".quant_cache" / "latest_targets.json"
 
 
+class _PassThroughOverlay:
+    """Identity overlay used by multi-sleeve strategies (they own regime logic)."""
+
+    def multiplier_at(self, date: pd.Timestamp) -> float:
+        return 1.0
+
+
 @dataclass(frozen=True)
 class RotationRequest:
-    """Input model for rotation backtest / latest target generation."""
+    """Input model for rotation backtest / latest target generation.
+
+    strategy_mode:
+      - "sota": multi-sleeve production baseline (default)
+      - "simple": legacy pure-momentum + A-layer regime overlay
+    strategy_spec:
+      path or "sota"; only used when strategy_mode == "sota"
+    """
 
     start: str
     end: str
@@ -40,7 +56,9 @@ class RotationRequest:
     overlay_benchmark: str = "000300.SH"
     transaction_cost: float = 0.002
     provider: str = "auto"
-    overlay_type: str = "simple"   # "simple" | "cockpit"
+    overlay_type: str = "simple"  # "simple" | "cockpit" (simple mode only)
+    strategy_mode: str = "sota"  # "sota" | "simple"
+    strategy_spec: Optional[str] = None  # path / "sota"; default published SOTA
 
 
 class RotationService:
@@ -51,15 +69,155 @@ class RotationService:
 
     def run_backtest(self, request: RotationRequest) -> RotationBacktestResult:
         """Run the full backtest with the requested configuration."""
+        if request.strategy_mode == "simple":
+            return self._run_simple_backtest(request)
+        return self._run_multisleeve_backtest(request)
+
+    def latest_targets(self, request: RotationRequest) -> dict:
+        """Return the decision payload for the most recent month-end <= request.end.
+
+        Also writes the result to .quant_cache/latest_targets.json for
+        quant rotation precheck --from-latest.
+        """
+        if request.strategy_mode == "simple":
+            result = self._latest_simple(request)
+        else:
+            result = self._latest_multisleeve(request)
+        self._write_latest_sidecar(result)
+        return result
+
+    # ------------------------------------------------------------------
+    # Multi-sleeve (production / SOTA) path
+    # ------------------------------------------------------------------
+
+    def _run_multisleeve_backtest(self, request: RotationRequest) -> RotationBacktestResult:
+        spec = load_strategy_spec(request.strategy_spec)
+        universe = load_universe(request.universe_path)
+        monthly_prices, monthly_volumes = self._collect_monthly_prices_and_volumes(
+            universe, request
+        )
+        if monthly_prices.empty:
+            raise ValueError("no monthly prices available; check date range and universe")
+
+        benchmark_prices = self._fetch_benchmark_close(request)
+        ranker = build_ranker_from_spec(
+            spec,
+            monthly_benchmark=benchmark_prices,
+            monthly_volumes=monthly_volumes if self._spec_needs_volume(spec) else None,
+            enable_portfolio_cb=True,
+        )
+        combiner = PortfolioCombiner()
+        backtester = RotationBacktester(
+            RotationBacktestConfig(transaction_cost=request.transaction_cost)
+        )
+        return backtester.run(
+            universe_prices=monthly_prices,
+            benchmark_prices=benchmark_prices.reindex(monthly_prices.index).ffill(),
+            ranker=ranker,
+            overlay=_PassThroughOverlay(),
+            combiner=combiner,
+        )
+
+    def _latest_multisleeve(self, request: RotationRequest) -> dict:
+        spec = load_strategy_spec(request.strategy_spec)
+        universe = load_universe(request.universe_path)
+        monthly_prices, monthly_volumes = self._collect_monthly_prices_and_volumes(
+            universe, request
+        )
+        if monthly_prices.empty:
+            raise ValueError("no monthly prices available; check date range and universe")
+
+        rebalance_date = monthly_prices.index[-1]
+        benchmark_prices = self._fetch_benchmark_close(request)
+
+        # Live path: portfolio CB needs full NAV history; disable with explicit note.
+        portfolio_cb_cfg = (spec.get("risk_off_allocation", {}) or {}).get(
+            "portfolio_trailing_drawdown_circuit_breaker", {}
+        )
+        portfolio_cb_enabled = bool(portfolio_cb_cfg.get("enabled", False))
+        ranker = build_ranker_from_spec(
+            spec,
+            monthly_benchmark=benchmark_prices,
+            monthly_volumes=monthly_volumes if self._spec_needs_volume(spec) else None,
+            enable_portfolio_cb=False,
+        )
+
+        method = (spec.get("risk_on_rule", {}) or {}).get("method", "simple_threshold")
+        needs_warmup = method not in ("simple_threshold", "return_threshold", None)
+        if needs_warmup:
+            for date in monthly_prices.index:
+                if date > rebalance_date:
+                    break
+                try:
+                    ranker.rank(monthly_prices, date)
+                except Exception:
+                    continue
+
+        weights = ranker.rank(monthly_prices, rebalance_date)
+
+        # Prefer MultiSleeveRanker._is_risk_on when available.
+        is_risk_on = None
+        inner = getattr(ranker, "inner", ranker)
+        if hasattr(inner, "_is_risk_on"):
+            try:
+                is_risk_on = bool(inner._is_risk_on(monthly_prices, rebalance_date))
+            except Exception:
+                is_risk_on = None
+
+        csi6m = self._csi300_return(benchmark_prices, rebalance_date, months=6)
+        top_n = int((spec.get("risk_on_allocation", {}) or {}).get("top_k", 3))
+        top_momentum = self._top_momentum(
+            monthly_prices,
+            rebalance_date,
+            top_n,
+            RankerConfig(
+                lookback_months=int(
+                    (spec.get("risk_on_allocation", {}) or {}).get("lookback_months", 6)
+                ),
+                skip_recent_months=int(
+                    (spec.get("risk_on_allocation", {}) or {}).get("skip_months", 1)
+                ),
+                top_k=top_n,
+            ),
+        )
+
+        return {
+            "as_of": rebalance_date.strftime("%Y-%m-%d"),
+            "strategy_id": spec.get("strategy_id") or spec.get("iteration"),
+            "strategy_mode": "sota",
+            "regime": "risk_on" if is_risk_on else ("risk_off" if is_risk_on is not None else None),
+            "csi300_6m_return": csi6m,
+            "multiplier": 1.0,
+            "weights": dict(weights),
+            "final_positions": dict(weights),
+            "top_momentum": top_momentum,
+            "portfolio_cb_active": False,
+            "portfolio_cb_note": (
+                "portfolio circuit breaker disabled in latest mode (no live NAV history)"
+                if portfolio_cb_enabled
+                else None
+            ),
+        }
+
+    # ------------------------------------------------------------------
+    # Simple (legacy) path
+    # ------------------------------------------------------------------
+
+    def _run_simple_backtest(self, request: RotationRequest) -> RotationBacktestResult:
         universe = load_universe(request.universe_path)
         vol_config, industry_syms = load_volume_filter_config(request.universe_path)
-        monthly_prices, monthly_volumes = self._collect_monthly_prices_and_volumes(universe, request)
+        monthly_prices, monthly_volumes = self._collect_monthly_prices_and_volumes(
+            universe, request
+        )
         benchmark_prices = self._fetch_benchmark_close(request)
         overlay = self._build_overlay(request)
 
         inner_ranker = MomentumRanker(request.ranker_config or RankerConfig())
         ranker = VolumeFilteredRanker(
-            inner_ranker, monthly_volumes, vol_config, industry_syms,
+            inner_ranker,
+            monthly_volumes,
+            vol_config,
+            industry_syms,
             per_etf_thresholds=self._per_etf_thresholds(universe),
         )
         combiner = PortfolioCombiner()
@@ -74,48 +232,58 @@ class RotationService:
             combiner=combiner,
         )
 
-    def latest_targets(self, request: RotationRequest) -> dict:
-        """Return the decision payload for the most recent month-end <= request.end.
-
-        Also writes the result to .quant_cache/latest_targets.json for
-        quant rotation precheck --from-latest.
-        """
+    def _latest_simple(self, request: RotationRequest) -> dict:
         universe = load_universe(request.universe_path)
         vol_config, industry_syms = load_volume_filter_config(request.universe_path)
-        monthly_prices, monthly_volumes = self._collect_monthly_prices_and_volumes(universe, request)
+        monthly_prices, monthly_volumes = self._collect_monthly_prices_and_volumes(
+            universe, request
+        )
         if monthly_prices.empty:
             raise ValueError("no monthly prices available; check date range and universe")
 
         rebalance_date = monthly_prices.index[-1]
         inner_ranker = MomentumRanker(request.ranker_config or RankerConfig())
         ranker = VolumeFilteredRanker(
-            inner_ranker, monthly_volumes, vol_config, industry_syms,
+            inner_ranker,
+            monthly_volumes,
+            vol_config,
+            industry_syms,
             per_etf_thresholds=self._per_etf_thresholds(universe),
         )
         weights = ranker.rank(monthly_prices, rebalance_date)
 
         overlay = self._build_overlay(request)
         multiplier = float(overlay.multiplier_at(rebalance_date))
-
         combiner = PortfolioCombiner()
         final_positions = combiner.combine(weights, multiplier)
 
         top_n = max(len(weights), (request.ranker_config or RankerConfig()).top_k)
-        top_momentum = self._top_momentum(monthly_prices, rebalance_date, top_n, request)
+        top_momentum = self._top_momentum(
+            monthly_prices, rebalance_date, top_n, request.ranker_config or RankerConfig()
+        )
 
-        result = {
+        return {
             "as_of": rebalance_date.strftime("%Y-%m-%d"),
+            "strategy_mode": "simple",
             "multiplier": multiplier,
             "weights": dict(weights),
             "final_positions": dict(final_positions),
             "top_momentum": top_momentum,
         }
-        self._write_latest_sidecar(result)
-        return result
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _spec_needs_volume(spec: dict) -> bool:
+        factors = (
+            (spec.get("risk_on_allocation", {}) or {})
+            .get("multi_factor_config", {})
+            .get("factors", [])
+        )
+        names = {f.get("name") for f in factors}
+        return bool(names & {"shares_momentum", "low_crowding"})
 
     def _collect_monthly_prices_and_volumes(
         self, universe, request: RotationRequest
@@ -163,8 +331,12 @@ class RotationService:
                 if not monthly_vol.empty:
                     vol_frames[entry.symbol] = monthly_vol
 
-        monthly_prices = pd.DataFrame(price_frames).sort_index() if price_frames else pd.DataFrame()
-        monthly_volumes = pd.DataFrame(vol_frames).sort_index() if vol_frames else pd.DataFrame()
+        monthly_prices = (
+            pd.DataFrame(price_frames).sort_index() if price_frames else pd.DataFrame()
+        )
+        monthly_volumes = (
+            pd.DataFrame(vol_frames).sort_index() if vol_frames else pd.DataFrame()
+        )
         return monthly_prices, monthly_volumes
 
     def _per_etf_thresholds(self, universe) -> dict[str, int]:
@@ -213,20 +385,35 @@ class RotationService:
             )
         elif request.overlay_type == "cockpit":
             from quant.analysis.rotation import CockpitRegimeOverlay
+
             overlay = CockpitRegimeOverlay(data_service=self.data_service)
         else:
             raise ValueError(f"unknown overlay_type: {request.overlay_type}")
         overlay.precompute(start=request.start, end=request.end)
         return overlay
 
+    @staticmethod
+    def _csi300_return(
+        benchmark: pd.Series, rebalance_date: pd.Timestamp, months: int = 6
+    ) -> float | None:
+        if benchmark.empty or rebalance_date not in benchmark.index:
+            return None
+        loc = benchmark.index.get_loc(rebalance_date)
+        start_idx = loc - months
+        if start_idx < 0:
+            return None
+        p0, p1 = benchmark.iloc[start_idx], benchmark.iloc[loc]
+        if pd.isna(p0) or pd.isna(p1) or p0 <= 0:
+            return None
+        return float(p1 / p0 - 1.0)
+
     def _top_momentum(
         self,
         monthly_prices: pd.DataFrame,
         rebalance_date: pd.Timestamp,
         top_n: int,
-        request: RotationRequest,
+        cfg: RankerConfig,
     ) -> list[dict]:
-        cfg = request.ranker_config or RankerConfig()
         loc = monthly_prices.index.get_loc(rebalance_date)
         end_idx = loc - cfg.skip_recent_months
         start_idx = end_idx - cfg.lookback_months
@@ -236,10 +423,17 @@ class RotationService:
         start_row = monthly_prices.iloc[start_idx]
         records = []
         for symbol in monthly_prices.columns:
-            if pd.isna(start_row[symbol]) or pd.isna(end_row[symbol]) or start_row[symbol] <= 0:
+            if (
+                pd.isna(start_row[symbol])
+                or pd.isna(end_row[symbol])
+                or start_row[symbol] <= 0
+            ):
                 continue
             records.append(
-                {"symbol": symbol, "momentum": float(end_row[symbol] / start_row[symbol] - 1.0)}
+                {
+                    "symbol": symbol,
+                    "momentum": float(end_row[symbol] / start_row[symbol] - 1.0),
+                }
             )
         records.sort(key=lambda r: r["momentum"], reverse=True)
         return records[:top_n]

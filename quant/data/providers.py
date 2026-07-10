@@ -413,6 +413,7 @@ class DataProvider:
             df = pd.DataFrame()
 
         # If stock data is empty, try fund/ETF data.
+        fetched_as_fund = False
         if df.empty:
             try:
                 df = self._fetch_with_backward_paging(
@@ -426,12 +427,25 @@ class DataProvider:
                 # Fund data may not include a volume column.
                 if not df.empty and 'vol' not in df.columns:
                     df['vol'] = 0.0
+                fetched_as_fund = not df.empty
             except Exception as e:
                 logger.debug(f"Failed to fetch as fund: {e}")
                 pass
 
         if df.empty:
             raise DataNotFoundError(symbol, f"{start_date} to {end_date}")
+
+        # Apply fund_adj 前复权 for ETF share splits (see docs/incidents/2026-05-etf-split-data-anomaly.md).
+        if fetched_as_fund and hasattr(self.provider, 'fund_adj'):
+            try:
+                from quant.data.etf_adjust import apply_fund_adj_factors
+
+                adj = self.provider.fund_adj(
+                    ts_code=ts_symbol, start_date=start_date, end_date=end_date
+                )
+                df = apply_fund_adj_factors(df, adj, date_col='trade_date')
+            except Exception as adj_e:
+                logger.warning(f"fund_adj failed for {symbol}: {adj_e}; using unadjusted prices")
 
         # Normalize column names.
         df = df.rename(columns={

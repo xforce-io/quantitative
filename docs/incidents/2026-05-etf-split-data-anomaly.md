@@ -54,15 +54,15 @@ Tushare `fund_daily` 默认返回**不复权**价格。份额拆分时基金净�
 - 代价：real_etf_subset 候选从 12 只减到 10 只，real_etf_full 从 38 只减到 26 只；统计意义略弱
 - 局限：只挡了"已发生"的拆分，将来 ETF 拆分时下一轮回测之前会先污染一次（除非定期跑扫描）
 
-## 长期修复（P0-3，未启动）
+## 长期修复（P0-3，已落地）
 
-正确做法是在 `quant/data/providers.py` 的 ETF 取数路径里应用 Tushare 复权因子：
+正确做法是在 ETF 取数路径里应用 Tushare 复权因子。当前状态：
 
-1. 新增 `_fetch_etf_adjusted_close()`：先调 `fund_adj(ts_code=...)` 拿 `(trade_date, adj_factor)` 序列，再将 `fund_daily` 的 close 乘以 `adj_factor / adj_factor.iloc[-1]`
-2. 清空 `cache/` 中所有 ETF 历史，强制重拉
-3. 重跑近期 KEEP runs（029、030）作为新基线，刷新 `experiments/history.json`
-4. 然后才能启用 `.petri/generated/roles/reviewer/gate.yaml` 中 `real_etf_subset.candidate_mdd >= -0.25` 的 TODO 检查
-5. 保留短期修复的 anomaly filter 作为防御层（多一道守门）
+1. `quant/data/etf_adjust.py::apply_fund_adj_factors` — 纯函数实现前复权：`price * adj_factor / adj_factor_latest`
+2. `quant/data_providers/data_provider.py::getFundData` — 主路径已调用 `fund_adj` + 上述 helper；缓存 key 含 `adj_v1`，避免复用未复权旧缓存
+3. `quant/data/providers.py::_fetch_tushare_data` — 旧 DataProvider 基金回退路径同样应用 `fund_adj`
+4. 保留 `scripts/long_rotation_discovery.py` 的 anomaly filter（`|daily ret| > 25%`）作为防御层
+5. 后续：清空历史 ETF cache 后重跑 KEEP runs，刷新基线数字；再考虑收紧 reviewer gate 的 MDD 检查
 
 ## 调查证据
 

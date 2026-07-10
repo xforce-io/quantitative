@@ -40,10 +40,13 @@ _DEFAULT_SOTA_PATH = _ROOT / "config" / "strategies" / "rotation" / "sota.json"
 
 from quant.services.data_service import DataService  # noqa: E402
 
-from scripts.long_rotation_discovery import (  # noqa: E402
+from quant.analysis.rotation.multi_sleeve import (  # noqa: E402
     MultiSleeveRanker,
     PortfolioLevelCBRanker,
     SYMBOL_ALIASES,
+    build_ranker_from_spec,
+)
+from scripts.long_rotation_discovery import (  # noqa: E402
     fetch_etf_monthly_prices,
     fetch_monthly_benchmark,
     fetch_monthly_volumes,

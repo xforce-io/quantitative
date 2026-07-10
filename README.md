@@ -120,12 +120,18 @@ python -m quant screener profiles
 
 ### rotation — 行业 ETF 轮动
 
-```bash
-# 回测行业 ETF 轮动策略
-python -m quant rotation backtest
+默认使用生产 SOTA 双 sleeve 策略（`config/strategies/rotation/sota.json` → run-007）。
 
-# 生成最近月末目标持仓
-python -m quant rotation latest
+```bash
+# 回测生产轮动策略（multi-sleeve）
+python -m quant rotation backtest --start 20180101 --end 20241231
+
+# 生成最近月末目标持仓（与 live_advisor 同源逻辑）
+python -m quant rotation latest --start 20180101 --end 20241231
+
+# 指定策略 spec / 回退旧纯动量模式
+python -m quant rotation latest --start 20180101 --end 20241231 --spec config/strategies/rotation/run_007_production.json
+python -m quant rotation backtest --start 20180101 --end 20241231 --mode simple
 
 # 调仓日 T-1 实盘前置检查
 python -m quant rotation precheck --from-latest
