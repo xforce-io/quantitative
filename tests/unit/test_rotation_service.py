@@ -59,6 +59,7 @@ def test_run_backtest_returns_result(tmp_path: Path) -> None:
     )
     service = RotationService(data_service=fake)
     request = RotationRequest(
+        strategy_mode="simple",
         start="2018-01-01",
         end="2024-12-31",
         universe_path=str(universe_path),
@@ -77,6 +78,7 @@ def test_latest_targets_returns_decision_dict(tmp_path: Path) -> None:
     )
     service = RotationService(data_service=fake)
     request = RotationRequest(
+        strategy_mode="simple",
         start="2018-01-01",
         end="2024-12-31",
         universe_path=str(universe_path),
@@ -91,7 +93,7 @@ def test_latest_targets_returns_decision_dict(tmp_path: Path) -> None:
 def test_default_universe_path_used_when_omitted() -> None:
     fake = _FakeDataService({})
     service = RotationService(data_service=fake)
-    request = RotationRequest(start="2018-01-01", end="2024-12-31")
+    request = RotationRequest(strategy_mode="simple", start="2018-01-01", end="2024-12-31")
     result = service.run_backtest(request)
     assert "annual_return_strategy" in result.metrics
 
@@ -101,6 +103,7 @@ def test_unknown_overlay_type_raises():
 
     service = RotationService(data_service=None)
     bad = RotationRequest(
+        strategy_mode="simple",
         start="20240101",
         end="20240301",
         overlay_type="bogus",
@@ -111,6 +114,65 @@ def test_unknown_overlay_type_raises():
         assert "bogus" in str(exc)
     else:
         raise AssertionError("Expected ValueError for unknown overlay_type")
+
+
+def test_sota_mode_latest_targets_uses_multi_sleeve(tmp_path: Path) -> None:
+    """Default/sota mode should run MultiSleeveRanker and return regime fields."""
+    import json
+    import textwrap
+
+    # Minimal multi-sleeve spec with pure momentum (no factor store needed)
+    spec = {
+        "strategy_id": "test_ms",
+        "risk_on_rule": {
+            "method": "simple_threshold",
+            "lookback_months": 3,
+            "min_return": 0.0,
+        },
+        "risk_on_allocation": {
+            "sleeve": "industry",
+            "lookback_months": 3,
+            "skip_months": 0,
+            "top_k": 1,
+            "min_hold_months": 1,
+            "momentum_score_method": "pure_momentum",
+        },
+        "risk_off_allocation": {
+            "mode": "fixed",
+            "weights": {"511880.SH": 1.0},
+        },
+    }
+    spec_path = tmp_path / "spec.json"
+    spec_path.write_text(json.dumps(spec), encoding="utf-8")
+
+    universe_path = tmp_path / "universe.yaml"
+    universe_path.write_text(
+        textwrap.dedent(
+            """
+            industry_etfs:
+              - { symbol: "510050.SH", name: "A", category: "测试" }
+            defensive_global_etfs:
+              - { symbol: "511880.SH", name: "短债", category: "防守" }
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    fake = _FakeDataService({"510050.SH": 0.8, "511880.SH": 0.05}, benchmark_growth=0.5)
+    service = RotationService(data_service=fake)
+    request = RotationRequest(
+        strategy_mode="sota",
+        start="2018-01-01",
+        end="2024-12-31",
+        universe_path=str(universe_path),
+        strategy_spec=str(spec_path),
+    )
+    targets = service.latest_targets(request)
+    assert targets["strategy_mode"] == "sota"
+    assert targets["strategy_id"] == "test_ms"
+    assert targets["regime"] in {"risk_on", "risk_off"}
+    assert isinstance(targets["final_positions"], dict)
+    assert abs(sum(targets["final_positions"].values()) - 1.0) < 1e-6 or targets["final_positions"] == {}
 
 
 def test_run_backtest_volume_filter_excludes_low_volume(monkeypatch, tmp_path):
@@ -158,6 +220,7 @@ def test_run_backtest_volume_filter_excludes_low_volume(monkeypatch, tmp_path):
     universe_path = str(universe_file)
 
     req = RotationRequest(
+        strategy_mode="simple",
         start="20200101", end="20211231",
         universe_path=universe_path,
         ranker_config=RankerConfig(lookback_months=6, skip_recent_months=1, top_k=2),

@@ -44,6 +44,16 @@ class _FakePro:
         trade_dates = list(reversed(all_dates[-self.limit :]))
         return _make_ohlcv(trade_dates)
 
+    def fund_adj(self, ts_code: str, start_date: str, end_date: str, **_kwargs):
+        self.calls.append(('fund_adj', ts_code, start_date, end_date))
+        all_dates = _date_range_yyyymmdd(start_date, end_date)
+        return pd.DataFrame(
+            {
+                'trade_date': all_dates,
+                'adj_factor': [1.0] * len(all_dates),
+            }
+        )
+
 
 def test_data_provider_tushare_paging_stock(monkeypatch):
     from quant.data.providers import DataProvider

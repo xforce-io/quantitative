@@ -89,6 +89,7 @@ class _DeterministicDataService:
 def test_pipeline_runs_against_default_universe() -> None:
     service = RotationService(data_service=_DeterministicDataService())
     request = RotationRequest(
+        strategy_mode="simple",
         start="2018-01-01",
         end="2023-12-31",
         universe_path=str(_DEFAULT_UNIVERSE),
@@ -108,6 +109,7 @@ def test_pipeline_runs_against_default_universe() -> None:
 def test_latest_targets_against_default_universe() -> None:
     service = RotationService(data_service=_DeterministicDataService())
     request = RotationRequest(
+        strategy_mode="simple",
         start="2018-01-01",
         end="2023-12-31",
         universe_path=str(_DEFAULT_UNIVERSE),
@@ -124,6 +126,7 @@ def test_latest_targets_against_default_universe() -> None:
 def test_pipeline_runs_with_cockpit_overlay() -> None:
     service = RotationService(data_service=_DeterministicDataService())
     request = RotationRequest(
+        strategy_mode="simple",
         start="2018-01-01",
         end="2023-12-31",
         universe_path=str(_DEFAULT_UNIVERSE),

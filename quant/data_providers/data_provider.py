@@ -498,11 +498,13 @@ class TushareDataProvider(BaseDataProvider):
             pd.DataFrame: Fund data with OHLCV columns
         """
         try:
-            # Cache file path
+            # Cache file path (include adj version so pre-fix caches are not reused)
+            from quant.data.etf_adjust import ETF_ADJ_CACHE_VERSION, apply_fund_adj_factors
+
             dataPath = self.config.get('dataPath') or os.path.join(Config.DATA_DIR, 'tushare')
             cacheFile = os.path.join(
-                dataPath, 
-                f"fund_{symbol}_{startDate}_{endDate}_{freq}.csv"
+                dataPath,
+                f"fund_{symbol}_{startDate}_{endDate}_{freq}_{ETF_ADJ_CACHE_VERSION}.csv",
             )
             
             # Check if cached data exists and is valid
@@ -575,16 +577,7 @@ class TushareDataProvider(BaseDataProvider):
             # See docs/incidents/2026-05-etf-split-data-anomaly.md.
             try:
                 adj = self.pro.fund_adj(ts_code=symbol, start_date=startDate, end_date=endDate)
-                if adj is not None and not adj.empty and 'adj_factor' in adj.columns:
-                    latest = float(adj.sort_values('trade_date').iloc[-1]['adj_factor'])
-                    if latest > 0:
-                        ratio = adj.set_index('trade_date')['adj_factor'].astype(float) / latest
-                        df = df.set_index('trade_date')
-                        scale = ratio.reindex(df.index).ffill().bfill()
-                        for col in ('open', 'high', 'low', 'close', 'pre_close'):
-                            if col in df.columns:
-                                df[col] = df[col].astype(float) * scale
-                        df = df.reset_index()
+                df = apply_fund_adj_factors(df, adj, date_col='trade_date')
             except Exception as adj_e:
                 logger.warning(f"fund_adj failed for {symbol}: {adj_e}; using unadjusted prices")
 

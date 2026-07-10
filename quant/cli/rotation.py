@@ -52,19 +52,37 @@ def handle_rotation_command(args):
 def _add_common_args(parser):
     parser.add_argument("--start", required=True, help="开始日期 YYYYMMDD")
     parser.add_argument("--end", required=True, help="结束日期 YYYYMMDD")
-    parser.add_argument("--universe", help="universe yaml 路径，默认 config/rotation_universe.yaml")
-    parser.add_argument("--top-k", type=int, default=3, help="持有数量，默认 3")
-    parser.add_argument("--lookback", type=int, default=6, help="动量回看月数，默认 6")
-    parser.add_argument("--skip", type=int, default=1, help="跳过最近 N 个月，默认 1")
-    parser.add_argument("--cash-threshold", type=float, default=0.0, help="现金过滤阈值，默认 0")
-    parser.add_argument("--transaction-cost", type=float, default=0.002, help="单边换仓成本，默认 0.2%%")
-    parser.add_argument("--benchmark", default="000300.SH", help="overlay benchmark，默认沪深 300")
+    parser.add_argument(
+        "--universe", help="universe yaml 路径，默认 config/rotation_universe.yaml"
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["sota", "simple"],
+        default="sota",
+        help="策略模式：sota=生产双 sleeve（默认）；simple=旧纯动量+overlay",
+    )
+    parser.add_argument(
+        "--spec",
+        help="multi-sleeve 策略 spec JSON（默认读 sota.json）；仅 mode=sota 生效",
+    )
+    parser.add_argument("--top-k", type=int, default=3, help="持有数量（simple 模式），默认 3")
+    parser.add_argument("--lookback", type=int, default=6, help="动量回看月数（simple），默认 6")
+    parser.add_argument("--skip", type=int, default=1, help="跳过最近 N 个月（simple），默认 1")
+    parser.add_argument(
+        "--cash-threshold", type=float, default=0.0, help="现金过滤阈值（simple），默认 0"
+    )
+    parser.add_argument(
+        "--transaction-cost", type=float, default=0.002, help="单边换仓成本，默认 0.2%%"
+    )
+    parser.add_argument(
+        "--benchmark", default="000300.SH", help="benchmark / overlay 基准，默认沪深 300"
+    )
     parser.add_argument("--provider", default="auto", help="数据源，默认 auto")
     parser.add_argument(
         "--overlay",
         choices=["simple", "cockpit"],
         default="simple",
-        help="风险 overlay 选择，默认 simple；cockpit 用 RegimeDetector(a_shares)",
+        help="simple 模式下风险 overlay；sota 模式忽略（自带 regime）",
     )
 
 
@@ -86,14 +104,22 @@ def _build_request(args):
         transaction_cost=args.transaction_cost,
         provider=args.provider,
         overlay_type=args.overlay,
+        strategy_mode=getattr(args, "mode", "sota"),
+        strategy_spec=getattr(args, "spec", None),
     )
 
 
 def handle_rotation_backtest(args):
     """Run rotation backtest and print summary."""
+    mode = getattr(args, "mode", "sota")
     print("\n📊 A 股行业 ETF 轮动回测")
     print("=" * 80)
-    print(f"区间: {args.start} - {args.end}  benchmark: {args.benchmark}  top-K: {args.top_k}  overlay: {args.overlay}")
+    print(
+        f"模式: {mode}  区间: {args.start} - {args.end}  "
+        f"benchmark: {args.benchmark}  top-K: {args.top_k}"
+    )
+    if mode == "sota" and getattr(args, "spec", None):
+        print(f"Spec: {args.spec}")
 
     try:
         from quant.services import RotationService
@@ -125,8 +151,10 @@ def handle_rotation_backtest(args):
 
 def handle_rotation_latest(args):
     """Print the latest target holdings."""
+    mode = getattr(args, "mode", "sota")
     print("\n🎯 A 股行业 ETF 轮动 — 最新目标持仓")
     print("=" * 80)
+    print(f"模式: {mode}")
 
     try:
         from quant.services import RotationService
@@ -134,17 +162,29 @@ def handle_rotation_latest(args):
         targets = RotationService().latest_targets(_build_request(args))
 
         print(f"决策日期: {targets['as_of']}")
-        print(f"风险 multiplier: {targets['multiplier']:.2f}")
+        if targets.get("strategy_id"):
+            print(f"策略: {targets['strategy_id']}")
+        if targets.get("regime"):
+            label = "🚀 risk_on" if targets["regime"] == "risk_on" else "🛡️  risk_off"
+            csi = targets.get("csi300_6m_return")
+            csi_str = f" (CSI300 6m = {csi:+.2%})" if csi is not None else ""
+            print(f"Regime: {label}{csi_str}")
+        print(f"风险 multiplier: {targets.get('multiplier', 1.0):.2f}")
+        if targets.get("portfolio_cb_note"):
+            print(f"注意: {targets['portfolio_cb_note']}")
+
         print("\n最终持仓:")
-        if targets["final_positions"]:
-            for sym, pos in sorted(targets["final_positions"].items(), key=lambda kv: kv[1], reverse=True):
+        positions = targets.get("final_positions") or {}
+        if positions:
+            for sym, pos in sorted(positions.items(), key=lambda kv: kv[1], reverse=True):
                 print(f"  {sym}: {pos:.2%}")
         else:
-            print("  全现金（B 现金过滤触发或 multiplier=0）")
+            print("  全现金（信号未触发）")
 
-        print("\nTop 动量排名:")
-        for row in targets["top_momentum"]:
-            print(f"  {row['symbol']}: {row['momentum']:+.2%}")
+        if targets.get("top_momentum"):
+            print("\nTop 动量排名:")
+            for row in targets["top_momentum"]:
+                print(f"  {row['symbol']}: {row['momentum']:+.2%}")
 
     except Exception as e:
         print(f"❌ 生成目标持仓失败: {e}")
