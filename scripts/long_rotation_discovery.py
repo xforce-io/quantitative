@@ -38,6 +38,7 @@ from quant.analysis.rotation import (
     RotationBacktester,
     load_universe,
 )
+from quant.analysis.rotation.frequency import BacktestFrequency, bars_per_year, months_to_bars, resample_rule, validate_frequency
 from quant.analysis.rotation.multi_sleeve import (
     DEFAULT_REGIME_FILTER,
     SYMBOL_ALIASES,
@@ -53,10 +54,10 @@ from quant.services.data_service import DataService, PriceRequest
 
 UNIVERSE_YAML = _ROOT / "config" / "rotation_universe.yaml"
 
-TRAIN_MONTHS = 24
-TEST_MONTHS = 6
-STEP_MONTHS = 6
-WARMUP_MONTHS = 15  # >= lookback(9) + skip(1) + buffer
+TRAIN_CAL_MONTHS = 24
+TEST_CAL_MONTHS = 6
+STEP_CAL_MONTHS = 6
+WARMUP_CAL_MONTHS = 15  # >= lookback(9) + skip(1) + buffer
 
 SUBSET_CUTOFF_TS = pd.Timestamp("2014-12-31")
 
@@ -153,7 +154,6 @@ PROXY_MAP: dict[str, tuple[str, str]] = {
 }
 
 # Production multi-sleeve rankers live in quant.analysis.rotation.multi_sleeve.
-# Re-export sleeve map for any local helpers that still reference SLEEVE_MAP.
 SLEEVE_MAP = load_sleeve_map(UNIVERSE_YAML)
 
 
@@ -187,14 +187,14 @@ def _coverage_years(full_start: str, full_end: str) -> float:
 # Walk-forward helpers
 # ---------------------------------------------------------------------------
 
-def build_folds(full_start: str, full_end: str) -> list[dict]:
+def build_folds(full_start: str, full_end: str, frequency: BacktestFrequency = "monthly") -> list[dict]:
     folds = []
     cursor = full_start
     end_ts = _ts(full_end)
     while True:
-        train_end = _month_end(_add_months(cursor, TRAIN_MONTHS - 1))
-        test_start = _add_months(cursor, TRAIN_MONTHS)
-        test_end = _month_end(_add_months(cursor, TRAIN_MONTHS + TEST_MONTHS - 1))
+        train_end = _month_end(_add_months(cursor, TRAIN_CAL_MONTHS - 1))
+        test_start = _add_months(cursor, TRAIN_CAL_MONTHS)
+        test_end = _month_end(_add_months(cursor, TRAIN_CAL_MONTHS + TEST_CAL_MONTHS - 1))
         if _ts(test_end) > end_ts:
             break
         folds.append({
@@ -203,11 +203,16 @@ def build_folds(full_start: str, full_end: str) -> list[dict]:
             "test_start": test_start,
             "test_end": test_end,
         })
-        cursor = _add_months(cursor, STEP_MONTHS)
+        cursor = _add_months(cursor, STEP_CAL_MONTHS)
     return folds
 
 
-def slice_fold_metrics(strategy_rets: pd.Series, test_start: str, test_end: str) -> dict:
+def slice_fold_metrics(
+    strategy_rets: pd.Series,
+    test_start: str,
+    test_end: str,
+    frequency: BacktestFrequency = "monthly",
+) -> dict:
     ts_s = _ts(test_start)
     ts_e = _ts(test_end)
     sl = strategy_rets.loc[
@@ -217,14 +222,15 @@ def slice_fold_metrics(strategy_rets: pd.Series, test_start: str, test_end: str)
         nan = float("nan")
         return {"oos_return": nan, "oos_mdd": nan, "oos_sharpe": nan}
     n = len(sl)
+    bpy = bars_per_year(frequency)
     total = float((1.0 + sl).prod())
-    annual_return = round(total ** (12.0 / n) - 1.0, 4)
+    annual_return = round(total ** (bpy / n) - 1.0, 4)
     equity = (1.0 + sl).cumprod()
     mdd = round(float((equity / equity.cummax() - 1.0).min()), 4)
-    rf_monthly = (1.0 + 0.03) ** (1.0 / 12) - 1.0
+    rf_per_bar = (1.0 + 0.03) ** (1.0 / bpy) - 1.0
     vol = float(sl.std(ddof=1))
     sharpe = (
-        round(float((sl - rf_monthly).mean() / vol * math.sqrt(12)), 3)
+        round(float((sl - rf_per_bar).mean() / vol * math.sqrt(bpy)), 3)
         if vol > 1e-9 else 0.0
     )
     return {"oos_return": annual_return, "oos_mdd": mdd, "oos_sharpe": sharpe}
@@ -322,11 +328,15 @@ def _fetch_global_proxy_df(
             if legacy and hasattr(legacy, "getGlobalIndexData"):
                 df = legacy.getGlobalIndexData(proxy_sym, full_start, full_end)
                 if df is not None and not df.empty and "close" in df.columns:
-                    monthly_rows = len(df.resample("ME").last().dropna())
-                    if monthly_rows >= 12 * 5:
+                    df_dropped = df.dropna(subset=["close"])
+                    has_five_years = (
+                        len(df_dropped) >= 2
+                        and (df_dropped.index[-1] - df_dropped.index[0]) >= pd.Timedelta(days=365 * 5 - 30)
+                    )
+                    if has_five_years:
                         print(f"  [Tushare global] {proxy_sym}: {len(df)} daily rows")
                         return df
-                    print(f"  [WARN] Tushare global {proxy_sym}: only {monthly_rows}m rows, trying Yahoo")
+                    print(f"  [WARN] Tushare global {proxy_sym}: insufficient history, trying Yahoo")
         except Exception as exc:
             print(f"  [WARN] Tushare global index failed for {proxy_sym}: {exc}")
         yahoo_sym = _GLOBAL_TO_YAHOO_MAP.get(proxy_sym, proxy_sym)
@@ -339,10 +349,13 @@ def _fetch_global_proxy_df(
 # Data fetching
 # ---------------------------------------------------------------------------
 
-def fetch_proxy_monthly_prices(
-    data_service: DataService, full_start: str, full_end: str
+def fetch_proxy_prices(
+    data_service: DataService,
+    full_start: str,
+    full_end: str,
+    frequency: BacktestFrequency = "monthly",
 ) -> tuple[pd.DataFrame, list[dict]]:
-    """Fetch index proxy prices for all ETFs; returns (monthly_df, proxy_mapping)."""
+    """Fetch index proxy prices for all ETFs; returns (resampled_df, proxy_mapping)."""
     universe = load_universe(str(UNIVERSE_YAML))
     frames: dict[str, pd.Series] = {}
     proxy_mapping: list[dict] = []
@@ -372,13 +385,13 @@ def fetch_proxy_monthly_prices(
                 continue
             close = df["close"].astype(float)
             close.name = etf_sym
-            monthly = close.resample("ME").last().dropna()
-            if monthly.empty:
+            resampled = close.resample(resample_rule(frequency)).last().dropna()
+            if resampled.empty:
                 continue
-            frames[etf_sym] = monthly
-            start_date = monthly.index[0].strftime("%Y-%m-%d")
-            end_date = monthly.index[-1].strftime("%Y-%m-%d")
-            cov = round((monthly.index[-1] - monthly.index[0]).days / 365.25, 2)
+            frames[etf_sym] = resampled
+            start_date = resampled.index[0].strftime("%Y-%m-%d")
+            end_date = resampled.index[-1].strftime("%Y-%m-%d")
+            cov = round((resampled.index[-1] - resampled.index[0]).days / 365.25, 2)
             proxy_mapping.append({
                 "etf_symbol": etf_sym,
                 "proxy_symbol": proxy_sym,
@@ -399,10 +412,21 @@ def fetch_proxy_monthly_prices(
     return df_all, proxy_mapping
 
 
-def fetch_etf_monthly_prices(
-    data_service: DataService, full_start: str, full_end: str, subset: bool = False
+def fetch_proxy_monthly_prices(
+    data_service: DataService, full_start: str, full_end: str
+) -> tuple[pd.DataFrame, list[dict]]:
+    """Deprecated: use fetch_proxy_prices(..., frequency='monthly')."""
+    return fetch_proxy_prices(data_service, full_start, full_end, frequency="monthly")
+
+
+def fetch_etf_prices(
+    data_service: DataService,
+    full_start: str,
+    full_end: str,
+    subset: bool = False,
+    frequency: BacktestFrequency = "monthly",
 ) -> tuple[pd.DataFrame, int]:
-    """Fetch actual ETF monthly prices; optionally filter to historical subset."""
+    """Fetch actual ETF prices resampled to frequency; optionally filter to historical subset."""
     universe = load_universe(str(UNIVERSE_YAML))
     frames: dict[str, pd.Series] = {}
 
@@ -418,6 +442,7 @@ def fetch_etf_monthly_prices(
                 continue
             close = df["close"].astype(float)
             close.name = entry.symbol
+            # Anomaly filter MUST remain at the DAILY level — do not move below resample.
             daily_ret = close.pct_change()
             max_jump = daily_ret.abs().max()
             if pd.notna(max_jump) and max_jump > MAX_SINGLE_DAY_ABS_RET:
@@ -427,15 +452,15 @@ def fetch_etf_monthly_prices(
                     f"{bad_dt.date()} — unadjusted split/merger suspected"
                 )
                 continue
-            monthly = close.resample("ME").last().dropna()
-            if monthly.empty:
+            resampled = close.resample(resample_rule(frequency)).last().dropna()
+            if resampled.empty:
                 continue
-            if subset and monthly.index[0] > SUBSET_CUTOFF_TS:
-                print(f"  [SKIP subset] {entry.symbol}: first={monthly.index[0].date()} > cutoff")
+            if subset and resampled.index[0] > SUBSET_CUTOFF_TS:
+                print(f"  [SKIP subset] {entry.symbol}: first={resampled.index[0].date()} > cutoff")
                 continue
-            frames[entry.symbol] = monthly
+            frames[entry.symbol] = resampled
             tag = "subset" if subset else "full"
-            print(f"  [OK {tag}] {entry.symbol}: {monthly.index[0].date()} ~ {monthly.index[-1].date()}")
+            print(f"  [OK {tag}] {entry.symbol}: {resampled.index[0].date()} ~ {resampled.index[-1].date()}")
         except Exception as exc:
             print(f"  [ERROR] {entry.symbol}: {exc}")
 
@@ -446,13 +471,21 @@ def fetch_etf_monthly_prices(
     return df_all, len(frames)
 
 
-def fetch_monthly_volumes(
+def fetch_etf_monthly_prices(
+    data_service: DataService, full_start: str, full_end: str, subset: bool = False
+) -> tuple[pd.DataFrame, int]:
+    """Deprecated: use fetch_etf_prices(..., frequency='monthly')."""
+    return fetch_etf_prices(data_service, full_start, full_end, subset=subset, frequency="monthly")
+
+
+def fetch_volumes(
     data_service: DataService,
     mode: str,
     full_start: str,
     full_end: str,
+    frequency: BacktestFrequency = "monthly",
 ) -> "pd.DataFrame | None":
-    """Fetch monthly aggregated trading volumes. Returns None if data too sparse."""
+    """Fetch aggregated trading volumes resampled to frequency. Returns None if data too sparse."""
     universe = load_universe(str(UNIVERSE_YAML))
     frames: dict[str, pd.Series] = {}
 
@@ -473,10 +506,10 @@ def fetch_monthly_volumes(
                     continue
                 vol = df["volume"].astype(float)
                 vol.name = etf_sym
-                monthly = vol.resample("ME").sum().dropna()
-                if monthly.empty:
+                resampled = vol.resample(resample_rule(frequency)).sum().dropna()
+                if resampled.empty:
                     continue
-                frames[etf_sym] = monthly
+                frames[etf_sym] = resampled
             except Exception as exc:
                 print(f"  [WARN vol] {etf_sym}: {exc}")
     else:
@@ -493,12 +526,12 @@ def fetch_monthly_volumes(
                     continue
                 vol = df["volume"].astype(float)
                 vol.name = entry.symbol
-                monthly = vol.resample("ME").sum().dropna()
-                if monthly.empty:
+                resampled = vol.resample(resample_rule(frequency)).sum().dropna()
+                if resampled.empty:
                     continue
-                if subset and monthly.index[0] > SUBSET_CUTOFF_TS:
+                if subset and resampled.index[0] > SUBSET_CUTOFF_TS:
                     continue
-                frames[entry.symbol] = monthly
+                frames[entry.symbol] = resampled
             except Exception as exc:
                 print(f"  [WARN vol] {entry.symbol}: {exc}")
 
@@ -512,8 +545,18 @@ def fetch_monthly_volumes(
         print(f"  [WARN] Volume data too sparse ({nan_ratio:.1%} NaN), low_crowding factor will be skipped")
         return None
 
-    print(f"  [OK vol] {len(df_all.columns)} symbols, {len(df_all)} months, NaN={nan_ratio:.1%}")
+    print(f"  [OK vol] {len(df_all.columns)} symbols, {len(df_all)} bars, NaN={nan_ratio:.1%}")
     return df_all
+
+
+def fetch_monthly_volumes(
+    data_service: DataService,
+    mode: str,
+    full_start: str,
+    full_end: str,
+) -> "pd.DataFrame | None":
+    """Deprecated: use fetch_volumes(..., frequency='monthly')."""
+    return fetch_volumes(data_service, mode, full_start, full_end, frequency="monthly")
 
 
 def build_overlay(data_service: DataService, full_start: str, full_end: str) -> object:
@@ -536,10 +579,13 @@ def build_overlay(data_service: DataService, full_start: str, full_end: str) -> 
         return PassThrough()
 
 
-def fetch_monthly_benchmark(
-    data_service: DataService, full_start: str, full_end: str
+def fetch_benchmark(
+    data_service: DataService,
+    full_start: str,
+    full_end: str,
+    frequency: BacktestFrequency = "monthly",
 ) -> pd.Series:
-    """Return monthly close prices for CSI 300 as benchmark series."""
+    """Return CSI 300 close series resampled to the engine frequency."""
     try:
         df = data_service.get_price(PriceRequest(
             symbol="000300.SH",
@@ -548,10 +594,17 @@ def fetch_monthly_benchmark(
             asset_type="index",
         ))
         close = df["close"].astype(float)
-        return close.resample("ME").last().dropna()
+        return close.resample(resample_rule(frequency)).last().dropna()
     except Exception as exc:
         print(f"  [WARN] benchmark fetch failed: {exc}")
         return pd.Series(dtype=float)
+
+
+def fetch_monthly_benchmark(
+    data_service: DataService, full_start: str, full_end: str
+) -> pd.Series:
+    """Deprecated: use fetch_benchmark(..., frequency='monthly')."""
+    return fetch_benchmark(data_service, full_start, full_end, frequency="monthly")
 
 
 
@@ -570,12 +623,13 @@ def _get_vol_adjusted_config(candidate_params: dict) -> dict | None:
 def select_lambda_on_train_window(
     train_prices: pd.DataFrame,
     overlay: object,
-    monthly_benchmark: pd.Series,
+    benchmark: pd.Series,
     train_start: str,
     train_end: str,
     lambda_search_space: list[float],
     base_multi_sleeve_params: dict,
     vol_lookback_months: int = 3,
+    frequency: BacktestFrequency = "monthly",
 ) -> float:
     """Select best vol_penalty lambda by evaluating strategy Sharpe on training window."""
     best_lambda = lambda_search_space[0]
@@ -593,15 +647,16 @@ def select_lambda_on_train_window(
         modified_params["risk_on_allocation"] = modified_alloc
 
         regime_ranker = MultiSleeveRanker(
-            monthly_benchmark,
+            benchmark,
             modified_params.get("risk_on_rule", {}),
             modified_params.get("risk_on_allocation", {}),
             modified_params.get("risk_off_allocation", {}),
+            frequency=frequency,
         )
         combiner = PortfolioCombiner()
-        backtester = RotationBacktester(RotationBacktestConfig(transaction_cost=0.002))
+        backtester = RotationBacktester(RotationBacktestConfig(transaction_cost=0.002, frequency=frequency))
 
-        bench_slice = monthly_benchmark.reindex(train_prices.index).ffill()
+        bench_slice = benchmark.reindex(train_prices.index).ffill()
         if bench_slice.isna().all():
             bench_slice = train_prices.iloc[:, 0].copy()
 
@@ -613,14 +668,14 @@ def select_lambda_on_train_window(
                 overlay=overlay,
                 combiner=combiner,
             )
-            rets = result.monthly_returns["strategy"]
+            rets = result.period_returns["strategy"]
             train_rets = rets.loc[(rets.index >= train_start_ts) & (rets.index <= train_end_ts)]
             if len(train_rets) < 3:
                 continue
-            rf_monthly = (1.0 + 0.03) ** (1.0 / 12) - 1.0
+            rf_per_bar = (1.0 + 0.03) ** (1.0 / bars_per_year(frequency)) - 1.0
             vol = float(train_rets.std(ddof=1))
             sharpe = (
-                float((train_rets - rf_monthly).mean() / vol * math.sqrt(12))
+                float((train_rets - rf_per_bar).mean() / vol * math.sqrt(bars_per_year(frequency)))
                 if vol > 1e-9 else 0.0
             )
             print(f"    [LAMBDA] lambda={lam:.1f} train_sharpe={sharpe:.3f}")
@@ -641,7 +696,7 @@ def select_lambda_on_train_window(
 def run_fold(
     fold_prices: pd.DataFrame,
     overlay: object,
-    monthly_benchmark: pd.Series,
+    benchmark: pd.Series,
     ranker_cfg: RankerConfig,
     min_hold_months: int,
     test_start: str,
@@ -651,20 +706,22 @@ def run_fold(
     defensive_mode: str = "cash",
     defensive_asset: str | None = None,
     multi_sleeve_params: dict | None = None,
-    monthly_volumes: "pd.DataFrame | None" = None,
+    volumes: "pd.DataFrame | None" = None,
+    frequency: BacktestFrequency = "monthly",
 ) -> dict:
     """Run one walk-forward fold; return OOS metrics dict."""
-    ranker = MinHoldRanker(MomentumRanker(ranker_cfg), min_hold_months)
+    ranker = MinHoldRanker(MomentumRanker(ranker_cfg, frequency=frequency), min_hold_months, frequency=frequency)
     regime_ranker = None
     portfolio_cb_ranker = None
 
     if strategy_type == "multi_sleeve_rotation" and multi_sleeve_params:
         regime_ranker = MultiSleeveRanker(
-            monthly_benchmark,
+            benchmark,
             multi_sleeve_params.get("risk_on_rule", {}),
             multi_sleeve_params.get("risk_on_allocation", {}),
             multi_sleeve_params.get("risk_off_allocation", {}),
-            monthly_volumes=monthly_volumes,
+            volumes=volumes,
+            frequency=frequency,
         )
         portfolio_cb_cfg = multi_sleeve_params.get("risk_off_allocation", {}).get(
             "portfolio_trailing_drawdown_circuit_breaker", {}
@@ -674,24 +731,26 @@ def run_fold(
                 regime_ranker,
                 threshold=float(portfolio_cb_cfg.get("threshold", -0.25)),
                 fallback_asset=portfolio_cb_cfg.get("fallback_asset", "511880.SH"),
+                frequency=frequency,
             )
             ranker_for_backtest = portfolio_cb_ranker
         else:
             ranker_for_backtest = regime_ranker
     elif strategy_type == "regime_conditioned_rotation":
         regime_ranker = RegimeConditionedRanker(
-            ranker, monthly_benchmark, regime_filter or {},
+            ranker, benchmark, regime_filter or {},
             defensive_mode=defensive_mode,
             defensive_asset=defensive_asset,
+            frequency=frequency,
         )
         ranker_for_backtest = regime_ranker
     else:
         ranker_for_backtest = ranker
 
     combiner = PortfolioCombiner()
-    backtester = RotationBacktester(RotationBacktestConfig(transaction_cost=0.002))
+    backtester = RotationBacktester(RotationBacktestConfig(transaction_cost=0.002, frequency=frequency))
 
-    bench_slice = monthly_benchmark.reindex(fold_prices.index).ffill()
+    bench_slice = benchmark.reindex(fold_prices.index).ffill()
     if bench_slice.isna().all():
         bench_slice = fold_prices.iloc[:, 0].copy()
 
@@ -703,7 +762,7 @@ def run_fold(
             overlay=overlay,
             combiner=combiner,
         )
-        strategy_rets = result.monthly_returns["strategy"]
+        strategy_rets = result.period_returns["strategy"]
         # Apply intra_month_stop approximation if configured in multi_sleeve spec.
         if strategy_type == "multi_sleeve_rotation" and multi_sleeve_params:
             stop_cfg = multi_sleeve_params.get("risk_on_allocation", {}).get("intra_month_stop") or {}
@@ -711,8 +770,8 @@ def run_fold(
                 stop_thr = float(stop_cfg.get("drawdown_threshold", -0.05))
                 strategy_rets = _apply_monthly_stop_approx(strategy_rets, result.holdings, stop_thr)
                 print(f"    [STOP] intra_month_stop applied (thr={stop_thr}); "
-                      f"months capped: {int((result.monthly_returns['strategy'] < stop_thr).sum())}")
-        metrics = slice_fold_metrics(strategy_rets, test_start, test_end)
+                      f"bars capped: {int((result.period_returns['strategy'] < stop_thr).sum())}")
+        metrics = slice_fold_metrics(strategy_rets, test_start, test_end, frequency=frequency)
         if regime_ranker is not None:
             regime_stats = dict(regime_ranker.stats)
             if portfolio_cb_ranker is not None:
@@ -739,6 +798,7 @@ def run_mode(
     regime_filter: dict | None = None,
     defensive_mode: str = "cash",
     defensive_asset: str | None = None,
+    frequency: BacktestFrequency = "monthly",
 ) -> dict:
     cfg = MODE_SETUP[mode]
     full_start = cfg["full_start"]
@@ -747,33 +807,33 @@ def run_mode(
 
     # 1. Fetch price data
     if mode == "index_proxy":
-        monthly_prices, mapping = fetch_proxy_monthly_prices(data_service, full_start, full_end)
+        prices, mapping = fetch_proxy_prices(data_service, full_start, full_end, frequency=frequency)
         existing = {m["etf_symbol"] for m in proxy_mapping_out}
         for m in mapping:
             if m["etf_symbol"] not in existing:
                 proxy_mapping_out.append(m)
-        n_symbols = len(monthly_prices.columns)
+        n_symbols = len(prices.columns)
     elif mode == "real_etf_subset":
         # Fetch from 2014 so SUBSET_CUTOFF_TS (2014-12-31) filter sees actual listing dates,
         # then trim to full_start (2016) to exclude 2015 bubble data from walk-forward.
         LISTING_CHECK_START = "20140101"
-        monthly_prices_raw, n_symbols = fetch_etf_monthly_prices(
-            data_service, LISTING_CHECK_START, full_end, subset=True
+        prices_raw, n_symbols = fetch_etf_prices(
+            data_service, LISTING_CHECK_START, full_end, subset=True, frequency=frequency
         )
         ts_full_start = _ts(full_start)
-        monthly_prices = monthly_prices_raw.loc[monthly_prices_raw.index >= ts_full_start]
+        prices = prices_raw.loc[prices_raw.index >= ts_full_start]
     else:
-        monthly_prices, n_symbols = fetch_etf_monthly_prices(data_service, full_start, full_end, subset=False)
+        prices, n_symbols = fetch_etf_prices(data_service, full_start, full_end, subset=False, frequency=frequency)
 
-    print(f"  {n_symbols} symbols, {len(monthly_prices)} monthly rows")
+    print(f"  {n_symbols} symbols, {len(prices)} bars at {frequency}")
 
     # 2. Volume data for multi_factor_rank (fetched alongside price data)
-    monthly_volumes = None
+    volumes = None
     if (strategy_type == "multi_sleeve_rotation"
             and isinstance(candidate_params, dict)
             and candidate_params.get("risk_on_allocation", {}).get("momentum_score_method") == "multi_factor_rank"):
         print("  Fetching volume data for multi_factor_rank...")
-        monthly_volumes = fetch_monthly_volumes(data_service, mode, full_start, full_end)
+        volumes = fetch_volumes(data_service, mode, full_start, full_end, frequency=frequency)
 
     # 3. Overlay and benchmark (full period)
     # Default overlay disabled for multi_sleeve_rotation: it owns its own
@@ -790,10 +850,10 @@ def run_mode(
         print("  [INFO] regime_overlay disabled: using PassThrough overlay (multiplier=1.0)")
     else:
         overlay = build_overlay(data_service, full_start, full_end)
-    monthly_benchmark = fetch_monthly_benchmark(data_service, full_start, full_end)
+    benchmark = fetch_benchmark(data_service, full_start, full_end, frequency=frequency)
 
     # 3. Build folds and run
-    folds = build_folds(full_start, full_end)
+    folds = build_folds(full_start, full_end, frequency=frequency)
     print(f"  {len(folds)} walk-forward folds")
 
     if strategy_type == "multi_sleeve_rotation":
@@ -811,13 +871,13 @@ def run_mode(
     vol_adj_cfg = _get_vol_adjusted_config(candidate_params)
 
     for i, fold in enumerate(folds, 1):
-        warmup_raw = _add_months(fold["test_start"], -WARMUP_MONTHS)
+        warmup_raw = _add_months(fold["test_start"], -WARMUP_CAL_MONTHS)
         warmup_start = warmup_raw if _ts(warmup_raw) >= _ts(full_start) else full_start
 
         ts_warmup = _ts(warmup_start)
         ts_end = _ts(fold["test_end"])
-        fold_prices = monthly_prices.loc[
-            (monthly_prices.index >= ts_warmup) & (monthly_prices.index <= ts_end)
+        fold_prices = prices.loc[
+            (prices.index >= ts_warmup) & (prices.index <= ts_end)
         ].copy()
 
         if fold_prices.empty or len(fold_prices) < 4:
@@ -832,19 +892,20 @@ def run_mode(
         # Per-fold lambda selection for vol_adjusted multi_sleeve strategies
         selected_lambda = None
         if vol_adj_cfg and strategy_type == "multi_sleeve_rotation":
-            warmup_for_train_raw = _add_months(fold["train_start"], -WARMUP_MONTHS)
+            warmup_for_train_raw = _add_months(fold["train_start"], -WARMUP_CAL_MONTHS)
             warmup_for_train = warmup_for_train_raw if _ts(warmup_for_train_raw) >= _ts(full_start) else full_start
-            train_prices_for_lambda = monthly_prices.loc[
-                (monthly_prices.index >= _ts(warmup_for_train)) &
-                (monthly_prices.index <= _ts(fold["train_end"]))
+            train_prices_for_lambda = prices.loc[
+                (prices.index >= _ts(warmup_for_train)) &
+                (prices.index <= _ts(fold["train_end"]))
             ].copy()
             print(f"  Fold {i:2d}: selecting lambda, train={fold['train_start']}~{fold['train_end']}")
             selected_lambda = select_lambda_on_train_window(
-                train_prices_for_lambda, overlay, monthly_benchmark,
+                train_prices_for_lambda, overlay, benchmark,
                 fold["train_start"], fold["train_end"],
                 vol_adj_cfg.get("lambda_search_space", [0.3, 0.5, 0.7]),
                 candidate_params,
                 vol_lookback_months=vol_adj_cfg.get("vol_lookback_months", 3),
+                frequency=frequency,
             )
             modified_alloc = dict(candidate_params.get("risk_on_allocation", {}))
             modified_alloc["vol_penalty"] = selected_lambda
@@ -855,15 +916,17 @@ def run_mode(
         else:
             fold_candidate_params = candidate_params
 
-        cm = run_fold(fold_prices, overlay, monthly_benchmark, cand_cfg, cand_min_hold,
+        cm = run_fold(fold_prices, overlay, benchmark, cand_cfg, cand_min_hold,
                       fold["test_start"], fold["test_end"], strategy_type, regime_filter,
                       defensive_mode=defensive_mode, defensive_asset=defensive_asset,
                       multi_sleeve_params=fold_candidate_params if strategy_type == "multi_sleeve_rotation" else None,
-                      monthly_volumes=monthly_volumes)
-        bm = run_fold(fold_prices, overlay, monthly_benchmark, base_cfg, base_min_hold,
+                      volumes=volumes,
+                      frequency=frequency)
+        bm = run_fold(fold_prices, overlay, benchmark, base_cfg, base_min_hold,
                       fold["test_start"], fold["test_end"],
                       strategy_type="multi_sleeve_rotation",
-                      multi_sleeve_params=SIMPLE_THRESHOLD_BASELINE_MULTI_SLEEVE)
+                      multi_sleeve_params=SIMPLE_THRESHOLD_BASELINE_MULTI_SLEEVE,
+                      frequency=frequency)
 
         cand_folds.append({
             "fold": i, "test_period": test_label,
@@ -959,6 +1022,12 @@ def main() -> None:
     parser.add_argument("--baseline-file", default=None,
                         help="Path to prior baseline metrics JSON (informational only)")
     parser.add_argument("--output", required=True, help="Output JSON path")
+    parser.add_argument(
+        "--frequency",
+        choices=["monthly", "biweekly", "weekly"],
+        default="monthly",
+        help="Rebalance frequency. Overridden by candidate JSON's risk_on_allocation.rebalance_frequency if present.",
+    )
     args = parser.parse_args()
 
     if args.mode == "candidate" and args.params_file:
@@ -999,6 +1068,22 @@ def main() -> None:
             print(f"FATAL: unsupported defensive_mode={defensive_mode}")
             sys.exit(1)
 
+    # Determine effective frequency:
+    # - candidate JSON's risk_on_allocation.rebalance_frequency wins if set
+    # - otherwise use CLI --frequency default
+    spec_freq = None
+    if strategy_type == "multi_sleeve_rotation":
+        spec_freq = candidate_params.get("risk_on_allocation", {}).get("rebalance_frequency")
+    elif isinstance(candidate_params, dict):
+        spec_freq = candidate_params.get("rebalance_frequency")
+
+    if spec_freq is not None:
+        frequency: BacktestFrequency = validate_frequency(spec_freq)
+    else:
+        frequency = validate_frequency(args.frequency)
+
+    print(f"Frequency: {frequency}")
+
     data_service = DataService()
     proxy_mapping_out: list[dict] = []
     results: dict[str, dict] = {}
@@ -1016,6 +1101,7 @@ def main() -> None:
                 regime_filter,
                 defensive_mode=defensive_mode,
                 defensive_asset=defensive_asset,
+                frequency=frequency,
             )
         except Exception as exc:
             import traceback

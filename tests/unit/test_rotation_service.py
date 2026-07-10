@@ -22,16 +22,22 @@ def _synthetic_etf_prices(symbol: str, growth: float, n: int = 800) -> pd.DataFr
 class _FakeDataService:
     """Returns deterministic synthetic prices keyed by symbol."""
 
-    def __init__(self, growths: dict[str, float], benchmark_growth: float = 0.4) -> None:
+    def __init__(
+        self,
+        growths: dict[str, float],
+        benchmark_growth: float = 0.4,
+        periods: int = 800,
+    ) -> None:
         self.growths = growths
         self.benchmark_growth = benchmark_growth
+        self.periods = periods
         self.calls: list = []
 
     def get_price(self, request):
         self.calls.append(request.symbol)
         if request.symbol in self.growths:
-            return _synthetic_etf_prices(request.symbol, self.growths[request.symbol])
-        return _synthetic_etf_prices(request.symbol, self.benchmark_growth)
+            return _synthetic_etf_prices(request.symbol, self.growths[request.symbol], self.periods)
+        return _synthetic_etf_prices(request.symbol, self.benchmark_growth, self.periods)
 
     def get_trading_days(self, start, end):
         return pd.date_range(start, end, freq="B").strftime("%Y-%m-%d").tolist()
@@ -88,6 +94,26 @@ def test_latest_targets_returns_decision_dict(tmp_path: Path) -> None:
     assert {"as_of", "multiplier", "weights", "final_positions", "top_momentum"} <= set(targets)
     assert isinstance(targets["multiplier"], float)
     assert sum(targets["final_positions"].values()) <= 1.0 + 1e-9
+
+
+def test_latest_targets_does_not_label_partial_month_as_future_month_end(tmp_path: Path) -> None:
+    universe_path = _write_minimal_universe(tmp_path)
+    fake = _FakeDataService(
+        {"510050.SH": 0.6, "512000.SH": 0.4, "512800.SH": 0.2},
+        periods=2300,
+    )
+    service = RotationService(data_service=fake)
+    request = RotationRequest(
+        start="2018-01-01",
+        end="2026-07-04",
+        universe_path=str(universe_path),
+        ranker_config=RankerConfig(top_k=2, cash_threshold=-1.0),
+    )
+
+    targets = service.latest_targets(request)
+
+    assert targets["as_of"] <= "2026-07-04"
+    assert targets["as_of"] == "2026-06-30"
 
 
 def test_default_universe_path_used_when_omitted() -> None:

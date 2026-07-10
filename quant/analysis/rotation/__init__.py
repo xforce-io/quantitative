@@ -4,6 +4,7 @@ from quant.analysis.rotation.backtest import (
     RotationBacktestResult,
     RotationBacktester,
 )
+from quant.analysis.rotation.frequency import BacktestFrequency
 from quant.analysis.rotation.portfolio import PortfolioCombiner
 from quant.analysis.rotation.ranker import MomentumRanker, MultiFactorRanker, RankerConfig
 from quant.analysis.rotation.cockpit_overlay import (
@@ -30,6 +31,7 @@ from quant.analysis.rotation.regime_overlay import (
 from quant.analysis.rotation.universe import EtfEntry, load_universe
 
 __all__ = [
+    "BacktestFrequency",
     "CockpitOverlayConfig",
     "CockpitRegimeOverlay",
     "EtfEntry",

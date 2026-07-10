@@ -8,6 +8,8 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
+from quant.analysis.rotation.frequency import BacktestFrequency, bars_per_year, months_to_bars
+
 _vol_logger = _logging.getLogger(__name__)
 
 
@@ -27,42 +29,54 @@ class RankerConfig:
 class MomentumRanker:
     """Rank universe by ``price[t-skip] / price[t-skip-lookback] - 1`` momentum."""
 
-    def __init__(self, config: RankerConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: RankerConfig | None = None,
+        frequency: BacktestFrequency = "monthly",
+    ) -> None:
         self.config = config or RankerConfig()
+        self.frequency = frequency
         if self.config.lookback_months <= 0:
             raise ValueError("lookback_months must be positive")
         if self.config.skip_recent_months < 0:
             raise ValueError("skip_recent_months must be non-negative")
         if self.config.top_k <= 0:
             raise ValueError("top_k must be positive")
+        self._lookback_bars = months_to_bars(self.config.lookback_months, frequency)
+        self._skip_bars = months_to_bars(self.config.skip_recent_months, frequency)
+        self._vol_lookback_bars = (
+            months_to_bars(self.config.vol_lookback_months, frequency)
+            if self.config.vol_lookback_months > 0 else 0
+        )
+        self._bars_per_year = bars_per_year(frequency)
 
     def rank(
         self,
-        monthly_prices: pd.DataFrame,
+        prices: pd.DataFrame,
         rebalance_date: pd.Timestamp,
     ) -> dict[str, float]:
         """Return ``{symbol: weight}`` for the rebalance date.
 
         Returns an empty dict when the cash filter triggers or no symbol has
-        enough history.  ``rebalance_date`` must exist in ``monthly_prices.index``.
+        enough history.  ``rebalance_date`` must exist in ``prices.index``.
         """
-        if rebalance_date not in monthly_prices.index:
+        if rebalance_date not in prices.index:
             raise KeyError(f"rebalance_date {rebalance_date} not in price index")
 
-        loc = monthly_prices.index.get_loc(rebalance_date)
-        skip = self.config.skip_recent_months
-        lookback = self.config.lookback_months
+        loc = prices.index.get_loc(rebalance_date)
+        skip = self._skip_bars
+        lookback = self._lookback_bars
 
         end_idx = loc - skip
         start_idx = end_idx - lookback
         if start_idx < 0 or end_idx < 0:
             return {}
 
-        end_row = monthly_prices.iloc[end_idx]
-        start_row = monthly_prices.iloc[start_idx]
+        end_row = prices.iloc[end_idx]
+        start_row = prices.iloc[start_idx]
 
         score: dict[str, float] = {}
-        for symbol in monthly_prices.columns:
+        for symbol in prices.columns:
             p_start = start_row[symbol]
             p_end = end_row[symbol]
             if pd.isna(p_start) or pd.isna(p_end) or p_start <= 0:
@@ -70,22 +84,22 @@ class MomentumRanker:
             mom = float(p_end / p_start - 1.0)
             if self.config.vol_penalty != 0.0:
                 if self.config.vol_formula == "linear_subtract":
-                    vol_lb = self.config.vol_lookback_months if self.config.vol_lookback_months > 0 else lookback
+                    vol_lb = self._vol_lookback_bars or lookback
                     vol_start_idx = max(0, end_idx - vol_lb)
-                    price_slice = monthly_prices[symbol].iloc[vol_start_idx: end_idx + 1].dropna()
+                    price_slice = prices[symbol].iloc[vol_start_idx: end_idx + 1].dropna()
                     if len(price_slice) >= 2:
-                        monthly_rets = price_slice.pct_change().dropna()
-                        vol_monthly = float(monthly_rets.std(ddof=1))
-                        vol_adj = vol_monthly * float(np.sqrt(12))
+                        period_rets = price_slice.pct_change().dropna()
+                        vol_period = float(period_rets.std(ddof=1))
+                        vol_adj = vol_period * float(np.sqrt(self._bars_per_year))
                     else:
                         vol_adj = 0.0
                     score[symbol] = mom - self.config.vol_penalty * vol_adj
                 else:
                     # Original exponent formula: score = mom / vol^vol_penalty
-                    price_slice = monthly_prices[symbol].iloc[start_idx: end_idx + 1].dropna()
+                    price_slice = prices[symbol].iloc[start_idx: end_idx + 1].dropna()
                     if len(price_slice) >= 2:
-                        monthly_rets = price_slice.pct_change().dropna()
-                        vol = float(monthly_rets.std(ddof=1))
+                        period_rets = price_slice.pct_change().dropna()
+                        vol = float(period_rets.std(ddof=1))
                     else:
                         vol = 0.0
                     adj_vol = max(vol, 1e-6) ** self.config.vol_penalty
@@ -144,6 +158,10 @@ class MultiFactorRanker:
     ``monthly_benchmark`` enables conditional_gating: when CSI300 3m return
     exceeds the configured threshold, factor weights are temporarily overridden
     by gated_weights (e.g. momentum boosted to 0.9 in strong-trend periods).
+
+    The ``monthly_*`` parameter names are historical; both inputs are
+    frequency-agnostic and must be supplied at the engine's current frequency
+    (monthly bars at frequency='monthly', weekly bars at frequency='weekly', etc.).
     """
 
     def __init__(
@@ -152,6 +170,7 @@ class MultiFactorRanker:
         monthly_volumes: Optional[pd.DataFrame] = None,
         monthly_benchmark: Optional[pd.Series] = None,
         factor_store=None,
+        frequency: BacktestFrequency = "monthly",
     ) -> None:
         self._alloc = risk_on_allocation
         self._volumes = monthly_volumes
@@ -161,13 +180,19 @@ class MultiFactorRanker:
         self._factors: list[dict] = cfg.get("factors", [])
         self._cg: dict = cfg.get("conditional_gating", {})
         self._top_k: int = int(risk_on_allocation.get("top_k", 3))
+        self.frequency = frequency
+        self._bars_per_year = bars_per_year(frequency)
+
+    def _to_bars(self, months_value: int) -> int:
+        """Convert a calendar-months value to bars at this ranker's frequency."""
+        return months_to_bars(int(months_value), self.frequency)
 
     def _effective_weights(self, rebalance_date: pd.Timestamp) -> dict[str, float]:
         """Return per-factor weights, applying conditional_gating if triggered."""
         base = {f["name"]: float(f.get("weight", 0.0)) for f in self._factors}
         if not self._cg.get("enabled") or self._benchmark is None:
             return base
-        lb = int(self._cg.get("condition_lookback_months", 3))
+        lb = self._to_bars(self._cg.get("condition_lookback_months", 3))
         bench = self._benchmark
         if rebalance_date not in bench.index:
             return base
@@ -190,17 +215,17 @@ class MultiFactorRanker:
 
     def rank(
         self,
-        monthly_prices: pd.DataFrame,
+        prices: pd.DataFrame,
         rebalance_date: pd.Timestamp,
     ) -> dict[str, float]:
-        if rebalance_date not in monthly_prices.index:
+        if rebalance_date not in prices.index:
             raise KeyError(f"rebalance_date {rebalance_date} not in price index")
-        loc = monthly_prices.index.get_loc(rebalance_date)
+        loc = prices.index.get_loc(rebalance_date)
 
         raw: dict[str, dict[str, float]] = {}
         for factor in self._factors:
             name = factor["name"]
-            scores = self._compute_factor(factor, monthly_prices, loc)
+            scores = self._compute_factor(factor, prices, loc)
             if scores:
                 raw[name] = scores
 
@@ -211,7 +236,7 @@ class MultiFactorRanker:
         # list — set/dict iteration order would otherwise depend on
         # PYTHONHASHSEED and propagate downstream through composite/filtered,
         # making tied scores break differently across processes.
-        valid_set: set[str] = set(monthly_prices.columns)
+        valid_set: set[str] = set(prices.columns)
         for scores in raw.values():
             valid_set &= scores.keys()
         if not valid_set:
@@ -247,24 +272,24 @@ class MultiFactorRanker:
         return {sym: w for sym, _ in top}
 
     def _compute_factor(
-        self, factor: dict, monthly_prices: pd.DataFrame, loc: int
+        self, factor: dict, prices: pd.DataFrame, loc: int
     ) -> dict[str, float]:
         name = factor["name"]
         if name == "momentum":
-            return self._momentum(factor, monthly_prices, loc)
+            return self._momentum(factor, prices, loc)
         if name == "low_volatility":
-            return self._low_volatility(factor, monthly_prices, loc)
+            return self._low_volatility(factor, prices, loc)
         if name == "low_crowding":
-            return self._low_crowding(factor, monthly_prices, loc)
+            return self._low_crowding(factor, prices, loc)
         if name == "relative_strength":
-            return self._relative_strength(factor, monthly_prices, loc)
+            return self._relative_strength(factor, prices, loc)
         if name == "shares_momentum":
-            return self._shares_momentum(factor, monthly_prices, loc)
+            return self._shares_momentum(factor, prices, loc)
         return {}
 
     def _momentum(self, factor: dict, prices: pd.DataFrame, loc: int) -> dict[str, float]:
-        skip = int(factor.get("skip_months", 1))
-        lb = int(factor.get("lookback_months", 6))
+        skip = self._to_bars(factor.get("skip_months", 1))
+        lb = self._to_bars(factor.get("lookback_months", 6))
         end_idx = loc - skip
         start_idx = end_idx - lb
         if start_idx < 0 or end_idx < 0:
@@ -280,8 +305,8 @@ class MultiFactorRanker:
         return scores
 
     def _low_volatility(self, factor: dict, prices: pd.DataFrame, loc: int) -> dict[str, float]:
-        lb = int(factor.get("lookback_months", 3))
-        skip = int(factor.get("skip_months", 0))
+        lb = self._to_bars(factor.get("lookback_months", 3))
+        skip = self._to_bars(factor.get("skip_months", 0))
         end_idx = loc - skip
         start_idx = max(0, end_idx - lb)
         if end_idx <= 0:
@@ -294,15 +319,15 @@ class MultiFactorRanker:
             rets = sl.pct_change().dropna()
             if len(rets) < 2:
                 continue
-            scores[sym] = float(rets.std(ddof=1)) * float(np.sqrt(12))
+            scores[sym] = float(rets.std(ddof=1)) * float(np.sqrt(self._bars_per_year))
         return scores
 
     def _relative_strength(self, factor: dict, prices: pd.DataFrame, loc: int) -> dict[str, float]:
         """Excess return vs CSI300 benchmark over the same lookback window."""
         if self._benchmark is None:
             return {}
-        skip = int(factor.get("skip_months", 1))
-        lb = int(factor.get("lookback_months", 6))
+        skip = self._to_bars(factor.get("skip_months", 1))
+        lb = self._to_bars(factor.get("lookback_months", 6))
         end_idx = loc - skip
         start_idx = end_idx - lb
         if start_idx < 0 or end_idx < 0:
@@ -332,7 +357,7 @@ class MultiFactorRanker:
             scores[sym] = float(p1 / p0 - 1.0) - bench_ret
         return scores
 
-    def _shares_momentum(self, factor: dict, monthly_prices: pd.DataFrame, loc: int) -> dict[str, float]:
+    def _shares_momentum(self, factor: dict, prices: pd.DataFrame, loc: int) -> dict[str, float]:
         """Return ETF shares change over the configured lookback window.
 
         An empty mapping is returned when coverage is below min_coverage_ratio
@@ -340,12 +365,12 @@ class MultiFactorRanker:
         """
         if self._factor_store is None:
             return {}
-        lookback = int(factor.get("lookback_months", 3))
+        lookback = self._to_bars(factor.get("lookback_months", 3))
         if loc < lookback:
             return {}
-        current_date = monthly_prices.index[loc].strftime("%Y-%m-%d")
-        past_date = monthly_prices.index[loc - lookback].strftime("%Y-%m-%d")
-        symbols = list(monthly_prices.columns)
+        current_date = prices.index[loc].strftime("%Y-%m-%d")
+        past_date = prices.index[loc - lookback].strftime("%Y-%m-%d")
+        symbols = list(prices.columns)
         current_shares = self._factor_store.get_etf_shares(symbols, current_date)
         past_shares = self._factor_store.get_etf_shares(symbols, past_date)
         result: dict[str, float] = {}
@@ -367,8 +392,8 @@ class MultiFactorRanker:
         if rebalance_date not in self._volumes.index:
             return {}
         vol_loc = self._volumes.index.get_loc(rebalance_date)
-        recent_lb = int(factor.get("lookback_months", 1))
-        norm_lb = int(factor.get("norm_lookback_months", 12))
+        recent_lb = self._to_bars(factor.get("lookback_months", 1))
+        norm_lb = self._to_bars(factor.get("norm_lookback_months", 12))
         recent_start = max(0, vol_loc - recent_lb + 1)
         norm_start = max(0, vol_loc - norm_lb + 1)
         scores: dict[str, float] = {}
@@ -398,9 +423,9 @@ class VolumeFilteredRanker:
     Style and defensive ETFs pass through unconditionally.
 
     Args:
-        inner: Any ranker with a ``rank(monthly_prices, rebalance_date)`` interface.
-        monthly_volumes: DataFrame indexed by month-end dates, columns = symbols,
-            values = monthly total volume in shares (sum of daily volumes).
+        inner: Any ranker with a ``rank(prices, rebalance_date)`` interface.
+        monthly_volumes: DataFrame indexed by period-end dates, columns = symbols,
+            values = period-aggregated total volume in shares (sum of daily volumes).
         config: VolumeFilterConfig parsed from universe YAML.
         industry_symbols: Set of symbols subject to the volume filter.
         per_etf_thresholds: Optional per-symbol override of the global threshold.
@@ -422,16 +447,16 @@ class VolumeFilteredRanker:
 
     def rank(
         self,
-        monthly_prices: pd.DataFrame,
+        prices: pd.DataFrame,
         rebalance_date: pd.Timestamp,
     ) -> dict[str, float]:
         if not self._config.enabled or self._volumes.empty:
-            return self._inner.rank(monthly_prices, rebalance_date)
+            return self._inner.rank(prices, rebalance_date)
 
-        passed = self._filter(monthly_prices.columns.tolist(), rebalance_date)
+        passed = self._filter(prices.columns.tolist(), rebalance_date)
         if not passed:
             return {}
-        filtered_prices = monthly_prices[passed]
+        filtered_prices = prices[passed]
         return self._inner.rank(filtered_prices, rebalance_date)
 
     def _filter(self, symbols: list[str], rebalance_date: pd.Timestamp) -> list[str]:

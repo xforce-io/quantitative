@@ -19,7 +19,13 @@ class RegimeOverlay(Protocol):
 
 
 class PrecomputedRegimeOverlay:
-    """Overlay backed by an in-memory precomputed multiplier series."""
+    """Overlay backed by an in-memory precomputed multiplier series.
+
+    The multiplier index is treated as a sorted date axis; ``multiplier_at(date)``
+    does an as-of lookup (returns the most recent multiplier at-or-before ``date``).
+    Callers must ensure the engine's rebalance-date frequency is compatible with
+    the multiplier's sampling frequency — this class itself is frequency-agnostic.
+    """
 
     def __init__(self, benchmark_prices: pd.DataFrame) -> None:
         signals = LowFrequencySignalBuilder(SignalConfig()).build(benchmark_prices)

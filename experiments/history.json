@@ -7,6 +7,39 @@
     "pre_boundary_last_keep_pre_rename": "run-030",
     "pre_boundary_archive_path": ".petri/runs.pre-cleanliness/"
   },
+  "_engine_refactor": {
+    "refactored_at": "2026-05-24",
+    "refactor_branch": "feat/rebalance-frequency-engine",
+    "spec_path": "docs/superpowers/specs/2026-05-24-rebalance-frequency-engine-design.md",
+    "plan_path": "docs/superpowers/plans/2026-05-24-rebalance-frequency-engine.md",
+    "reason": "Backtest engine generalized from hardcoded monthly to frequency-parametrized (monthly/biweekly/weekly) with calendar-window factor semantics. Single engine, parameterized via --frequency CLI or candidate JSON's risk_on_allocation.rebalance_frequency. Public RankerConfig field names (lookback_months etc.) unchanged for backward compatibility.",
+    "golden_test": "tests/unit/test_rotation_engine_monthly_golden.py — run-007 at frequency=monthly reproduces all 6 metrics (3 universes × {annual_return, mdd}) within 0.01pp tolerance.",
+    "smoke_preview": {
+      "biweekly": {
+        "index_proxy_annual_return": 0.0432,
+        "real_etf_full_annual_return": 0.0317,
+        "real_etf_subset_annual_return": 0.1210
+      },
+      "weekly": {
+        "index_proxy_annual_return": 0.1812,
+        "real_etf_full_annual_return": 0.2270,
+        "real_etf_subset_annual_return": 0.1375
+      },
+      "note": "First exploratory preview at non-monthly frequencies; not walk-forward gated. Directional signal: weekly and biweekly do not improve over monthly on real_etf_full. Formal petri walk-forward gating of three candidates pending under branch rebalance-frequency-search.",
+      "asymmetry_note": "Biweekly real_etf_full (3.17%) underperforms monthly by 20pp while weekly (22.70%) is within 1pp of monthly. The asymmetry is empirical (engine reproduces monthly bit-for-bit via golden test, so this is not a refactor regression). Hypothesis: 2W-FRI resample bars do not align with month-end fold boundaries the way monthly does, and biweekly may straddle factor-signal cycles unfavorably. Awaits formal walk-forward analysis under rebalance-frequency-search branch for root cause."
+    },
+    "new_petri_branches": ["rebalance-frequency-search"],
+    "rebalance_frequency_search_result": {
+      "closed_at": "2026-05-24",
+      "status": "axis_exhausted_all_REJECT",
+      "candidates": [
+        {"id": "frequency-weekly",                "real_etf_full_annual_return": 0.2270, "delta_pp": -0.94,  "mdd": -0.1903, "decision": "REJECT", "reason": "return below SOTA + MDD breach"},
+        {"id": "frequency-biweekly",              "real_etf_full_annual_return": 0.0317, "delta_pp": -20.47, "mdd": -0.1577, "decision": "REJECT", "reason": "return far below SOTA + MDD breach"},
+        {"id": "frequency-weekly-skip-tightened", "real_etf_full_annual_return": 0.2530, "delta_pp": 1.66,   "mdd": -0.2016, "decision": "REJECT", "reason": "return improves +1.66pp but MDD -20.16% breaches floor -12.52%"}
+      ],
+      "headline_finding": "weekly+skip=0 IS a Pareto-improvement on return (+1.66pp) but at near-2x the drawdown. The MDD guardrail correctly rejects this risk/return tradeoff. The rebalance-frequency axis is exhausted; genuine improvement now requires structural change (new factors / new architecture)."
+    }
+  },
   "_determinism_fix": {
     "fixed_at": "2026-05-18",
     "fix_commit": "23b5665",

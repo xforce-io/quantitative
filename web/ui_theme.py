@@ -107,17 +107,20 @@ def apply_custom_css():
     /* 技术信号区域的 metric 组件样式调整 */
     [data-testid="stMetric"] {
         background-color: #f8f9fa;
+        color: #2c3e50;
         padding: 10px 12px;
         border-radius: 8px;
     }
 
     /* 缩小 metric 标签字体 */
     [data-testid="stMetricLabel"] {
+        color: #7f8c8d !important;
         font-size: 0.85rem !important;
     }
 
     /* 缩小 metric 值字体，防止截断 */
     [data-testid="stMetricValue"] {
+        color: #2c3e50 !important;
         font-size: 1.1rem !important;
         white-space: nowrap;
         overflow: visible !important;
