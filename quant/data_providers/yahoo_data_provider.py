@@ -71,10 +71,10 @@ class YahooDataProvider(BaseDataProvider):
             if cacheEnabled and os.path.exists(cacheFile):
                 fileTime = os.path.getmtime(cacheFile)
                 if time.time() - fileTime < cacheExpiry:
-                    logger.info("Loading cached data for {symbol}")
+                    logger.info(f"Loading cached data for {symbol}")
                     return pd.read_csv(cacheFile, index_col=0, parse_dates=True)
             
-            logger.info("Fetching data for {symbol} from Yahoo Finance")
+            logger.info(f"Fetching data for {symbol} from Yahoo Finance")
             
             # Convert dates to Yahoo Finance format
             start = pd.to_datetime(startDate, format='%Y%m%d')
@@ -112,7 +112,7 @@ class YahooDataProvider(BaseDataProvider):
             return df
             
         except Exception as e:
-            logger.error("fetching data for {symbol}: {str(e)}")
+            logger.error(f"fetching data for {symbol}: {e}")
             raise
     
     def _processYahooData(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -165,7 +165,7 @@ class YahooDataProvider(BaseDataProvider):
             }
             
         except Exception as e:
-            logger.error("getting stock info for {symbol}: {str(e)}")
+            logger.error(f"getting stock info for {symbol}: {e}")
             raise
     
     def searchStock(self, keyword: str) -> pd.DataFrame:
@@ -209,7 +209,7 @@ class YahooDataProvider(BaseDataProvider):
             return pd.DataFrame(results)
             
         except Exception as e:
-            logger.error("searching stocks: {str(e)}")
+            logger.error(f"searching stocks: {e}")
             return pd.DataFrame()
     
     def validateSymbol(self, symbol: str) -> bool:

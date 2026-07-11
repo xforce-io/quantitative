@@ -129,6 +129,26 @@ class RelativeStrengthAnalyzer:
             etf_close = etf_data['close']
             benchmark_close = benchmark_data['close']
 
+            # Align on common dates when both are date-indexed; otherwise use
+            # positional length min so historical RS loop never indexes OOB.
+            if (
+                isinstance(etf_close.index, pd.DatetimeIndex)
+                and isinstance(benchmark_close.index, pd.DatetimeIndex)
+            ):
+                common_idx = etf_close.index.intersection(benchmark_close.index)
+                if len(common_idx) == 0:
+                    logger.warning("No overlapping ETF/benchmark dates for RS rating")
+                    return self._empty_result()
+                etf_close = etf_close.loc[common_idx].sort_index()
+                benchmark_close = benchmark_close.loc[common_idx].sort_index()
+
+            n = min(len(etf_close), len(benchmark_close))
+            if n == 0:
+                logger.warning("No overlapping ETF/benchmark bars for RS rating")
+                return self._empty_result()
+            etf_close = etf_close.iloc[-n:]
+            benchmark_close = benchmark_close.iloc[-n:]
+
             # 计算各周期的超额收益和RS分数
             for period_name, period_days in periods.items():
                 # ETF收益率
@@ -142,16 +162,37 @@ class RelativeStrengthAnalyzer:
                 excess_returns[period_name] = excess_return * 100  # 转换为百分比
 
                 # 计算历史超额收益序列（滚动计算）
-                if len(etf_close) >= period_days + 20:  # 至少需要20个历史点
+                if n >= period_days + 20:  # 至少需要20个历史点
                     historical_excess = []
-                    for i in range(period_days + 20, len(etf_close)):
-                        etf_ret_hist = (etf_close.iloc[i] - etf_close.iloc[i - period_days]) / etf_close.iloc[i - period_days]
-                        bm_ret_hist = (benchmark_close.iloc[i] - benchmark_close.iloc[i - period_days]) / benchmark_close.iloc[i - period_days]
+                    for i in range(period_days + 20, n):
+                        etf_prev = etf_close.iloc[i - period_days]
+                        bm_prev = benchmark_close.iloc[i - period_days]
+                        if etf_prev == 0 or bm_prev == 0:
+                            continue
+                        etf_ret_hist = (etf_close.iloc[i] - etf_prev) / etf_prev
+                        bm_ret_hist = (benchmark_close.iloc[i] - bm_prev) / bm_prev
                         historical_excess.append(etf_ret_hist - bm_ret_hist)
 
                     # 计算当前超额收益的历史百分位
                     if historical_excess:
                         percentile = self.calculate_percentile(excess_return, pd.Series(historical_excess))
+                        rs_scores.append(percentile)
+                        period_scores[period_name] = {
+                            'excess_return': excess_return * 100,
+                            'percentile': percentile
+                        }
+                    else:
+                        # Fall through to simple mapping when history is empty
+                        if excess_return > 0.15:
+                            percentile = 90
+                        elif excess_return > 0.05:
+                            percentile = 70
+                        elif excess_return > -0.05:
+                            percentile = 50
+                        elif excess_return > -0.15:
+                            percentile = 30
+                        else:
+                            percentile = 10
                         rs_scores.append(percentile)
                         period_scores[period_name] = {
                             'excess_return': excess_return * 100,

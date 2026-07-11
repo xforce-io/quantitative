@@ -131,3 +131,34 @@ def test_tushare_data_provider_get_fund_data_paging(monkeypatch, tmp_path):
     assert len(df) == 10
     assert str(df.index.min().date()) == '2020-01-01'
     assert str(df.index.max().date()) == '2020-01-10'
+
+
+def test_tushare_get_stock_data_falls_back_to_fund_daily(monkeypatch, tmp_path):
+    """ETF symbols return empty from pro.daily; getStockData must use fund_daily."""
+    import quant.data_providers.data_provider as dp_mod
+    from quant.data_providers.data_provider import TushareDataProvider
+
+    fake_pro = _FakePro(limit=30)
+    monkeypatch.setattr(dp_mod.ts, 'set_token', lambda _: None)
+    monkeypatch.setattr(dp_mod.ts, 'pro_api', lambda: fake_pro)
+
+    provider = TushareDataProvider(
+        {
+            'token': 'dummy',
+            'cacheEnabled': False,
+            'dataPath': str(tmp_path / 'tushare'),
+            'pagingThreshold': 1800,
+            'pagingMaxPages': 5,
+        }
+    )
+
+    # 513100.SH is configured in _FakePro.daily to return empty → fund path
+    df = provider.getStockData('513100.SH', '20200101', '20200110', 'D')
+    assert len(df) == 10
+    assert str(df.index.min().date()) == '2020-01-01'
+    assert str(df.index.max().date()) == '2020-01-10'
+
+    daily_calls = [c for c in fake_pro.calls if c[0] == 'daily']
+    fund_calls = [c for c in fake_pro.calls if c[0] == 'fund_daily']
+    assert len(daily_calls) >= 1
+    assert len(fund_calls) >= 1

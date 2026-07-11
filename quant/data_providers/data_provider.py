@@ -205,10 +205,10 @@ class TushareDataProvider(BaseDataProvider):
             if cacheEnabled and os.path.exists(cacheFile):
                 fileTime = os.path.getmtime(cacheFile)
                 if time.time() - fileTime < cacheExpiry:
-                    logger.info("Loading cached data for {symbol}")
+                    logger.info(f"Loading cached data for {symbol}")
                     return pd.read_csv(cacheFile, index_col=0, parse_dates=True)
             
-            logger.info("Fetching data for {symbol} from {startDate} to {endDate}")
+            logger.info(f"Fetching data for {symbol} from {startDate} to {endDate}")
             
             # Detect if it's a Hong Kong stock
             is_hk_stock = symbol.endswith('.HK')
@@ -243,10 +243,21 @@ class TushareDataProvider(BaseDataProvider):
             if df.empty:
                 # Smart date handling: if single date query fails, try expanding date range
                 if startDate == endDate:
-                    logger.info("No data for single date {startDate}, trying extended date range...")
+                    logger.info(f"No data for single date {startDate}, trying extended date range...")
                     return self._getDataWithExtendedRange(symbol, startDate, endDate, freq, cacheFile, cacheEnabled)
-                else:
-                    raise ValueError(f"No data found for symbol {symbol}")
+
+                # ETFs/funds are not on pro.daily — fall back to fund_daily path.
+                # Mirrors quant.data.providers.DataProvider stock→fund fallback.
+                if not is_hk_stock and freq == 'D':
+                    try:
+                        logger.info(
+                            f"No daily data for {symbol}; trying fund/ETF API fallback"
+                        )
+                        return self.getFundData(symbol, startDate, endDate, freq)
+                    except Exception as fund_e:
+                        logger.info(f"Fund/ETF fallback failed for {symbol}: {fund_e}")
+
+                raise ValueError(f"No data found for symbol {symbol}")
             
             # Process data
             df = self._processStockData(df)
@@ -258,7 +269,9 @@ class TushareDataProvider(BaseDataProvider):
             return df
             
         except Exception as e:
-            logger.error("fetching data for {symbol}: {str(e)} traceback: {traceback.format_exc()}")
+            logger.error(
+                f"fetching data for {symbol}: {e} traceback: {traceback.format_exc()}"
+            )
             raise
 
     def getIndexData(self, symbol, startDate, endDate, freq='D'):
@@ -292,10 +305,10 @@ class TushareDataProvider(BaseDataProvider):
             if cacheEnabled and os.path.exists(cacheFile):
                 fileTime = os.path.getmtime(cacheFile)
                 if time.time() - fileTime < cacheExpiry:
-                    logger.info("Loading cached index data for {indexSymbol}")
+                    logger.info(f"Loading cached index data for {indexSymbol}")
                     return pd.read_csv(cacheFile, index_col=0, parse_dates=True)
             
-            logger.info("Fetching index data for {indexSymbol} from {startDate} to {endDate}")
+            logger.info(f"Fetching index data for {indexSymbol} from {startDate} to {endDate}")
             
             if freq == 'D':
                 # Use index_daily API according to Tushare Pro documentation
@@ -314,7 +327,7 @@ class TushareDataProvider(BaseDataProvider):
             if df.empty:
                 # Smart date handling: if single date query fails, try expanding date range
                 if startDate == endDate:
-                    logger.info("No index data for single date {startDate}, trying extended date range...")
+                    logger.info(f"No index data for single date {startDate}, trying extended date range...")
                     return self._getIndexDataWithExtendedRange(indexSymbol, startDate, endDate, freq, cacheFile, cacheEnabled)
                 else:
                     raise ValueError(f"No index data found for symbol {indexSymbol}")
@@ -329,7 +342,7 @@ class TushareDataProvider(BaseDataProvider):
             return df
             
         except Exception as e:
-            logger.error("fetching index data for {symbol}: {str(e)} traceback: {traceback.format_exc()}")
+            logger.error(f"fetching index data for {symbol}: {e} traceback: {traceback.format_exc()}")
             raise
 
     def _formatHKSymbol(self, symbol):
@@ -352,7 +365,7 @@ class TushareDataProvider(BaseDataProvider):
         
         formatted = f"{code}.{suffix}"
         if formatted != symbol:
-            logger.info("📝 HK symbol formatting: {symbol} -> {formatted}")
+            logger.info(f"📝 HK symbol formatting: {symbol} -> {formatted}")
         
         return formatted
     
@@ -374,7 +387,7 @@ class TushareDataProvider(BaseDataProvider):
         
         # 如果映射发生了变化，记录日志
         if mappedSymbol != symbol:
-            logger.info("📝 Index symbol mapping: {symbol} -> {mappedSymbol}")
+            logger.info(f"📝 Index symbol mapping: {symbol} -> {mappedSymbol}")
         
         return mappedSymbol
     
@@ -434,7 +447,7 @@ class TushareDataProvider(BaseDataProvider):
             return stockInfo.iloc[0].to_dict()
             
         except Exception as e:
-            logger.error("getting stock info for {symbol}: {str(e)}")
+            logger.error(f"getting stock info for {symbol}: {e}")
             raise
     
     def searchStock(self, keyword):
@@ -451,7 +464,7 @@ class TushareDataProvider(BaseDataProvider):
             return result[['ts_code', 'name', 'industry', 'market']].head(10)
             
         except Exception as e:
-            logger.error("searching stocks: {str(e)}")
+            logger.error(f"searching stocks: {e}")
             raise
     
     def validateSymbol(self, symbol: str) -> bool:
@@ -514,15 +527,15 @@ class TushareDataProvider(BaseDataProvider):
             if cacheEnabled and os.path.exists(cacheFile):
                 fileTime = os.path.getmtime(cacheFile)
                 if time.time() - fileTime < cacheExpiry:
-                    logger.info("Loading cached fund data for {symbol}")
+                    logger.info(f"Loading cached fund data for {symbol}")
                     return pd.read_csv(cacheFile, index_col=0, parse_dates=True)
             
-            logger.info("Fetching fund data for {symbol} from {startDate} to {endDate}")
+            logger.info(f"Fetching fund data for {symbol} from {startDate} to {endDate}")
             
             if freq == 'D':
                 # 优先使用fund_daily接口获取ETF日线行情数据
                 try:
-                    logger.info("🔄 Trying fund_daily API for ETF {symbol}")
+                    logger.info(f"🔄 Trying fund_daily API for ETF {symbol}")
                     df = self._fetch_with_backward_paging(
                         lambda s, e: self.pro.fund_daily(
                             ts_code=symbol,
@@ -538,17 +551,17 @@ class TushareDataProvider(BaseDataProvider):
                     )
                     
                     if not df.empty:
-                        logger.info("✅ Successfully fetched {len(df)} records from fund_daily for {symbol}")
+                        logger.info(f"✅ Successfully fetched {len(df)} records from fund_daily for {symbol}")
                     else:
-                        logger.info("⚠️  fund_daily returned empty data for {symbol}, trying alternatives")
+                        logger.info(f"⚠️  fund_daily returned empty data for {symbol}, trying alternatives")
                         raise ValueError("fund_daily returned no data")
                     
                 except Exception as fund_daily_e:
-                    logger.info("❌ fund_daily failed for {symbol}: {fund_daily_e}")
+                    logger.info(f"❌ fund_daily failed for {symbol}: {fund_daily_e}")
                     
                     # 回退到fund_nav接口
                     try:
-                        logger.info("🔄 Trying fund_nav API as fallback for {symbol}")
+                        logger.info(f"🔄 Trying fund_nav API as fallback for {symbol}")
                         nav_df = self.pro.fund_nav(
                             ts_code=symbol,
                             start_date=startDate,
@@ -556,13 +569,13 @@ class TushareDataProvider(BaseDataProvider):
                         )
                         
                         if not nav_df.empty:
-                            logger.info("✅ Successfully fetched {len(nav_df)} NAV records for {symbol}")
+                            logger.info(f"✅ Successfully fetched {len(nav_df)} NAV records for {symbol}")
                             # Convert NAV data to OHLCV format
                             df = self._convertNavToOHLCV(nav_df)
                         else:
                             raise ValueError(f"No fund data found from any API for symbol {symbol}")
                     except Exception as nav_e:
-                        logger.info("❌ fund_nav also failed for {symbol}: {nav_e}")
+                        logger.info(f"❌ fund_nav also failed for {symbol}: {nav_e}")
                         raise ValueError(f"All fund data APIs failed for symbol {symbol}")
             else:
                 logger.warning("Intraday fund data not supported")
@@ -591,7 +604,7 @@ class TushareDataProvider(BaseDataProvider):
             return df
             
         except Exception as e:
-            logger.error("fetching fund data for {symbol}: {str(e)}")
+            logger.error(f"fetching fund data for {symbol}: {e}")
             # 不要在这里直接抛出异常，让调用者处理回退逻辑
             raise
     
@@ -650,11 +663,11 @@ class TushareDataProvider(BaseDataProvider):
             if cacheEnabled and os.path.exists(cacheFile):
                 fileTime = os.path.getmtime(cacheFile)
                 if time.time() - fileTime < cacheExpiry:
-                    logger.info("Loading cached financial data for {symbol}")
+                    logger.info(f"Loading cached financial data for {symbol}")
                     cached_df = pd.read_csv(cacheFile)
                     return self._process_financial_data(cached_df)
             
-            logger.info("Fetching financial data for {symbol}")
+            logger.info(f"Fetching financial data for {symbol}")
             
             # 获取基本财务指标 (包含EPS)
             financial_indicators = self.pro.fina_indicator(
@@ -699,7 +712,7 @@ class TushareDataProvider(BaseDataProvider):
             return self._process_financial_data_dict(financial_data)
             
         except Exception as e:
-            logger.error("fetching financial data for {symbol}: {str(e)}")
+            logger.error(f"fetching financial data for {symbol}: {e}")
             return {}
     
     def _process_financial_data(self, cached_df):
@@ -790,7 +803,7 @@ class TushareDataProvider(BaseDataProvider):
             return result
             
         except Exception as e:
-            logger.error("processing financial data: {str(e)}")
+            logger.error(f"processing financial data: {e}")
             return {}
     
     def _analyze_william_oneil_canslim(self, eps_values, eps_dates):
@@ -840,7 +853,7 @@ class TushareDataProvider(BaseDataProvider):
             return analysis
             
         except Exception as e:
-            logger.error("in William O'Neil CANSLIM analysis: {str(e)}")
+            logger.error(f"in William O'Neil CANSLIM analysis: {e}")
             return {'error': str(e)}
     
     def _analyze_current_quarter_eps(self, eps_values, eps_dates):
@@ -1140,7 +1153,7 @@ class TushareDataProvider(BaseDataProvider):
             return result
             
         except Exception as e:
-            logger.error("getting enhanced stock data for {symbol}: {str(e)}")
+            logger.error(f"getting enhanced stock data for {symbol}: {e}")
             raise
 
     def getGlobalIndexData(self, symbol, startDate, endDate, freq='D'):
@@ -1171,10 +1184,10 @@ class TushareDataProvider(BaseDataProvider):
             if cacheEnabled and os.path.exists(cacheFile):
                 fileTime = os.path.getmtime(cacheFile)
                 if time.time() - fileTime < cacheExpiry:
-                    logger.info("Loading cached global index data for {symbol}")
+                    logger.info(f"Loading cached global index data for {symbol}")
                     return pd.read_csv(cacheFile, index_col=0, parse_dates=True)
             
-            logger.info("Fetching global index data for {symbol} from {startDate} to {endDate}")
+            logger.info(f"Fetching global index data for {symbol} from {startDate} to {endDate}")
             
             # Use index_global API for global indices
             df = self._fetch_with_backward_paging(
@@ -1187,11 +1200,11 @@ class TushareDataProvider(BaseDataProvider):
             )
             
             if df.empty:
-                logger.info("No global index data found for {symbol}")
+                logger.info(f"No global index data found for {symbol}")
                 # Try common global index mappings
                 mappedSymbol = self._mapGlobalIndexSymbol(symbol)
                 if mappedSymbol != symbol:
-                    logger.info("Trying mapped symbol: {mappedSymbol}")
+                    logger.info(f"Trying mapped symbol: {mappedSymbol}")
                     df = self._fetch_with_backward_paging(
                         lambda s, e: self.pro.index_global(ts_code=mappedSymbol, start_date=s, end_date=e),
                         startDate,
@@ -1214,7 +1227,7 @@ class TushareDataProvider(BaseDataProvider):
             return df
             
         except Exception as e:
-            logger.error("fetching global index data for {symbol}: {str(e)}")
+            logger.error(f"fetching global index data for {symbol}: {e}")
             raise
     
     def _mapGlobalIndexSymbol(self, symbol):
@@ -1252,7 +1265,7 @@ class TushareDataProvider(BaseDataProvider):
         
         mappedSymbol = globalMapping.get(symbol, symbol)
         if mappedSymbol != symbol:
-            logger.info("📝 Global index symbol mapping: {symbol} -> {mappedSymbol}")
+            logger.info(f"📝 Global index symbol mapping: {symbol} -> {mappedSymbol}")
         
         return mappedSymbol
     
@@ -1331,10 +1344,10 @@ class TushareDataProvider(BaseDataProvider):
             if cacheEnabled and os.path.exists(cacheFile):
                 fileTime = os.path.getmtime(cacheFile)
                 if time.time() - fileTime < cacheExpiry:
-                    logger.info("Loading cached money flow data for {symbol}")
+                    logger.info(f"Loading cached money flow data for {symbol}")
                     return pd.read_csv(cacheFile, index_col=0, parse_dates=True)
 
-            logger.info("Fetching money flow data for {symbol} from {start_date} to {end_date}")
+            logger.info(f"Fetching money flow data for {symbol} from {start_date} to {end_date}")
 
             # Get money flow data using moneyflow API
             df = self.pro.moneyflow(
@@ -1344,7 +1357,7 @@ class TushareDataProvider(BaseDataProvider):
             )
 
             if df.empty:
-                logger.info("No money flow data found for symbol {symbol}")
+                logger.info(f"No money flow data found for symbol {symbol}")
                 return pd.DataFrame()
 
             # Process money flow data
@@ -1357,7 +1370,7 @@ class TushareDataProvider(BaseDataProvider):
             return df
 
         except Exception as e:
-            logger.error("fetching money flow data for {symbol}: {str(e)}")
+            logger.error(f"fetching money flow data for {symbol}: {e}")
             # Return empty DataFrame if API fails (graceful degradation)
             return pd.DataFrame()
 
@@ -1390,7 +1403,7 @@ class TushareDataProvider(BaseDataProvider):
                     logger.info("Loading cached HSGT flow data")
                     return pd.read_csv(cacheFile, index_col=0, parse_dates=True)
 
-            logger.info("Fetching HSGT flow data from {start_date} to {end_date}")
+            logger.info(f"Fetching HSGT flow data from {start_date} to {end_date}")
 
             # Get HSGT flow data using moneyflow_hsgt API
             df = self.pro.moneyflow_hsgt(
@@ -1412,7 +1425,7 @@ class TushareDataProvider(BaseDataProvider):
             return df
 
         except Exception as e:
-            logger.error("fetching HSGT flow data: {str(e)}")
+            logger.error(f"fetching HSGT flow data: {e}")
             return pd.DataFrame()
 
     def getHSGTTop10(self, trade_date, market='SH'):
@@ -1441,10 +1454,10 @@ class TushareDataProvider(BaseDataProvider):
             if cacheEnabled and os.path.exists(cacheFile):
                 fileTime = os.path.getmtime(cacheFile)
                 if time.time() - fileTime < cacheExpiry:
-                    logger.info("Loading cached HSGT top10 data for {market} on {trade_date}")
+                    logger.info(f"Loading cached HSGT top10 data for {market} on {trade_date}")
                     return pd.read_csv(cacheFile, index_col=0)
 
-            logger.info("Fetching HSGT top10 data for {market} on {trade_date}")
+            logger.info(f"Fetching HSGT top10 data for {market} on {trade_date}")
 
             # Get HSGT top 10 data using hsgt_top10 API
             df = self.pro.hsgt_top10(
@@ -1453,7 +1466,7 @@ class TushareDataProvider(BaseDataProvider):
             )
 
             if df.empty:
-                logger.info("No HSGT top10 data found for {market} on {trade_date}")
+                logger.info(f"No HSGT top10 data found for {market} on {trade_date}")
                 return pd.DataFrame()
 
             # Process top 10 data
@@ -1466,7 +1479,7 @@ class TushareDataProvider(BaseDataProvider):
             return df
 
         except Exception as e:
-            logger.error("fetching HSGT top10 data: {str(e)}")
+            logger.error(f"fetching HSGT top10 data: {e}")
             return pd.DataFrame()
 
     def _processMoneyFlowData(self, df):
@@ -1592,10 +1605,10 @@ class TushareDataProvider(BaseDataProvider):
                 list_status=list_status,
                 fields=fields
             )
-            logger.info("Retrieved {len(data)} stocks")
+            logger.info(f"Retrieved {len(data)} stocks")
             return data
         except Exception as e:
-            logger.error("fetching stock list: {str(e)}")
+            logger.error(f"fetching stock list: {e}")
             raise
 
     def getFundBasic(self, market='E', status='L'):
@@ -1615,10 +1628,10 @@ class TushareDataProvider(BaseDataProvider):
                 market=market,
                 status=status
             )
-            logger.info("Retrieved {len(data)} funds")
+            logger.info(f"Retrieved {len(data)} funds")
             return data
         except Exception as e:
-            logger.error("fetching fund basic information: {str(e)}")
+            logger.error(f"fetching fund basic information: {e}")
             raise
     
     def getIncomeData(self, period, fields='ts_code,ann_date,f_ann_date,end_date,report_type,basic_eps,diluted_eps,total_revenue,revenue,n_income'):
@@ -1633,15 +1646,15 @@ class TushareDataProvider(BaseDataProvider):
             pd.DataFrame: 利润表数据
         """
         try:
-            logger.info("Fetching income data for period {period}")
+            logger.info(f"Fetching income data for period {period}")
             df = self.pro.income_vip(period=period, fields=fields)
             if df is None or df.empty:
-                logger.info("No income data found for period {period}")
+                logger.info(f"No income data found for period {period}")
                 return pd.DataFrame()
-            logger.info("Retrieved {len(df)} income records for period {period}")
+            logger.info(f"Retrieved {len(df)} income records for period {period}")
             return df
         except Exception as e:
-            logger.error("fetching income data for period {period}: {str(e)}")
+            logger.error(f"fetching income data for period {period}: {e}")
             raise
     
     def getPeriodFinancialData(self, period, fields='ts_code,ann_date,f_ann_date,end_date,report_type,basic_eps,diluted_eps,total_revenue,revenue,n_income'):
@@ -1692,7 +1705,7 @@ class TushareDataProvider(BaseDataProvider):
             extendedStartDate = (startObj - timedelta(days=10)).strftime('%Y%m%d')
             extendedEndDate = (endObj + timedelta(days=5)).strftime('%Y%m%d')
             
-            logger.info("🔄 Extending date range for {symbol}: {extendedStartDate} - {extendedEndDate}")
+            logger.info(f"🔄 Extending date range for {symbol}: {extendedStartDate} - {extendedEndDate}")
             
             # Get data with extended range
             if freq == 'D':
@@ -1701,6 +1714,16 @@ class TushareDataProvider(BaseDataProvider):
                     start_date=extendedStartDate,
                     end_date=extendedEndDate
                 )
+                # ETFs/funds may only exist on fund_daily
+                if df.empty and not str(symbol).endswith('.HK'):
+                    try:
+                        return self.getFundData(
+                            symbol, extendedStartDate, extendedEndDate, freq
+                        )
+                    except Exception as fund_e:
+                        logger.info(
+                            f"Extended-range fund fallback failed for {symbol}: {fund_e}"
+                        )
             else:
                 df = self._getIntraDayData(symbol, extendedStartDate, extendedEndDate, freq)
             
@@ -1718,7 +1741,7 @@ class TushareDataProvider(BaseDataProvider):
             closest_data = df.loc[df['date_diff'].idxmin()].to_frame().T
             closest_data = closest_data.drop('date_diff', axis=1)
             
-            logger.info("✅ Found closest trading day data for {symbol}: {closest_data.index[0].strftime('%Y-%m-%d')}")
+            logger.info(f"✅ Found closest trading day data for {symbol}: {closest_data.index[0].strftime('%Y-%m-%d')}")
             
             # Save to cache using original cache file name
             if cacheEnabled:
@@ -1727,7 +1750,7 @@ class TushareDataProvider(BaseDataProvider):
             return closest_data
             
         except Exception as e:
-            logger.info("❌ Extended date range also failed for {symbol}: {str(e)}")
+            logger.info(f"❌ Extended date range also failed for {symbol}: {e}")
             raise
 
     def _getIndexDataWithExtendedRange(self, indexSymbol, startDate, endDate, freq, cacheFile, cacheEnabled):
@@ -1753,7 +1776,7 @@ class TushareDataProvider(BaseDataProvider):
             extendedStartDate = (startObj - timedelta(days=10)).strftime('%Y%m%d')
             extendedEndDate = (endObj + timedelta(days=5)).strftime('%Y%m%d')
             
-            logger.info("🔄 Extending date range for index {indexSymbol}: {extendedStartDate} - {extendedEndDate}")
+            logger.info(f"🔄 Extending date range for index {indexSymbol}: {extendedStartDate} - {extendedEndDate}")
             
             # Get index data with extended range
             if freq == 'D':
@@ -1780,7 +1803,7 @@ class TushareDataProvider(BaseDataProvider):
             closest_data = df.loc[df['date_diff'].idxmin()].to_frame().T
             closest_data = closest_data.drop('date_diff', axis=1)
             
-            logger.info("✅ Found closest index trading day data for {indexSymbol}: {closest_data.index[0].strftime('%Y-%m-%d')}")
+            logger.info(f"✅ Found closest index trading day data for {indexSymbol}: {closest_data.index[0].strftime('%Y-%m-%d')}")
             
             # Save to cache using original cache file name
             if cacheEnabled:
@@ -1789,7 +1812,7 @@ class TushareDataProvider(BaseDataProvider):
             return closest_data
             
         except Exception as e:
-            logger.info("❌ Extended date range also failed for index {indexSymbol}: {str(e)}")
+            logger.info(f"❌ Extended date range also failed for index {indexSymbol}: {e}")
             raise 
 
     # ==================== 行业/板块资金流向接口 ====================
