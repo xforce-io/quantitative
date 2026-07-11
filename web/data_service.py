@@ -792,6 +792,20 @@ def get_leading_indicators(lookback_days: int = 365) -> Dict[str, Any]:
     return result
 
 
+@st.cache_data(ttl=14400, show_spinner=False)  # 4h — systemic risk is daily-frequency
+def get_systemic_risk_state(warm_days: int = 40) -> Dict[str, Any]:
+    """
+    Global systemic risk state machine outlet.
+
+    Returns SystemicRiskState as a plain dict. On failure returns state=degraded
+    (never silent normal).
+    """
+    from quant.analysis.indicators.systemic_risk.service import SystemicRiskAnalyzer
+
+    analyzer = SystemicRiskAnalyzer()
+    return analyzer.analyze_dict(warm_days=warm_days)
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_dashboard_summary() -> Dict[str, Any]:
     """
@@ -824,6 +838,24 @@ def get_dashboard_summary() -> Dict[str, Any]:
         macro['china_sentiment'] = china.get('status', 'Unknown')
     except Exception:
         macro['china_sentiment'] = 'Unknown'
+
+    try:
+        sys_risk = get_systemic_risk_state()
+        macro['systemic_risk'] = {
+            'state': sys_risk.get('state'),
+            'as_of': sys_risk.get('as_of'),
+            'confidence': sys_risk.get('confidence'),
+            'drivers': sys_risk.get('drivers', [])[:3],
+            'data_quality': sys_risk.get('data_quality'),
+            'display_score': sys_risk.get('display_score'),
+        }
+    except Exception as e:
+        logger.warning(f"systemic risk summary failed: {e}")
+        macro['systemic_risk'] = {
+            'state': 'degraded',
+            'drivers': [str(e)],
+            'data_quality': 'degraded',
+        }
 
     summary['macro'] = macro
     return summary

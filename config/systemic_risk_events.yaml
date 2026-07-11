@@ -1,0 +1,61 @@
+# Fixed event protocol for systemic risk evaluation.
+# Do not silently change anchors; document any revision in the design log.
+
+events:
+  - id: vol_2018q4
+    name: "2018Q4 liquidity / trade shock"
+    anchor_date: "2018-12-24"
+    stress_start: "2018-10-03"
+    window: ["2018-08-01", "2019-01-31"]
+    market_proxy: "SPY"
+    tags: [liquidity, equity_crash]
+
+  - id: covid_2020
+    name: "COVID liquidity crash"
+    anchor_date: "2020-03-23"
+    stress_start: "2020-02-20"
+    window: ["2019-12-01", "2020-04-30"]
+    market_proxy: "SPY"
+    tags: [liquidity, equity_crash]
+
+  - id: tightening_2022
+    name: "2022 tightening / gilt stress"
+    anchor_date: "2022-09-28"
+    stress_start: "2022-01-03"
+    window: ["2021-11-01", "2022-11-30"]
+    market_proxy: "SPY"
+    tags: [tightening, rates]
+
+  - id: svb_2023
+    name: "SVB / regional bank stress"
+    anchor_date: "2023-03-13"
+    stress_start: "2023-03-08"
+    window: ["2023-01-01", "2023-04-30"]
+    market_proxy: "SPY"
+    tags: [credit, bank]
+
+  - id: yen_2024_08
+    name: "Yen carry unwind volatility"
+    anchor_date: "2024-08-05"
+    stress_start: "2024-07-31"
+    window: ["2024-06-01", "2024-09-15"]
+    market_proxy: "SPY"
+    tags: [fx, carry]
+
+  - id: alice_2025_01
+    name: "Alice systemic risk confirm (2025 reference)"
+    anchor_date: "2025-01-23"
+    secondary_anchor: "2025-02-18"
+    stress_start: "2025-01-15"
+    window: ["2024-11-01", "2025-03-31"]
+    market_proxy: "SPY"
+    tags: [liquidity, alice_reference]
+
+  - id: alice_2026_01
+    name: "Alice quiet tightening 2026-01-23; equity dump from ~2026-01-31"
+    anchor_date: "2026-01-31"
+    secondary_anchor: "2026-01-23"
+    stress_start: "2026-01-23"
+    window: ["2025-11-01", "2026-02-28"]
+    market_proxy: "SPY"
+    tags: [liquidity, alice_reference, quiet_tightening]

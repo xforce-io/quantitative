@@ -1,0 +1,49 @@
+# Systemic risk state machine configuration.
+# Tuned for quiet USD funding tightening (Alice 2026-01 style).
+# Re-run: uv run python scripts/systemic_risk_event_eval.py --live
+
+windows:
+  percentile: 126          # ~6m level context
+  percentile_short: 60     # recent regime
+  velocity: 5
+  zscore: 60
+  change: 10               # faster tightening detection
+
+state_machine:
+  l1_stress_threshold: 0.58
+  l1_min_features: 2
+  l1_persist_days: 2
+  # Higher bar for confirmed — requires VIX/MOVE leg; quiet funding → building only
+  confirm_stress_threshold: 0.65
+  confirm_min_features: 1
+  releasing_persist_days: 5
+  divergence_threshold: 0.55
+  # Quiet tightening (funding multi-leg / extreme single leg) → building band
+  soft_l1_threshold: 0.50
+  quiet_funding_min: 2
+  funding_alone_threshold: 0.68
+  # Only series with long FRED history. SOFR-IORB starts 2021 — optional.
+  critical_l1:
+    - hy_oas
+  critical_funding_keys:
+    - sofr_iorb_spread
+    - cp_tbill_spread
+    - effr_iorb_spread
+  critical_credit_keys:
+    - hy_oas
+    - hy_oas_d20
+  freshness_days:
+    daily: 3
+    weekly: 10
+
+display_score_weights:
+  l1: 0.50
+  l2: 0.20
+  l3: 0.15
+  l4: 0.15
+
+legacy_map:
+  risk_score_confirmed: 75
+  risk_score_building: 50
+  confidence_confirmed: -40
+  confidence_building: -10
