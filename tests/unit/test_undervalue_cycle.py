@@ -11,8 +11,11 @@ from quant.analysis.screener.undervalue_cycle import (
     BAD_CYCLE_STAGES,
     UndervalueCycleConfig,
     apply_undervalue_cycle_screen,
+    blend_undervalue_scores,
+    compute_valuation_undervalue_score,
     map_industry_to_cycle,
     normalize_cycle_stage,
+    ratio_cheapness_score,
 )
 
 
@@ -173,3 +176,66 @@ class TestApplyScreen:
 class TestBadStagesConstant:
     def test_default_bad_stages_include_decline(self):
         assert "decline" in BAD_CYCLE_STAGES
+
+
+class TestDualDimensionUndervalue:
+    def test_ratio_bands_are_monotonic_cheap_to_expensive(self):
+        assert ratio_cheapness_score(8, 10, 35) == 100.0
+        assert ratio_cheapness_score(40, 10, 35) == 0.0
+        mid = ratio_cheapness_score(22.5, 10, 35)
+        assert mid is not None and 40 < mid < 60
+
+    def test_negative_pe_is_missing(self):
+        assert ratio_cheapness_score(-5, 10, 35) is None
+
+    def test_valuation_prefers_historical_percentile(self):
+        score, src = compute_valuation_undervalue_score(
+            pe=50, pb=10, pe_percentile=20, pb_percentile=30
+        )
+        # cheapness = 100 - pct => pe 80, pb 70 → 0.6*80+0.4*70=76
+        assert score == pytest.approx(76.0)
+        assert "hist_pct" in src
+
+    def test_blend_equal_weight(self):
+        blended, mode = blend_undervalue_scores(40, 80, 0.5, 0.5)
+        assert blended == pytest.approx(60.0)
+        assert mode == "price+valuation"
+
+    def test_blend_fallback_price_only(self):
+        blended, mode = blend_undervalue_scores(55, None)
+        assert blended == 55
+        assert mode == "price_only"
+
+    def test_screen_blends_pe_pb_and_keeps_components(self):
+        df = pd.DataFrame(
+            [
+                {
+                    "symbol": "0700.HK",
+                    "name": "腾讯",
+                    "industry": "科技",
+                    "undervalue_score": 56.0,  # price mid
+                    "pe_ttm": 16.5,
+                    "pb": 3.2,
+                },
+                {
+                    "symbol": "1024.HK",
+                    "name": "快手",
+                    "industry": "科技",
+                    "undervalue_score": 91.0,
+                    "pe_ttm": 8.8,
+                    "pb": 2.0,
+                },
+            ]
+        )
+        cfg = UndervalueCycleConfig(
+            exclude_stages=frozenset(),  # isolate scoring
+            blend_valuation=True,
+        )
+        result = apply_undervalue_cycle_screen(df, cfg)
+        tencent = result.loc[result["symbol"] == "0700.HK"].iloc[0]
+        kuaishou = result.loc[result["symbol"] == "1024.HK"].iloc[0]
+        assert tencent["price_undervalue_score"] == 56.0
+        assert tencent["valuation_undervalue_score"] is not None
+        assert tencent["undervalue_blend"] == "price+valuation"
+        # Low PE name should still rank above mid-price Tencent on blended score
+        assert kuaishou["cycle_adjusted_score"] > tencent["cycle_adjusted_score"]

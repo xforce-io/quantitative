@@ -189,9 +189,13 @@ def print_report(result: pd.DataFrame, top_n: int = 20) -> None:
             "name",
             "industry",
             "cycle_stage",
+            "price_undervalue_score",
+            "valuation_undervalue_score",
             "undervalue_score",
             "cycle_adjusted_score",
             "price_position",
+            "pe_ttm",
+            "pb",
             "reject_reason",
         ]
         if c in result.columns

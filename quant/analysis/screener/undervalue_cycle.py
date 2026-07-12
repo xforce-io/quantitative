@@ -11,13 +11,19 @@ This is an Analysis-layer filter, not a replacement for industry rotation.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import FrozenSet, Iterable, Optional
+from typing import FrozenSet, Optional, Tuple
 
+import numpy as np
 import pandas as pd
 
 from quant.analysis.screener.industry_fundamentals_analyzer import (
     IndustryFundamentalsAnalyzer,
 )
+
+# Prior bands for point-in-time PE/PB cheapness (NOT fitted on a single sample).
+# score=100 at/below cheap, score=0 at/above expensive, linear in between.
+_PE_CHEAP, _PE_EXPENSIVE = 10.0, 35.0
+_PB_CHEAP, _PB_EXPENSIVE = 1.0, 5.0
 
 # Stages treated as hard-veto defaults for "must not be in a bad cycle".
 BAD_CYCLE_STAGES: FrozenSet[str] = frozenset({"decline"})
@@ -130,6 +136,12 @@ class UndervalueCycleConfig:
     )
     # If True, late_cycle is also hard-vetoed (stricter).
     exclude_late_cycle: bool = False
+    # Dual-dimension undervalue blend (price vs valuation). Fixed priors, not fit.
+    blend_valuation: bool = True
+    price_weight: float = 0.5
+    valuation_weight: float = 0.5
+    pe_weight_in_valuation: float = 0.6
+    pb_weight_in_valuation: float = 0.4
 
 
 @dataclass(frozen=True)
@@ -221,6 +233,115 @@ def _parse_trap_flags(value) -> set[str]:
     return {part.strip() for part in text.replace(";", ",").split(",") if part.strip()}
 
 
+def _clip_score(x: float) -> float:
+    return float(max(0.0, min(100.0, x)))
+
+
+def ratio_cheapness_score(
+    value: Optional[float],
+    cheap_at: float,
+    expensive_at: float,
+) -> Optional[float]:
+    """Map a valuation ratio to 0-100 (higher = cheaper) with fixed bands.
+
+    Prior rule, not calibrated on a screening sample:
+      value <= cheap_at     -> 100
+      value >= expensive_at -> 0
+      linear in between
+    Negative / non-finite ratios return None (missing).
+    """
+    if value is None:
+        return None
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not np.isfinite(v) or v <= 0:
+        return None
+    if expensive_at <= cheap_at:
+        raise ValueError("expensive_at must be > cheap_at")
+    if v <= cheap_at:
+        return 100.0
+    if v >= expensive_at:
+        return 0.0
+    return _clip_score(100.0 * (expensive_at - v) / (expensive_at - cheap_at))
+
+
+def percentile_to_cheapness(percentile: Optional[float]) -> Optional[float]:
+    """Convert a 'higher = more expensive' historical percentile (0-100) to cheapness."""
+    if percentile is None:
+        return None
+    try:
+        p = float(percentile)
+    except (TypeError, ValueError):
+        return None
+    if not np.isfinite(p):
+        return None
+    return _clip_score(100.0 - p)
+
+
+def compute_valuation_undervalue_score(
+    pe: Optional[float] = None,
+    pb: Optional[float] = None,
+    pe_percentile: Optional[float] = None,
+    pb_percentile: Optional[float] = None,
+    pe_weight: float = 0.6,
+    pb_weight: float = 0.4,
+) -> Tuple[Optional[float], str]:
+    """Build valuation-side undervalue score (0-100, higher = cheaper).
+
+    Preference order per ratio:
+      1) historical percentile if provided (anti-absolute-level bias)
+      2) else fixed PE/PB bands (transparent priors)
+
+    Returns (score_or_None, source_tag).
+    """
+    pe_score = percentile_to_cheapness(pe_percentile)
+    pe_src = "pe_hist_pct" if pe_score is not None else None
+    if pe_score is None:
+        pe_score = ratio_cheapness_score(pe, _PE_CHEAP, _PE_EXPENSIVE)
+        pe_src = "pe_band" if pe_score is not None else None
+
+    pb_score = percentile_to_cheapness(pb_percentile)
+    pb_src = "pb_hist_pct" if pb_score is not None else None
+    if pb_score is None:
+        pb_score = ratio_cheapness_score(pb, _PB_CHEAP, _PB_EXPENSIVE)
+        pb_src = "pb_band" if pb_score is not None else None
+
+    parts: list[Tuple[float, float]] = []
+    sources: list[str] = []
+    if pe_score is not None and pe_weight > 0:
+        parts.append((pe_score, pe_weight))
+        sources.append(pe_src or "pe")
+    if pb_score is not None and pb_weight > 0:
+        parts.append((pb_score, pb_weight))
+        sources.append(pb_src or "pb")
+
+    if not parts:
+        return None, "missing"
+
+    wsum = sum(w for _, w in parts)
+    score = sum(s * w for s, w in parts) / wsum
+    return _clip_score(score), "+".join(sources)
+
+
+def blend_undervalue_scores(
+    price_uv: float,
+    valuation_uv: Optional[float],
+    price_weight: float = 0.5,
+    valuation_weight: float = 0.5,
+) -> Tuple[float, str]:
+    """Equal-weight style blend; falls back to price-only if valuation missing."""
+    if valuation_uv is None or valuation_weight <= 0:
+        return _clip_score(price_uv), "price_only"
+    if price_weight <= 0:
+        return _clip_score(valuation_uv), "valuation_only"
+    w_p = float(price_weight)
+    w_v = float(valuation_weight)
+    blended = (price_uv * w_p + valuation_uv * w_v) / (w_p + w_v)
+    return _clip_score(blended), "price+valuation"
+
+
 def apply_undervalue_cycle_screen(
     df: pd.DataFrame,
     config: Optional[UndervalueCycleConfig] = None,
@@ -230,13 +351,17 @@ def apply_undervalue_cycle_screen(
 
     Required columns:
       - industry
-      - undervalue_score (0-100, higher = cheaper)
+      - undervalue_score (0-100, higher = cheaper)  # treated as *price* undervalue
 
     Optional:
       - symbol, name, price_position, value_trap_flags
+      - pe_ttm / pe, pb
+      - pe_percentile / pb_percentile (0-100, higher = more expensive historically)
       - cycle_stage (if already present, skip industry mapping)
 
     Returns a copy with columns:
+      price_undervalue_score, valuation_undervalue_score, undervalue_blend,
+      undervalue_score (effective, used for gates/ranking),
       cycle_stage, cycle_label, safety_mult, cycle_adjusted_score,
       passed, reject_reason
     """
@@ -257,7 +382,35 @@ def apply_undervalue_cycle_screen(
     rows = []
     for _, row in df.iterrows():
         out = row.to_dict()
-        uv = float(row["undervalue_score"]) if pd.notna(row["undervalue_score"]) else 0.0
+        price_uv = (
+            float(row["undervalue_score"]) if pd.notna(row["undervalue_score"]) else 0.0
+        )
+
+        pe = row.get("pe_ttm", row.get("pe"))
+        pb = row.get("pb")
+        pe_pct = row.get("pe_percentile", row.get("pe_pct"))
+        pb_pct = row.get("pb_percentile", row.get("pb_pct"))
+
+        val_uv: Optional[float] = None
+        val_src = "skipped"
+        blend_mode = "price_only"
+        effective_uv = price_uv
+
+        if config.blend_valuation:
+            val_uv, val_src = compute_valuation_undervalue_score(
+                pe=pe if pe is None or pd.notna(pe) else None,
+                pb=pb if pb is None or pd.notna(pb) else None,
+                pe_percentile=pe_pct if pe_pct is None or pd.notna(pe_pct) else None,
+                pb_percentile=pb_pct if pb_pct is None or pd.notna(pb_pct) else None,
+                pe_weight=config.pe_weight_in_valuation,
+                pb_weight=config.pb_weight_in_valuation,
+            )
+            effective_uv, blend_mode = blend_undervalue_scores(
+                price_uv,
+                val_uv,
+                price_weight=config.price_weight,
+                valuation_weight=config.valuation_weight,
+            )
 
         if "cycle_stage" in df.columns and pd.notna(row.get("cycle_stage")) and str(
             row.get("cycle_stage")
@@ -285,17 +438,24 @@ def apply_undervalue_cycle_screen(
         if stage in exclude:
             passed = False
             reasons.append(f"bad_cycle:{stage}")
-        if uv < config.min_undervalue_score:
+        if effective_uv < config.min_undervalue_score:
             passed = False
             reasons.append(f"undervalue<{config.min_undervalue_score}")
         if hit_traps:
             passed = False
             reasons.append("trap:" + ",".join(sorted(hit_traps)))
 
-        adjusted = round(uv * mult, 4)
+        adjusted = round(effective_uv * mult, 4)
 
         out.update(
             {
+                "price_undervalue_score": round(price_uv, 4),
+                "valuation_undervalue_score": (
+                    None if val_uv is None else round(float(val_uv), 4)
+                ),
+                "valuation_score_source": val_src,
+                "undervalue_blend": blend_mode,
+                "undervalue_score": round(effective_uv, 4),
                 "industry_mapped": industry_key,
                 "cycle_stage_raw": raw_stage,
                 "cycle_stage": stage,
@@ -333,7 +493,11 @@ __all__ = [
     "CycleInfo",
     "UndervalueCycleConfig",
     "apply_undervalue_cycle_screen",
+    "blend_undervalue_scores",
+    "compute_valuation_undervalue_score",
     "map_industry_to_cycle",
     "normalize_cycle_stage",
+    "percentile_to_cheapness",
+    "ratio_cheapness_score",
     "stages_from_csv_list",
 ]
